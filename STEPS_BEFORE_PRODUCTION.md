@@ -30,6 +30,42 @@ Tick the boxes here as you go.
 rehearsal → first real order. About a week, gated mostly by Stripe's review
 and the lawyer, not by engineering.
 
+#### Making it a website like any other
+
+Today the app runs only on the development laptop, at `*.zenoeats.local`,
+which exists nowhere else. The optional `https://…:8443` door (README §7) is
+for looking at it with a padlock on that one machine: it needs a
+certificate installed by hand, and no other device can reach it.
+
+To be opened by anyone, on any device, with the normal padlock, it needs
+three things. None of them is code, and the production setup already serves
+HTTPS, redirects HTTP and sends HSTS:
+
+1. **A real domain** (for example `zenoeats.com`) → Step 3, §4.0
+2. **A certificate every browser already trusts**: Cloudflare provides it
+   for free once the domain is on Cloudflare, so there is nothing to install
+   anywhere → Step 3, §4.0, §4.1
+3. **A computer on the internet that is always on**, answering on port 443
+   (no `:8443`) → Step 4, §11
+
+Two ways to get the third:
+
+| | **A. A real server (recommended)** | **B. A tunnel from the laptop** |
+|---|---|---|
+| What | A small Linux VM runs the published `v1.0.1` images (§11) | Cloudflare Tunnel (`cloudflared`) publishes the app running on the laptop at the domain |
+| Cost | Domain about $10/year, plus a 2 vCPU / 4 GB VM (about $8–24/month, depending on provider) | Domain about $10/year only |
+| Always on | Yes | Only while the laptop is on and awake |
+| Fit for real users | Yes, once this list is done | **No**: a demo only. The 8 GB laptop stalls under load, and it is not the deployment target |
+| Setup | 2–3 hours | About 1 hour. The laptop's `.env` must name the real domain as `ROOT_DOMAIN`, with a wildcard route to the tunnel |
+
+Either way, **start in test mode.** Generate the server's `.env` with
+`make_prod_env.py --staging --domain <domain>`, which allows Stripe and
+Clerk test keys and nothing else. The result is a real public HTTPS website
+on your domain that any phone can open, taking only Stripe test cards: the
+§10 rehearsal. Switch to live keys (`make_prod_env.py` without `--staging`,
+or `ALLOW_TEST_KEYS=false` with the live keys) once Stripe has approved the
+account and the rest of this list is ticked.
+
 #### Step 1 — Start today (the longest waits)
 
 - [ ] **Activate the Stripe live account**: business details, bank,

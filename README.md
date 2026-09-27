@@ -510,6 +510,52 @@ Then, signed in as staff at `/manage`: the order is on the board. **Mark
 ready for pickup**, then **Collect with PIN** with the customer's six digits.
 Or **cancel order** → **Cancel and refund** to see a test-mode refund.
 
+### 7. HTTPS on this laptop (optional)
+
+To see the app with a padlock before a real domain exists, run it at
+**https://spicehouse.zenoeats.local:8443**. This is an extra, optional
+door: `:8080` keeps working, and production HTTPS is
+`docker-compose.prod.yml` and `infra/nginx/production/`, not this.
+
+1. **Make the certificate** (once; run again yearly to renew):
+
+   ```powershell
+   bash scripts/local_https_cert.sh
+   ```
+
+   It creates a local certificate authority in
+   `%USERPROFILE%\zenoeats-secrets\local-ca\` (outside the repository). The
+   authority is name-constrained to `zenoeats.local` and can sign nothing
+   else. It then writes a certificate for `zenoeats.local` and
+   `*.zenoeats.local` to `infra/certs-local/` (git-ignored).
+2. **Start the HTTPS door:**
+
+   ```powershell
+   docker compose --profile app --profile https up -d
+   ```
+
+3. **Trust the local authority**, once, so browsers show the padlock.
+   Windows asks you to confirm:
+
+   ```powershell
+   Import-Certificate -FilePath "$env:USERPROFILE\zenoeats-secrets\local-ca\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root
+   ```
+
+   Chrome and Edge use this immediately; restart them if they were open.
+   Firefox keeps its own store: set `security.enterprise_roots.enabled` to
+   `true` in `about:config`.
+
+   To remove the trust later:
+
+   ```powershell
+   Get-ChildItem Cert:\CurrentUser\Root | Where-Object Subject -eq "CN=Zenoeats local development CA" | Remove-Item
+   ```
+
+There is no HSTS on this door, on purpose. A browser that saw HSTS would
+force HTTPS on `zenoeats.local` for a year, and `:8080` would stop working.
+Google Maps (delivery only) needs `https://*.zenoeats.local:8443/*` added to
+the browser key's allowed websites.
+
 ## Verifying tenant isolation
 
 ```bash
