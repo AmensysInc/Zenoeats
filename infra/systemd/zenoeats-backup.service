@@ -1,5 +1,5 @@
 # Nightly backup of this Zenoeats host. See scripts/backup.sh for what it
-# takes and where it goes, and STEPS_BEFORE_PRODUCTION.md for installing it:
+# takes and where it goes, and docs/operations/STEPS_BEFORE_PRODUCTION.md for installing it:
 #
 #   sudo cp infra/systemd/zenoeats-backup.* /etc/systemd/system/
 #   sudo systemctl daemon-reload

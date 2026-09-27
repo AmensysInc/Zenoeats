@@ -19,7 +19,7 @@ the ordering path. It covered:
 
 What remains before real money is accounts, the domain, the server and a
 legal review, tracked in
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md). See
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md). See
 [Production](#production), and the
 [Production setup guide](#production-setup-guide) for Stripe, Clerk, Google
 Maps and every other account step by step.
@@ -610,7 +610,7 @@ tenant's address. Google and Apple require a reachable privacy policy before
 they will approve sign-in; Facebook requires the deletion page too.
 
 They are **drafts**. Each opens with a banner saying so and ends with the
-questions a lawyer has to answer for that page. `STEPS_BEFORE_PRODUCTION.md`
+questions a lawyer has to answer for that page. `docs/operations/STEPS_BEFORE_PRODUCTION.md`
 §9 tracks what is left.
 
 Agreement is asked for in three places and recorded in one:
@@ -821,11 +821,22 @@ scripts/
   make_prod_env.py  writes a production .env with fresh secrets; --check
   backup.sh         nightly encrypted backup of the database and images
   restore_drill.sh  restores a backup into a scratch database and proves it
+  local_https_cert.sh  the certificate for HTTPS on this laptop (:8443)
+docs/               everything written beyond the code; index in docs/README.md
+  operations/       docs/operations/STEPS_BEFORE_PRODUCTION.md: go-live list, setup, deploy
+  security/         the audit report, test matrix, deployment checklist
+  development/      docs/development/URLS.txt: every local address
+  design/           the storefront redesign brief and its records
+.github/
+  workflows/ci.yml  every check a pull request must pass
+  CONTRIBUTING.md   how to set up, change, test and release
+  SECURITY.md       how to report a vulnerability
+  CODEOWNERS        who reviews which paths
 docker-compose.yml       development: infrastructure, plus the app behind
-                         --profile app
+                         --profile app (and --profile https for :8443)
 docker-compose.prod.yml  production override: GHCR images, passwords, no
                          internal ports, HTTPS edge
-STEPS_BEFORE_PRODUCTION.md  the launch checklist and first-deploy runbook
+CHANGELOG.md             what changed in each release
 ```
 
 ### What a customer downloads
@@ -919,7 +930,7 @@ What the production shape guarantees:
   hold, off-site with rclone. `scripts/restore_drill.sh` proves a backup
   restores whole.
 
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) is the launch
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) is the launch
 checklist, with what is done and what is open: accounts, the domain, backups,
 monitoring, legal, a staging rehearsal. Its §11 is the first deploy, command
 by command. Keep it current rather than a list here. Every account and
@@ -932,7 +943,7 @@ Every external account and setting that production needs: what to create,
 where to click, and which setting in `.env` each value fills. Do them in the
 order below; later sections assume earlier ones. The day-by-day checklist,
 with progress ticks, is the go-live list at the top of
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md).
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md).
 
 Throughout, `<domain>` is your root domain (for example `zenoeats.com`).
 Restaurants live at `<slug>.<domain>` and the platform portal at
@@ -1124,7 +1135,7 @@ you enable.
 
 Google, Facebook and Apple review the legal pages. They must be the final,
 lawyer-reviewed versions on the root domain (see
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §9).
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) §9).
 
 **3.6 Keys.** Production instance → **API keys**:
 
@@ -1223,7 +1234,7 @@ without customer data.
 ### 7. Backups (Cloudflare R2, healthchecks.io)
 
 Nightly, encrypted, off-site, with a restore drill. The full procedure is
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §5. In short:
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) §5. In short:
 
 1. **Cloudflare → R2:**
    - create the bucket `zenoeats-backups`
@@ -1269,7 +1280,7 @@ It asks for the password twice (at least 12 characters) and prints one
 
 With every account above done and `make_prod_env.py --check .env` clean,
 deploy on the server as in
-[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §11. Then:
+[`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) §11. Then:
 
 1. **Rehearse in test mode first.** Generate the `.env` with `--staging`,
    which allows Stripe and Clerk test keys and nothing else, and run the
@@ -1278,7 +1289,7 @@ deploy on the server as in
 3. Create the first restaurant (§2.6), place one real low-value order end to
    end, and refund it.
 4. Complete the sign-off in
-   [`SECURITY_DEPLOYMENT_CHECKLIST.md`](SECURITY_DEPLOYMENT_CHECKLIST.md).
+   [`docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md`](docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md).
 
 ## Delivery
 
@@ -1340,7 +1351,7 @@ one API machine and makes backing up `IMAGES_DIR` non-negotiable
 (`scripts/backup.sh` takes it with every database dump). Rows hold
 keys and never URLs and `IMAGES_PUBLIC_BASE` already takes an absolute URL,
 so moving to a bucket later is one class and one setting. The triggers for
-doing so are in `STEPS_BEFORE_PRODUCTION.md` §4.
+doing so are in `docs/operations/STEPS_BEFORE_PRODUCTION.md` §4.
 
 The local edge prefers the `api` and `web` containers directly when the app
 profile is running. Docker DNS refreshes their addresses after recreation;

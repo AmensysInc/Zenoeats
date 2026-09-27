@@ -4,6 +4,8 @@
 
  Local development. Replace "spicehouse" with any restaurant slug.
  Production swaps "zenoeats.local:8080" for "zenoeats.com".
+ HTTPS on this laptop (optional, README "HTTPS on this laptop"): the same
+ addresses as https://<name>.zenoeats.local:8443/...
 
  IMPORTANT: Browse through nginx on :8080 (or a *.zenoeats.local subdomain on
  :3000). The restaurant is resolved from the Host header, so plain
@@ -27,7 +29,7 @@
  Payment *              http://spicehouse.zenoeats.local:8080/checkout/pay/{orderId}
  Profile *              http://spicehouse.zenoeats.local:8080/profile   (?tab=orders, ?tab=favourites)
  Order tracking *       http://spicehouse.zenoeats.local:8080/orders/{orderId}
- Order tracking (guest) http://spicehouse.zenoeats.local:8080/orders/{orderId}?t={token}
+ Order tracking (guest) http://spicehouse.zenoeats.local:8080/orders/{orderId}#t={token}   (email link; the page sends it as a header)
                         (the link in a guest's confirmation email; opens that
                         one order on any device, no session needed)
 

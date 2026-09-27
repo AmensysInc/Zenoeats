@@ -4,7 +4,7 @@
 #
 #   scripts/backup.sh            run from anywhere; reads the settings below
 #
-# Run it from a systemd timer or cron on the VM (see STEPS_BEFORE_PRODUCTION.md,
+# Run it from a systemd timer or cron on the VM (see docs/operations/STEPS_BEFORE_PRODUCTION.md,
 # "Backups and recovery"). It exits non-zero on any failure, and reports both
 # outcomes to BACKUP_HEALTHCHECK_URL, so a backup that silently stops running
 # is noticed by the absence of a ping rather than by the day it is needed.

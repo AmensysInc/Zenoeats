@@ -120,7 +120,7 @@ jobs:
       # id, so undoing it deletes every staff member and platform admin, and
       # seven foreign keys point at users. A rollback of a live database is a
       # decision made against that database, not something a pipeline can
-      # sign off (see STEPS_BEFORE_PRODUCTION.md, "Backups and recovery").
+      # sign off (see docs/operations/STEPS_BEFORE_PRODUCTION.md, "Backups and recovery").
       #
       # Run after the suite instead and it fails on the rows the suite left
       # behind, which says nothing about the migrations.
