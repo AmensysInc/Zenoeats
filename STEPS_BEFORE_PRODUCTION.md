@@ -15,47 +15,134 @@ Items marked *(code)* need a change in this repository. Everything else is
 configuration, accounts or process on your side. Ticked items are done; each
 says what changed and where, so it can be checked.
 
-### Where this stands (25 September 2026)
+### Go-live: what is left (updated 27 September 2026)
 
-An end-to-end pass over the running app found the code ready. A card
-payment, the kitchen board, the PIN, cancel-and-refund, the admin portal and
-the security checks all passed. Every *(code)* item is now done: the last of
-them are in PR #20, with section 2.7 listing what that pass found. **What is
-left is accounts, the domain, the server and the lawyer.** Suggested order,
-since each step needs the one before:
+**The code is done.** Release `v1.0.1` is tested end to end, security-audited
+(all twelve findings fixed, see `SECURITY_AUDIT_REPORT.md`), and published as
+`ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.0.1`. `main` is protected:
+every change needs a pull request and green CI.
 
-1. Merge PR #20, then tag the release (§1).
-2. Accounts that need no domain: Stripe live activation (§3.4), Cloudflare
-   R2 and healthchecks.io for backups (§5), Sentry (§6).
-3. Legal details, then the lawyer (§9).
-4. **Last: the domain** (§4.0), then everything that hangs off it: Clerk
-   production (§3.1, §3.2), Stripe webhooks (§3.4), Resend (§3.6) and TLS (§4).
-5. The server and first deploy (§11), a staging rehearsal (§10), then live keys.
+**Nothing below needs code.** It is accounts, the domain, the server and the
+lawyer. Work through it in this order: each step needs the ones before it.
+Tick the boxes here as you go.
+
+**Critical path:** Stripe verification (start today) → domain → server →
+rehearsal → first real order. About a week, gated mostly by Stripe's review
+and the lawyer, not by engineering.
+
+#### Step 1 — Start today (the longest waits)
+
+- [ ] **Activate the Stripe live account**: business details, bank,
+      identity, Connect platform profile. Stripe's review takes 1–3 days.
+      → §3.4
+- [ ] **Save the backup private key.** Copy
+      `C:\Users\lenovo\zenoeats-secrets\backup-age-identity.txt` into a password
+      manager and onto an offline copy (USB). It is the only copy; without it
+      no backup can ever be read. 5 minutes. → §5
+- [ ] **Legal details**: the legal entity name, trading address, a contact
+      email somebody reads, the country (and US state), and the deletion
+      response windows (suggested 7 / 30 days). Those fill the 5
+      `PLACEHOLDER`s in `web/legal/*.html`; then **a lawyer reviews all 4
+      pages** and the draft banners come off. Days, for the lawyer. → §9
+
+#### Step 2 — Accounts that need no domain
+
+- [ ] **Cloudflare R2** bucket `zenoeats-backups` (90-day lifecycle, 30-day
+      bucket lock, bucket-scoped token) and a **healthchecks.io** check.
+      Then test a real backup and restore. 30 minutes. → §5
+- [ ] **Sentry** project; copy its DSN. 10 minutes. → §6
+- [ ] **UptimeRobot** account (the monitors come after the domain).
+      5 minutes. → §6
+
+#### Step 3 — The domain
+
+- [ ] **Buy the domain** and add it to Cloudflare (Free plan, nameservers at
+      the registrar). 1 hour plus propagation. → §4.0
+- [ ] **DNS records** `@`, `*` and `admin` → the VM's IP, proxied; SSL/TLS
+      **Full (strict)**; a **Cloudflare Origin Certificate** for `<domain>`
+      and `*.<domain>`. 30 minutes. → §4.0, §4.1
+- [ ] **Clerk production instance**: primary domain, Clerk's DNS records (DNS
+      only, grey cloud), live keys, webhook. 1 hour. → §3.1
+- [ ] **Google, Apple and Facebook sign-in** credentials in Clerk. Apple needs
+      the $99/year developer programme; all three need the legal pages live
+      on the root domain. Hours to days. → §3.2
+- [ ] **Stripe**: live keys, and the **Connect webhook** at
+      `https://<domain>/api/v1/webhooks/stripe/connect`. 20 minutes. → §3.4
+- [ ] **Resend**: verify the sending domain (SPF/DKIM), set the key and
+      sender. 30 minutes. → §3.6
+
+#### Step 4 — The server
+
+- [ ] **Rent the VM**: Ubuntu 24.04, 2 vCPU / 4 GB. Provider firewall: 80/443
+      from Cloudflare's ranges only, 22 from your IP only. 30 minutes.
+      → §4.1, §11
+- [ ] **Deploy `v1.0.1`**: Docker, clone and check out `v1.0.1`,
+      `make_prod_env.py`, fill in the keys, `--check` until clean, the
+      certificate, `up -d`. 1–2 hours. → §11
+- [ ] **Backups on**: the timer enabled, the first backup lands in R2, and a
+      **restore drill** passes on a machine other than the server.
+      30 minutes. → §5
+- [ ] **Uptime monitors** on `https://<domain>/health/ready` and
+      `/health/operations`. 10 minutes. → §6
+
+#### Step 5 — Before announcing
+
+- [ ] **First restaurant**: create it in the admin portal, create its owner,
+      Stripe onboarding, activate, then "Refresh Stripe" should show
+      "Apple Pay active · Google Pay active". → §3.4, §8
+- [ ] **Rehearsal** in the production shape. → §10
+  - sign-up and sign-in, by email and socially
+  - a card payment with 3-D Secure
+  - Apple Pay and Google Pay on real phones
+  - order → kitchen → PIN, and a refund
+  - the emails arrive
+  - no CSP errors in the console
+- [ ] **Penetration test** by a second person or a professional. →
+      `SECURITY_DEPLOYMENT_CHECKLIST.md` §7
+- [ ] **One real low-value order** end to end with a live card, then refund
+      it. Then announce.
+- [ ] **Sign-off** table in `SECURITY_DEPLOYMENT_CHECKLIST.md` filled in.
+
+#### Can wait until after launch
+
+- The weekly Dependabot pull requests (17 opened on the first run).
+  Routine; each runs CI.
+- Two medium dependency alerts (`uuid`, `stream-json`). Build tools only,
+  not code customers download; fixable with an npm `overrides` entry.
+- Apple "Hide My Email" relay registration. → §3.3
+- The restaurant agreement (fees, disputes, refunds), drafted with the
+  lawyer. → §9
 
 ---
 
 ## 1. Repository and release hygiene
 
 - [x] **[BLOCKER]** Commit the working tree. *Done:* everything is committed
-      and reached `main` through reviewed PRs (#8–#19; #20 open). The tree is
-      clean.
+      and reached `main` through pull requests (#8–#21). The tree is clean.
 - [x] **[BLOCKER]** CI green on the commit you deploy: backend tests, the RLS
       isolation gates (`tests/test_rls_isolation.py`), the reversible-migration
-      check, web lint/typecheck/build. *Green* on `main` (098a78d) and on PR
-      #20. Check it again on the tag itself before deploying it.
-- [ ] **[LAUNCH]** Tag the release and deploy images built from that tag
-      only. After PR #20 is merged:
+      check, web lint/typecheck/build. *Green* on `main` (110e07e) and on the
+      `v1.0.1` tag itself. Branch protection now requires it for every change.
+- [x] **[LAUNCH]** Tag the release and deploy images built from that tag
+      only. *Done:* `v1.0.0` (25 September), then **`v1.0.1`** (26 September,
+      with the security audit, PR #21). **Deploy `v1.0.1`.** CI published
+      `ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.1` and `…/web:v1.0.1`,
+      which are what `API_IMAGE` and `WEB_IMAGE` name (§11). The repository and
+      both images are public, so the server pulls them without logging in.
+      Neither image contains a secret: every key arrives at runtime from
+      `.env`.
+
+      A later release is cut the same way, from `main` once CI is green:
 
       ```powershell
       git checkout main; git pull
-      git tag v1.0.0; git push origin v1.0.0
+      git tag v1.0.2; git push origin v1.0.2
       ```
-
-      CI then publishes `ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.0` and
-      `…/web:v1.0.0`, which are what `API_IMAGE` and `WEB_IMAGE` name (§11).
-      The repository and both images are public, so the server pulls them
-      without logging in. Neither image contains a secret: every key arrives
-      at runtime from `.env`.
+- [x] **[LAUNCH]** `main` is protected (26 September): a pull request and
+      the four CI checks (`secrets`, `backend`, `frontend`, `docker`) are
+      required, admins included, and force pushes and deletion are refused.
+      Dependabot alerts and updates, secret scanning and push protection are
+      on.
 - [x] **[LAUNCH]** `README.md` → "Before real money" was stale (it said rate
       limiting was unused). *Fixed:* it now points here as the source of truth.
 
@@ -326,6 +413,27 @@ found no bug in the ordering path. What it did find:
       deletion was by email only, after PR #19 had added self-service
       closing. *Fixed:* it leads with Manage profile → Personal details →
       Close my account, and email is the fallback.
+
+---
+
+### 2.8 Security audit (25–26 September 2026, PR #21, release v1.0.1)
+
+A full audit of the ten primary and thirteen supplementary categories found
+twelve issues, none critical, and **all twelve are fixed**. They include:
+
+- the guest order-view token was being written to access logs
+- an open redirect on the sign-in pages
+- sign-in limits were per IP only, not per account
+- CSV formula injection in the admin export
+- the web container ran as root
+- no container limits
+- CI supply-chain hygiene
+- no branch protection
+
+Every check, finding, test and remaining production-only step is in
+`SECURITY_AUDIT_REPORT.md`, `SECURITY_TEST_MATRIX.md` and
+`SECURITY_DEPLOYMENT_CHECKLIST.md`. The last one holds the sign-off table
+that must be filled in before go-live.
 
 ---
 
@@ -713,7 +821,7 @@ root domain and every subdomain.
 ## 7. Production configuration
 
 Every setting the backend reads, with what it must be in production.
-**`python3 scripts/make_prod_env.py --domain <domain> --release v1.0.0`
+**`python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1`
 writes the whole file** (§11): it generates every secret, sets every value
 below that does not come from an account, and leaves those that do empty.
 `--check .env` lists what is still missing.
@@ -723,7 +831,7 @@ below that does not come from an account, and leaves those that do empty.
 | `ENV` | `production` | **[BLOCKER]** Secure cookies, no `/docs`, no error details, and the startup safety checks (§2.1). |
 | `ROOT_DOMAIN` | e.g. `zenoeats.com` | Tenant resolution, CORS, the Clerk token origin check, the nginx template. |
 | `ALLOW_TEST_KEYS` | `false` | `true` on staging only. Production refuses test keys without it (§2.7). |
-| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.0.0` | The release to run. Never built on the server. |
+| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.0.1` | The release to run. Never built on the server. |
 | `POSTGRES_PASSWORD` | generated | The Postgres superuser. |
 | `ZENOEATS_MIGRATE_PASSWORD`, `_APP_`, `_SYSTEM_` | generated, hex | The three roles. Applied when the volume is first created; later changes are an `ALTER ROLE`. |
 | `REDIS_BROKER_PASSWORD`, `REDIS_RUNTIME_PASSWORD` | generated, hex | |
@@ -913,20 +1021,21 @@ that. Everything below runs on it, as a user with `sudo`.
    ```bash
    sudo git clone https://github.com/haswanth13901/zenoeats-mvp.git /opt/zenoeats
    sudo chown -R $USER: /opt/zenoeats
-   cd /opt/zenoeats && git checkout v1.0.0
+   cd /opt/zenoeats && git checkout v1.0.1
    ```
 
 4. **The production `.env`** (§7):
 
    ```bash
-   python3 scripts/make_prod_env.py --domain <domain> --release v1.0.0
+   python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1
    ```
 
    Fill in each value marked `# FILL IN:` from §3 (Clerk, Stripe, Resend,
    Sentry). For `ADMIN_USERS`:
 
    ```bash
-   docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.0      python scripts/hash_password.py you@example.com
+   docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.1 \
+     python scripts/hash_password.py you@example.com
    ```
 
    Then `python3 scripts/make_prod_env.py --check .env` until it lists
