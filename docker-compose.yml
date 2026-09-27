@@ -251,6 +251,23 @@ services:
     # the app profile. It prefers Docker service DNS when available and uses
     # zenoeats-host as the backup for native development.
 
+  # Optional HTTPS on this laptop: https://spicehouse.zenoeats.local:8443.
+  # TLS in front of the nginx service above, behind its own profile, so it
+  # starts only when asked for:
+  #   docker compose --profile app --profile https up -d
+  # Needs infra/certs-local/ (git-ignored); see README, "HTTPS on this
+  # laptop". Production HTTPS is docker-compose.prod.yml, not this.
+  https:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    profiles: ["https"]
+    volumes:
+      - ./infra/nginx/local-https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infra/certs-local:/etc/nginx/certs:ro
+    ports:
+      - "8443:8443"
+    depends_on:
+      - nginx
+
 volumes:
   pgdata:
   redisbroker:

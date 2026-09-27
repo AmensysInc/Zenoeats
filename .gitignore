@@ -25,3 +25,5 @@ dist/
 # Local screenshots, run logs and verification evidence. Everything under
 # artifacts/ is produced by a local run, so none of it is source.
 /artifacts/
+# Local HTTPS certificate for *.zenoeats.local (see README). Never committed.
+/infra/certs-local/
