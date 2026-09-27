@@ -20,7 +20,9 @@ the ordering path. It covered:
 What remains before real money is accounts, the domain, the server and a
 legal review, tracked in
 [`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md). See
-[Production](#production) below.
+[Production](#production), and the
+[Production setup guide](#production-setup-guide) for Stripe, Clerk, Google
+Maps and every other account step by step.
 
 ## What is in this build
 
@@ -363,7 +365,10 @@ make setup          # copies .env.example to .env
 make key            # prints a Fernet key -> FIELD_ENCRYPTION_KEY
 ```
 
-Then fill in `.env`:
+Then fill in `.env`. What follows is the **development** setup, with test
+keys. Production accounts (Stripe live, a Clerk production instance, Google
+keys for the real domain) are in the
+[Production setup guide](#production-setup-guide).
 
 **Sessions.** Set `SESSION_SECRET` (`openssl rand -base64 32`). It signs the
 admin and staff session cookies.
@@ -891,7 +896,7 @@ The target is a single Linux VM (2 vCPU / 4 GB is a sensible floor) running
 the images CI publishes. Nothing is built on the server:
 
 ```bash
-python3 scripts/make_prod_env.py --domain <domain> --release v1.0.0   # once
+python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1   # once
 python3 scripts/make_prod_env.py --check .env                         # until clean
 export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 docker compose --profile app pull && docker compose --profile app up -d
@@ -917,7 +922,363 @@ What the production shape guarantees:
 [`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) is the launch
 checklist, with what is done and what is open: accounts, the domain, backups,
 monitoring, legal, a staging rehearsal. Its §11 is the first deploy, command
-by command. Keep it current rather than a list here.
+by command. Keep it current rather than a list here. Every account and
+setting it needs is explained step by step in the
+[Production setup guide](#production-setup-guide) below.
+
+## Production setup guide
+
+Every external account and setting that production needs: what to create,
+where to click, and which setting in `.env` each value fills. Do them in the
+order below; later sections assume earlier ones. The day-by-day checklist,
+with progress ticks, is the go-live list at the top of
+[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md).
+
+Throughout, `<domain>` is your root domain (for example `zenoeats.com`).
+Restaurants live at `<slug>.<domain>` and the platform portal at
+`admin.<domain>`. Create every production account **separately** from the
+development ones; never reuse development keys.
+
+| # | Service | Needed for | Settings it fills |
+|---|---|---|---|
+| 1 | Cloudflare (domain, DNS, TLS) | Everything else | `ROOT_DOMAIN`, `infra/certs/` |
+| 2 | Stripe (live, Connect) | Taking payments | `STRIPE_*`, `PLATFORM_FEE_*` |
+| 3 | Clerk (production instance) | Customer sign-in | `CLERK_*`, `VITE_CLERK_PUBLISHABLE_KEY` |
+| 4 | Google Maps Platform | Delivery: addresses, fees, tracking map | `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_BROWSER_KEY` |
+| 5 | Resend | Order confirmations, staff invitations | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` |
+| 6 | Sentry | Error tracking | `SENTRY_DSN` |
+| 7 | Cloudflare R2, healthchecks.io | Off-site backups | `/etc/zenoeats/backup.env` |
+| 8 | UptimeRobot (or similar) | Downtime alerts | — |
+| 9 | Platform administrators | The super admin portal | `ADMIN_USERS` |
+
+Generate the `.env` first, on the server, and fill it in as you go:
+`python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1`. It
+creates every secret and password itself, and marks each value that has to
+come from one of the accounts below with `# FILL IN:`. Run
+`python3 scripts/make_prod_env.py --check .env` at any point to see what is
+still missing.
+
+### 1. Domain, DNS and HTTPS (Cloudflare)
+
+1. **Buy the domain** from any registrar. Cloudflare Registrar sells at cost.
+2. **Add it to Cloudflare** (Free plan): *Add a site*, then replace the
+   nameservers at the registrar with the two Cloudflare shows. Wait until
+   the site is *Active*.
+3. **DNS → Records.** Point all three at the server's public IPv4 address,
+   **Proxied** (orange cloud):
+
+   | Type | Name | Content |
+   |---|---|---|
+   | A | `@` | server IP |
+   | A | `*` | server IP |
+   | A | `admin` | server IP |
+
+   Records that Clerk (§3) and Resend (§5) ask for later must be **DNS only**
+   (grey cloud).
+4. **SSL/TLS → Overview:** mode **Full (strict)**. **Edge Certificates:**
+   *Always Use HTTPS* on, *Minimum TLS Version* 1.2.
+5. **SSL/TLS → Origin Server → Create Certificate:** RSA, hostnames
+   `<domain>` and `*.<domain>`, validity 15 years. On the server, save the
+   certificate as `infra/certs/fullchain.pem` and the private key as
+   `infra/certs/privkey.pem`, then `chmod 600` the key. The folder is
+   git-ignored.
+6. In `.env`: `ROOT_DOMAIN=<domain>` (set by `make_prod_env.py --domain`).
+
+Visitors see Cloudflare's publicly trusted certificate, so there is nothing
+to install on any device. The origin certificate only secures the hop from
+Cloudflare to the server.
+
+### 2. Stripe (live payments, Connect)
+
+Zenoeats is a Stripe **Connect platform** using **direct charges**. Each
+restaurant has its own connected Stripe account: it is the merchant of
+record, is paid out directly, and handles its own refunds and disputes.
+Zenoeats' optional commission is an application fee on each charge.
+
+**2.1 Activate the platform account.** Create a Stripe account for the
+business (or use your existing one), then complete *Activate payments*:
+- legal entity and address
+- representative and identity verification
+- bank account for payouts
+- statement descriptor
+
+Stripe's review can take **1–3 business days**, so start this first.
+
+**2.2 Set up Connect.** Dashboard → **Connect** → complete the platform
+onboarding and **platform profile**. The app creates each connected account
+through the API with its own full Stripe Dashboard, liable for its own fees
+and losses, and charges directly on that account. Choose the options that
+match (a platform whose sellers are businesses with their own Dashboard, and
+direct charges). Under **Connect → Settings → Branding**, add the name, icon
+and colour restaurants will see during onboarding.
+
+**2.3 Live API keys.** Dashboard in **live mode** → **Developers → API
+keys**:
+- Publishable key `pk_live_…` → `STRIPE_PUBLISHABLE_KEY`
+- Secret key `sk_live_…` → `STRIPE_SECRET_KEY`. Store it only in the
+  server's `.env`.
+
+The API refuses to start in production with test keys, or with one test key
+and one live key.
+
+**2.4 The Connect webhook.** **Developers → Webhooks → Add endpoint**
+(called a destination in newer dashboards):
+- **Events from:** *Connected accounts*. This is not *Your account*:
+  payments happen on the restaurants' accounts.
+- **Endpoint URL:** `https://<domain>/api/v1/webhooks/stripe/connect`
+- **Events:** `payment_intent.succeeded`, `payment_intent.payment_failed`,
+  `payment_intent.canceled`, `charge.refunded`, `account.updated`
+
+Copy the endpoint's **signing secret** (`whsec_…`) into
+`STRIPE_CONNECT_WEBHOOK_SECRET`. The worker processes the events: keep at
+least one `worker` running. If a webhook is ever late, the order page still
+confirms the payment by asking Stripe directly after about ten seconds.
+
+**2.5 Your commission.** `PLATFORM_FEE_BPS` (basis points: 250 = 2.5%) and
+`PLATFORM_FEE_FIXED_MINOR` (cents: 30 = $0.30). Both `0` means no fee.
+Changes apply to orders paid afterwards.
+
+**2.6 Each restaurant** is connected from the super admin portal, never in
+the Stripe Dashboard by hand:
+1. Create the restaurant.
+2. Create its owner. The connected account is contactable at the owner's
+   email, so do this first.
+3. **Connect Stripe** hands the owner to Stripe-hosted onboarding.
+4. **Refresh Stripe** reads the result back.
+5. **Activate**, which is refused until the account can take charges.
+
+Activation and Refresh Stripe also register `<slug>.<domain>` for **Apple
+Pay and Google Pay** on that restaurant's account. The row then shows
+"Apple Pay active · Google Pay active". There is no domain-association file
+to host.
+
+**2.7 Stripe Tax (optional, per restaurant).** For automatic sales tax, the
+restaurant, **in its own Stripe Dashboard → Tax**:
+- sets its head-office address and preset tax code
+- **adds a tax registration** for each state it collects in
+
+Without a registration Stripe calculates zero tax, silently. Then, in the
+super admin portal, fill in the pickup address, set the tax mode to *Stripe
+Tax* (the save checks Stripe), and activate. The product tax code is
+`txcd_40060003` (food for immediate consumption). Stripe bills per
+calculation.
+
+**2.8 Before real money.**
+- Confirm **email receipts** are enabled for connected accounts.
+- Tell restaurants they receive payouts directly and handle disputes.
+- Complete Stripe's annual **PCI** self-assessment (SAQ A: card data never
+  touches the servers).
+- Place one real low-value order end to end, then refund it.
+
+### 3. Clerk (customer sign-in)
+
+Customers sign in on the app's own `/account` pages; Clerk provides
+identity underneath. Staff and platform admins never use Clerk.
+
+**3.1 Production instance.** In the Clerk dashboard, create the application
+(or open the existing one) and **create a production instance**. Keep the
+development instance for development.
+
+**3.2 Domain.** Set the production instance's **primary domain** to the root
+domain `<domain>`, not a restaurant subdomain. One sign-in then covers every
+restaurant.
+
+**3.3 DNS.** Clerk lists the records it needs, typically CNAMEs for `clerk`,
+`accounts` and `clkmail`, plus two DKIM records. Add each in Cloudflare as
+**DNS only** (grey cloud), then wait for Clerk to verify them.
+`clerk`, `accounts` and `clkmail` are reserved slugs, so no restaurant can
+take them.
+
+**3.4 Sign-in methods** (**User & authentication**):
+- **Email address**, with verification by **email code**. The pages expect
+  6-digit codes, not links.
+- **Password.**
+- Optionally **multi-factor**: the sign-in page already handles
+  authenticator-app, SMS, email and backup codes.
+- Keep **bot protection** on. The sign-up page includes Clerk's captcha
+  element.
+
+**3.5 Social sign-in.** A production instance needs your own credentials for
+each provider. Each provider's page in Clerk shows the **redirect URI** to
+paste into that provider. A button appears in the app for every provider
+you enable.
+
+- **Google:**
+  1. Google Cloud console → **OAuth consent screen**: publish it, with
+     `https://<domain>/legal/privacy` and `https://<domain>/legal/terms`.
+  2. **Credentials → OAuth client ID → Web application**, with Clerk's
+     redirect URI.
+  3. Put the client ID and secret in Clerk.
+- **Facebook:**
+  1. developers.facebook.com → **create an app** with Facebook Login.
+  2. Set *Valid OAuth Redirect URIs* to Clerk's redirect URI.
+  3. Add the **Privacy Policy URL** and the **data deletion instructions
+     URL** (`https://<domain>/legal/data-deletion`).
+  4. Put the App ID and secret in Clerk, then switch the app to **Live**.
+- **Apple** (needs the Apple Developer Program, $99/year):
+  1. Create an **App ID** with *Sign in with Apple*.
+  2. Create a **Services ID** with the web domain and Clerk's return URL.
+  3. Create a **Key** with *Sign in with Apple* and download the `.p8` (only
+     possible once).
+  4. Enter the Services ID, Team ID, Key ID and the key's contents in Clerk.
+
+Google, Facebook and Apple review the legal pages. They must be the final,
+lawyer-reviewed versions on the root domain (see
+[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §9).
+
+**3.6 Keys.** Production instance → **API keys**:
+
+| Clerk shows | Setting |
+|---|---|
+| Publishable key `pk_live_…` | `VITE_CLERK_PUBLISHABLE_KEY` (read by the web container at start) |
+| Secret key `sk_live_…` | `CLERK_SECRET_KEY` |
+| Frontend API URL (`https://clerk.<domain>`) | `CLERK_ISSUER` |
+| JWKS URL (`https://clerk.<domain>/.well-known/jwks.json`) | `CLERK_JWKS_URL` |
+
+**3.7 Webhook.** **Webhooks → Add endpoint**:
+`https://<domain>/api/v1/webhooks/clerk`, events `user.created`,
+`user.updated` and `user.deleted`. Copy its signing secret into
+`CLERK_WEBHOOK_SECRET`. This keeps customer records in step with Clerk, and
+is how a deletion made in the Clerk dashboard reaches the app.
+
+**3.8 Polish.** Brand the **email templates** (verification and reset codes)
+with the Zenoeats name and sender. Choose the **session lifetime** and
+inactivity timeout.
+
+### 4. Google Maps Platform (delivery)
+
+Needed only for delivery. It turns an address into a distance and fee,
+suggests addresses at checkout, and shows the live tracking map. Without it
+the app works for pickup, and the portal says delivery is unavailable.
+
+> **Use your existing Google Cloud project.** The checkout's address
+> suggestions use the Places Autocomplete widget from **Places API
+> (Legacy)**, which Google no longer offers to new customers (since 1 March
+> 2025). A project that already has it enabled keeps it; a brand-new
+> project may not be able to enable it, and suggestions would then fail.
+> Create the production keys in the project development already uses.
+> Moving the checkout to Google's newer Places widget is a planned
+> follow-up.
+
+**4.1 Project and billing.** In the Google Cloud console, open the project
+and confirm a **billing account** is attached. It is required even though
+the free monthly allowance covers normal volume. Add a **budget alert**
+(Billing → Budgets & alerts).
+
+**4.2 APIs** (APIs & Services → Library), all enabled:
+- **Maps JavaScript API:** the tracking map and the checkout widget
+- **Places API (Legacy):** address suggestions at checkout
+- **Geocoding API:** address → coordinates, on the server
+- **Routes API:** delivery arrival estimates, on the server
+
+**4.3 Two keys, never one.** APIs & Services → **Credentials → Create
+credentials → API key**, twice:
+
+| | Server key → `GOOGLE_MAPS_API_KEY` | Browser key → `GOOGLE_MAPS_BROWSER_KEY` |
+|---|---|---|
+| Used by | The API server only; never reaches a browser | Customers' browsers (it is public by design) |
+| Application restriction | **IP addresses**: the server's public outbound IPv4 | **Websites**: `https://*.<domain>/*` and `https://<domain>/*` |
+| API restrictions | Geocoding API, Routes API | Maps JavaScript API, Places API (Legacy) |
+
+For development, add these to the browser key's websites too:
+- `http://spicehouse.zenoeats.local:8080/*`
+- `https://*.zenoeats.local:8443/*`, for the local HTTPS door
+
+A site missing from the list fails with `RefererNotAllowedMapError` in the
+browser console, and no suggestions appear. Key changes can take a few
+minutes to apply.
+
+**4.4 Check it.** Open a storefront → checkout → **Delivery**, and type part
+of a real address. Suggestions appear; pick one, and a delivery fee replaces
+the "checking address" message. A restaurant must also have placed itself on
+the map and drawn its delivery rings (portal → Settings → Delivery).
+
+### 5. Resend (email)
+
+The app sends two kinds of email itself: order confirmations and staff
+invitations. Customer verification codes come from Clerk (§3).
+
+1. resend.com → **Domains → Add domain**: use `<domain>` or a subdomain
+   such as `mail.<domain>`. Add the SPF and DKIM records it lists in
+   Cloudflare, as **DNS only**, and wait for *Verified*.
+2. **API Keys → Create**, with *Sending access* for that domain →
+   `RESEND_API_KEY`.
+3. In `.env`:
+   - `EMAIL_FROM=Zenoeats <orders@<domain>>`: must be on the verified domain
+   - `EMAIL_REPLY_TO=`: an inbox someone reads
+   - `STOREFRONT_URL_TEMPLATE=https://{slug}.{root_domain}`: where links in
+     emails point, already set by `make_prod_env.py`
+
+With `RESEND_API_KEY` empty nothing is sent, and the portal says so.
+
+### 6. Sentry (errors)
+
+sentry.io → **Create project** → platform *Python / FastAPI* → copy the
+**DSN** into `SENTRY_DSN`. `make_prod_env.py` already sets
+`SENTRY_ENVIRONMENT` and `RELEASE`. Request bodies, local variables and
+personal data are never sent (`backend/app/core/observability.py`). To
+check it, trigger a test error after deploying and confirm it arrives
+without customer data.
+
+### 7. Backups (Cloudflare R2, healthchecks.io)
+
+Nightly, encrypted, off-site, with a restore drill. The full procedure is
+[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §5. In short:
+
+1. **Cloudflare → R2:**
+   - create the bucket `zenoeats-backups`
+   - add a lifecycle rule deleting objects after **90 days**
+   - add a **bucket lock** of **30 days**
+   - create an API token for **Object Read & Write** on that bucket only
+2. **healthchecks.io:** a check named `zenoeats-backup`, period 1 day, grace
+   2 hours.
+3. **The encryption key:** the **public** age key goes on the server; the
+   **private** key goes in a password manager and an offline copy, never on
+   the server.
+4. On the server:
+   1. Write `/etc/zenoeats/backup.env` (mode 600).
+   2. Install `age` and `rclone`.
+   3. Enable `infra/systemd/zenoeats-backup.timer`.
+   4. Run it once.
+   5. Run `scripts/restore_drill.sh` from another machine.
+
+### 8. Monitoring
+
+In UptimeRobot, Better Stack or similar, add two HTTP monitors that alert on
+anything but a 200:
+
+- `https://<domain>/health/ready`: the database, as the app role
+- `https://<domain>/health/operations`: workers and beat, webhooks, stale
+  checkouts, Redis, disk (see [Health checks](#health-checks))
+
+### 9. Platform administrators
+
+Each operator of the super admin portal (`https://admin.<domain>/admin`) has
+a named entry in `ADMIN_USERS`, which the audit log records. On the server:
+
+```bash
+docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.1 \
+  python scripts/hash_password.py you@example.com
+```
+
+It asks for the password twice (at least 12 characters) and prints one
+`email:hash` line. Put it in `ADMIN_USERS`; separate several operators with
+`;`. Removing an entry ends that operator's access at their next request.
+
+### 10. Going live
+
+With every account above done and `make_prod_env.py --check .env` clean,
+deploy on the server as in
+[`STEPS_BEFORE_PRODUCTION.md`](STEPS_BEFORE_PRODUCTION.md) §11. Then:
+
+1. **Rehearse in test mode first.** Generate the `.env` with `--staging`,
+   which allows Stripe and Clerk test keys and nothing else, and run the
+   §10 rehearsal on the real domain.
+2. **Switch to live:** the live Stripe and Clerk keys, `ALLOW_TEST_KEYS=false`.
+3. Create the first restaurant (§2.6), place one real low-value order end to
+   end, and refund it.
+4. Complete the sign-off in
+   [`SECURITY_DEPLOYMENT_CHECKLIST.md`](SECURITY_DEPLOYMENT_CHECKLIST.md).
 
 ## Delivery
 
