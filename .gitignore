@@ -19,8 +19,14 @@ dist/
 # Design-system snapshot for importing into Claude Design. Local only.
 /DESIGN_CONTEXT.md
 
-# Redesign reference package (handoff docs, component library). Design material, not app code.
-/design/Zenoeats-Design-Package/
+# Redesign reference package (handoff docs, component library, generated
+# images): about 100 MB of design material, not app code. Kept locally and
+# never published -- the repository is public, and git keeps every byte
+# forever. web/qa/references.mjs reads it from here.
+/docs/design/design/
+
+# Claude Code's per-machine permissions for this project.
+/.claude/
 
 # Local screenshots, run logs and verification evidence. Everything under
 # artifacts/ is produced by a local run, so none of it is source.
