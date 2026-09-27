@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens (design/…/design-tokens.json, revision 06; the customer
+/* Design tokens (docs/design/design/…/design-tokens.json, revision 06; the customer
  * overrides are in `customerOverrides` there).
  *
  * Colours are bare RGB channels so Tailwind can apply opacity modifiers to

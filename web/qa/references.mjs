@@ -3,7 +3,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 const { chromium }=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 const root=path.resolve(import.meta.dirname,"../..");
-const frames=JSON.parse(await fs.readFile(path.join(root,"design/zenoeats-design-package/frame-manifest.json"),"utf8"));
+// The design package is local material, kept out of git (see .gitignore).
+// The folder name is spelled exactly, so this also works where paths are case-sensitive.
+const pkg=path.join(root,"docs/design/design/Zenoeats-Design-Package");
+const frames=JSON.parse(await fs.readFile(path.join(pkg,"frame-manifest.json"),"utf8"));
 const out=path.join(root,"artifacts/redesign/references");await fs.mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true});
 const rows=[];let cursor=0;

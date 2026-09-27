@@ -2,7 +2,7 @@ import type { Config } from "tailwindcss";
 
 /**
  * Every value here reads a CSS variable declared in src/styles/globals.css,
- * which is where the design tokens live (design/…/design-tokens.json). The
+ * which is where the design tokens live (docs/design/design/…/design-tokens.json). The
  * variables hold bare RGB channels so opacity modifiers such as `bg-brick/5`
  * keep working: Tailwind substitutes `<alpha-value>` for them.
  *
