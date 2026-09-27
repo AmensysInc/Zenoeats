@@ -1,0 +1,21 @@
+# Who is asked to review a pull request, by path. The last matching line wins.
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# One owner today. As the team grows, give the sensitive areas below their own
+# reviewers -- they are listed now so that is a one-line change.
+
+*                                   @haswanth13901
+
+# Security-sensitive: identity, sessions, tenancy, payments, configuration.
+/backend/app/core/                  @haswanth13901
+/backend/app/api/deps.py            @haswanth13901
+/backend/app/api/v1/webhooks.py     @haswanth13901
+/backend/app/services/stripe*.py    @haswanth13901
+/backend/alembic/                   @haswanth13901
+/web/login/                         @haswanth13901
+
+# How the app is built, deployed and backed up.
+/.github/                           @haswanth13901
+/infra/                             @haswanth13901
+/docker-compose*.yml                @haswanth13901
+/scripts/                           @haswanth13901

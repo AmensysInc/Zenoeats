@@ -37,7 +37,7 @@ GRANT CONNECT ON DATABASE zenoeats TO zenoeats_migrate, zenoeats_app, zenoeats_s
 -- On a managed database (RDS, Cloud SQL) this file does not run and the
 -- provider may not allow the grant. Create the two extensions as the
 -- superuser before the first migration instead; both are IF NOT EXISTS, so
--- the migration then passes over them. See STEPS_BEFORE_PRODUCTION.md.
+-- the migration then passes over them. See docs/operations/STEPS_BEFORE_PRODUCTION.md.
 GRANT CREATE ON DATABASE zenoeats TO zenoeats_migrate;
 
 -- The migrate role owns the schema, so it needs CREATE.

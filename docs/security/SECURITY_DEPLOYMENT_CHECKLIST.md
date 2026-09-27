@@ -1,7 +1,7 @@
 # Security deployment checklist — Zenoeats
 
 Security-specific gates for going live. It complements
-`STEPS_BEFORE_PRODUCTION.md`, which has the full step-by-step deploy (§11),
+`docs/operations/STEPS_BEFORE_PRODUCTION.md`, which has the full step-by-step deploy (§11),
 and doesn't repeat it. Tick every box, and get the sign-off at the end,
 before real money.
 

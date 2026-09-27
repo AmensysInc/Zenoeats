@@ -18,7 +18,7 @@ says what changed and where, so it can be checked.
 ### Go-live: what is left (updated 27 September 2026)
 
 **The code is done.** Release `v1.0.1` is tested end to end, security-audited
-(all twelve findings fixed, see `SECURITY_AUDIT_REPORT.md`), and published as
+(all twelve findings fixed, see `docs/security/SECURITY_AUDIT_REPORT.md`), and published as
 `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.0.1`. `main` is protected:
 every change needs a pull request and green CI.
 
@@ -134,10 +134,10 @@ account and the rest of this list is ticked.
   - the emails arrive
   - no CSP errors in the console
 - [ ] **Penetration test** by a second person or a professional. →
-      `SECURITY_DEPLOYMENT_CHECKLIST.md` §7
+      `docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md` §7
 - [ ] **One real low-value order** end to end with a live card, then refund
       it. Then announce.
-- [ ] **Sign-off** table in `SECURITY_DEPLOYMENT_CHECKLIST.md` filled in.
+- [ ] **Sign-off** table in `docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md` filled in.
 
 #### Can wait until after launch
 
@@ -467,8 +467,8 @@ twelve issues, none critical, and **all twelve are fixed**. They include:
 - no branch protection
 
 Every check, finding, test and remaining production-only step is in
-`SECURITY_AUDIT_REPORT.md`, `SECURITY_TEST_MATRIX.md` and
-`SECURITY_DEPLOYMENT_CHECKLIST.md`. The last one holds the sign-off table
+`docs/security/SECURITY_AUDIT_REPORT.md`, `docs/security/SECURITY_TEST_MATRIX.md` and
+`docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md`. The last one holds the sign-off table
 that must be filled in before go-live.
 
 ---
