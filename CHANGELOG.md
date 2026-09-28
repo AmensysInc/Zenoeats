@@ -27,7 +27,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 - Email is sent through SendGrid instead of Resend. `RESEND_API_KEY` is
   replaced by `SENDGRID_API_KEY`, and `EMAIL_FROM` must be a sender SendGrid
-  has verified (#51).
+  has verified (#52).
 - The refund policy gives the same 10 to 14 business days as the order page
   (#49).
 - Documentation moved under `docs/`: `operations/`, `security/`, `design/`,
