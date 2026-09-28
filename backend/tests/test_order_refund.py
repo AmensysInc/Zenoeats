@@ -6,6 +6,8 @@ exactly like one that had been. The cancellation now carries the refund, and
 a refund Stripe refuses is said out loud rather than assumed.
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import text
 
@@ -195,6 +197,64 @@ def test_the_kitchen_cannot_refund(shop, stripe_refunds):
     _post(shop.manager, order_id, "cancel", reason="Never collected", refund=False)
     assert _post(shop.cook, order_id, "refund", reason="here you go").status_code == 403
     assert stripe_refunds.calls == []
+
+
+# --- what the customer's order page is told --------------------------------
+
+def _as_customer(shop, order_id):
+    """The order as its tracking page receives it.
+
+    Serialized directly rather than fetched: the test restaurant is a draft,
+    which the customer surface does not resolve at all.
+    """
+    from sqlalchemy import select
+
+    from app.api.v1.orders import _serialize
+    from app.models import Order, Payment
+
+    with tenant_session(shop.id) as session:
+        order = session.get(Order, uuid.UUID(order_id))
+        payment = session.execute(
+            select(Payment).where(Payment.order_id == order.id)
+        ).scalar_one()
+        return _serialize(order, payment, include_pin=False).model_dump()
+
+
+def test_the_customer_is_told_the_restaurant_cancelled_and_refunded(shop, stripe_refunds):
+    order_id = shop.order(status="PREPARING")
+    _with_intent(shop.id, order_id)
+    _post(shop.manager, order_id, "cancel", reason="Kitchen closed early")
+
+    body = _as_customer(shop, order_id)
+    assert body["cancelled_by_restaurant"] is True
+    assert body["refund_minor"] == 1500
+
+
+def test_a_refund_still_pending_is_shown_as_the_whole_charge(shop, stripe_refunds):
+    """Stripe accepted it but the webhook has not said how much yet. A
+    restaurant refund is always the whole charge, so that is the figure."""
+    order_id = shop.order(status="PREPARING")
+    _with_intent(shop.id, order_id)
+    stripe_refunds.pends()
+    _post(shop.manager, order_id, "cancel", reason="Out of stock")
+
+    assert _as_customer(shop, order_id)["refund_minor"] == 1500
+
+
+def test_no_refund_is_promised_when_none_was_issued(shop, stripe_refunds):
+    order_id = shop.order(status="READY_FOR_PICKUP")
+    _with_intent(shop.id, order_id)
+    _post(shop.manager, order_id, "cancel", reason="Never collected", refund=False)
+
+    body = _as_customer(shop, order_id)
+    assert body["cancelled_by_restaurant"] is True
+    assert body["refund_minor"] is None
+
+
+def test_a_live_order_is_not_cancelled_by_anyone(shop):
+    body = _as_customer(shop, shop.order(status="PREPARING"))
+    assert body["cancelled_by_restaurant"] is False
+    assert body["refund_minor"] is None
 
 
 # --- what is actually asked of Stripe --------------------------------------

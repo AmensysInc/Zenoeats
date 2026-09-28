@@ -473,6 +473,12 @@ class OrderOut(BaseModel):
     tracking: TrackingOut | None = None
     expires_at: datetime | None = None
     created_at: datetime
+    # True when the restaurant cancelled a paid order, as opposed to a payment
+    # that was never completed.
+    cancelled_by_restaurant: bool = False
+    # What is on its way back to the customer's card, once a refund has been
+    # issued. Null while nothing has been refunded.
+    refund_minor: int | None = None
 
 
 class PaymentIntentOut(BaseModel):

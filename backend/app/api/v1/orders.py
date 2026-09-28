@@ -113,7 +113,28 @@ def _serialize(
         tracking=tracking_out,
         expires_at=order.expires_at,
         created_at=order.created_at,
+        cancelled_by_restaurant=(
+            order.status == OrderStatus.CANCELLED.value
+            and order.cancelled_reason == "CANCELLED_BY_RESTAURANT"
+        ),
+        refund_minor=_refund_minor(payment),
     )
+
+
+def _refund_minor(payment: Payment | None) -> int | None:
+    """The amount going back to the customer, once a refund has been issued.
+
+    A refund Stripe has only accepted has no amount recorded yet -- the
+    webhook writes that -- but a restaurant refund is always the whole
+    charge, so the charge is the figure to show until the webhook lands.
+    """
+    if payment is None:
+        return None
+    if payment.refunded_minor > 0:
+        return payment.refunded_minor
+    if payment.status in (PaymentStatus.REFUND_PENDING.value, PaymentStatus.REFUNDED.value):
+        return payment.amount_minor
+    return None
 
 
 @router.post(

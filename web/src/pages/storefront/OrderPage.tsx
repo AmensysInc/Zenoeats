@@ -127,6 +127,14 @@ export function OrderPage() {
   const delivering = order.fulfillment_type === "DELIVERY";
   const copy = (delivering ? DELIVERY_COPY[order.status] : undefined) ??
     STATUS_COPY[order.status] ?? { title: order.status, detail: "" };
+  // Only once the restaurant has actually issued the refund: a cancellation
+  // made without one must not promise money that is not on its way.
+  const refundNotice =
+    order.status === "CANCELLED" && order.cancelled_by_restaurant && order.refund_minor
+      ? `Your order #${order.order_number} has been cancelled, and a refund of ` +
+        `${money(order.refund_minor, order.currency)} will be credited to your original ` +
+        "payment method within 10 to 14 business days."
+      : null;
   const awaitingPayment =
     order.status === "PENDING_PAYMENT" && order.payment_status !== "PAID";
   const steps = delivering ? DELIVERY_STEPS : PICKUP_STEPS;
@@ -158,7 +166,7 @@ export function OrderPage() {
             >
               {copy.title}
             </h1>
-            <p className="text-muted">{copy.detail}</p>
+            <p className="text-muted">{refundNotice ?? copy.detail}</p>
           </div>
 
           {step >= 0 && (
@@ -176,16 +184,20 @@ export function OrderPage() {
 
           {/* From the moment payment is confirmed: the steps, the driver,
               and once it leaves the restaurant, the live map. */}
+          {/* Spaced from the text above when there are no progress marks
+              between them, as on a cancelled order. */}
           {order.tracking && (
-            <DeliveryTracking
-              tracking={order.tracking}
-              status={order.status}
-              destination={order.delivery_address}
-              mapsKey={portal.data?.maps_browser_key ?? null}
-              restaurantName={portal.data?.name ?? "The restaurant"}
-              pins={pins}
-              style={style}
-            />
+            <div className={step < 0 ? "mt-6" : undefined}>
+              <DeliveryTracking
+                tracking={order.tracking}
+                status={order.status}
+                destination={order.delivery_address}
+                mapsKey={portal.data?.maps_browser_key ?? null}
+                restaurantName={portal.data?.name ?? "The restaurant"}
+                pins={pins}
+                style={style}
+              />
+            </div>
           )}
 
           {awaitingPayment && (
