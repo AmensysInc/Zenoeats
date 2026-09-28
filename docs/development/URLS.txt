@@ -4,17 +4,45 @@
 
  Local development. Replace "spicehouse" with any restaurant slug.
  Production swaps "zenoeats.local:8080" for "zenoeats.com".
- HTTPS on this laptop (optional, README "HTTPS on this laptop"): the same
- addresses as https://<name>.zenoeats.local:8443/...
+ Every page also works over HTTPS on this laptop -- see section 0.
 
- IMPORTANT: Browse through nginx on :8080 (or a *.zenoeats.local subdomain on
- :3000). The restaurant is resolved from the Host header, so plain
- localhost:3000/manage will NOT work.
+ IMPORTANT: Browse through nginx on :8080 (HTTPS: :8443), or a
+ *.zenoeats.local subdomain on :3000. The restaurant is resolved from the
+ Host header, so plain localhost:3000/manage will NOT work.
 
  Hosts file entries needed:
    127.0.0.1  zenoeats.local
    127.0.0.1  spicehouse.zenoeats.local
    127.0.0.1  admin.zenoeats.local
+
+
+--------------------------------------------------------------------------------
+ 0. HTTPS ADDRESSES
+--------------------------------------------------------------------------------
+ On this laptop (optional; README "HTTPS on this laptop"). Start it with:
+   docker compose --profile app --profile https up -d
+ For the padlock, trust the local authority once (PowerShell):
+   Import-Certificate -FilePath "$env:USERPROFILE\zenoeats-secrets\local-ca\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root
+
+ Every http://...:8080 page in sections 1-3 is the same page at
+ https://...:8443. The ones used most:
+
+ Storefront             https://spicehouse.zenoeats.local:8443/
+ Customer sign in       https://spicehouse.zenoeats.local:8443/account/sign-in
+ Checkout               https://spicehouse.zenoeats.local:8443/checkout
+ Profile                https://spicehouse.zenoeats.local:8443/profile
+ Staff login            https://spicehouse.zenoeats.local:8443/manage/login
+ Kitchen board          https://spicehouse.zenoeats.local:8443/manage
+ Admin login            https://admin.zenoeats.local:8443/admin/login
+ Admin (restaurants)    https://admin.zenoeats.local:8443/admin
+ Health (operations)    https://spicehouse.zenoeats.local:8443/health/operations
+
+ In production (real domain, no port; publicly trusted certificate):
+ Storefront             https://<slug>.<domain>/
+ Staff portal           https://<slug>.<domain>/manage
+ Admin portal           https://admin.<domain>/admin
+ Legal pages            https://<domain>/legal/privacy  (/terms, /refunds, /data-deletion)
+ Health (monitors)      https://<domain>/health/ready   and  /health/operations
 
 
 --------------------------------------------------------------------------------
@@ -57,6 +85,7 @@
  4. LOCAL SERVICES & PORTS
 --------------------------------------------------------------------------------
  nginx (main entry)     http://localhost:8080
+ HTTPS door (optional)  https://<name>.zenoeats.local:8443   (--profile https)
  Web (Vite dev server)  http://localhost:3000        (proxies /api, /images to :8000)
  API (FastAPI)          http://localhost:8000
  API docs (Swagger)     http://localhost:8000/docs           (not in production)
@@ -180,7 +209,7 @@
  Clerk issuer           https://<your-instance>.clerk.accounts.dev
  Clerk webhook target   https://<yourdomain>/api/v1/webhooks/clerk
  Stripe webhook target  https://<yourdomain>/api/v1/webhooks/stripe/connect
-                        (create on the Connect tab, not the account tab)
+                        (events from *Connected accounts*, not your own account)
  Stripe CLI forwarding  stripe listen --forward-connect-to localhost:8000/api/v1/webhooks/stripe/connect
 
 ================================================================================
