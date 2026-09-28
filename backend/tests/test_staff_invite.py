@@ -157,16 +157,16 @@ def test_the_super_admin_can_give_a_passwordless_invitee_a_login(admin_user, cle
 #
 # The portal used to say "We've emailed them the sign-in link" after every
 # invitation. With no email provider configured nothing is sent -- the worker
-# logs "RESEND_API_KEY is not set; not sending" and moves on -- so restaurants
+# logs "SENDGRID_API_KEY is not set; not sending" and moves on -- so restaurants
 # waited on invitations that never arrived and nothing told them why.
 
-@pytest.mark.parametrize("key, expected", [("", False), ("re_test_key", True)])
+@pytest.mark.parametrize("key, expected", [("", False), ("SG.test_key", True)])
 def test_an_invitation_says_whether_an_email_is_on_its_way(
     admin_user, cleanup, monkeypatch, key, expected
 ):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "RESEND_API_KEY", key)
+    monkeypatch.setattr(settings, "SENDGRID_API_KEY", key)
     restaurant = _create(admin_user, cleanup)
     owner = _email()
     _owner(admin_user, restaurant.id, owner)
@@ -179,7 +179,7 @@ def test_an_invitation_says_whether_an_email_is_on_its_way(
     assert invite.json()["email_configured"] is expected
 
 
-@pytest.mark.parametrize("key, expected", [("", False), ("re_test_key", True)])
+@pytest.mark.parametrize("key, expected", [("", False), ("SG.test_key", True)])
 def test_an_owner_invitation_says_whether_an_email_is_on_its_way(
     admin_user, cleanup, monkeypatch, key, expected
 ):
@@ -187,7 +187,7 @@ def test_an_owner_invitation_says_whether_an_email_is_on_its_way(
     owner of a second restaurant is invited rather than given a password."""
     from app.config import settings
 
-    monkeypatch.setattr(settings, "RESEND_API_KEY", key)
+    monkeypatch.setattr(settings, "SENDGRID_API_KEY", key)
     first, second = _create(admin_user, cleanup), _create(admin_user, cleanup)
     person = _email()
     _owner(admin_user, first.id, person)

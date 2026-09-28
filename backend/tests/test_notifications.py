@@ -1,6 +1,6 @@
 """Order confirmation and staff invitation emails.
 
-The Resend HTTP call is replaced by a recorder; composition, the send-once
+The SendGrid HTTP call is replaced by a recorder; composition, the send-once
 bookkeeping, and the triggers (payment webhook, invite endpoint) are real.
 """
 
@@ -148,19 +148,21 @@ def test_an_invitation_with_no_password_to_give_says_where_it_comes_from(
 # ------------------------------------------------------------- transport ---
 
 @pytest.fixture
-def resend(monkeypatch):
+def sendgrid(monkeypatch):
     calls = []
-    answer = {"status": 200, "error": None}
+    answer = {"status": 202, "error": None}
 
     def post(url, json, headers, timeout):
         calls.append({"url": url, "json": json, "headers": headers})
         if answer["error"]:
             raise answer["error"]
-        return httpx.Response(answer["status"], text='{"id":"email_1"}')
+        # SendGrid accepts with an empty body and the message id in a header.
+        return httpx.Response(answer["status"], text="", headers={"X-Message-Id": "msg_1"})
 
     monkeypatch.setattr(email.httpx, "post", post)
-    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test_key")
+    monkeypatch.setattr(settings, "SENDGRID_API_KEY", "SG.test_key")
     monkeypatch.setattr(settings, "EMAIL_FROM", "Zenoeats <orders@zenoeats.com>")
+    monkeypatch.setattr(settings, "EMAIL_REPLY_TO", "")
     return SimpleNamespace(calls=calls, answer=answer)
 
 
@@ -169,39 +171,75 @@ def _message():
                        idempotency_key="order-confirmation/abc")
 
 
-def test_nothing_is_sent_without_a_key(resend, monkeypatch):
-    monkeypatch.setattr(settings, "RESEND_API_KEY", "")
+def test_nothing_is_sent_without_a_key(sendgrid, monkeypatch):
+    monkeypatch.setattr(settings, "SENDGRID_API_KEY", "")
     assert email.send(_message()) is False
-    assert resend.calls == []
+    assert sendgrid.calls == []
 
 
-def test_a_message_is_sent_with_its_idempotency_key(resend):
+def test_a_message_is_sent_as_sendgrid_expects_it(sendgrid):
     assert email.send(_message()) is True
-    [call] = resend.calls
-    assert call["url"] == "https://api.resend.com/emails"
-    assert call["headers"]["Authorization"] == "Bearer re_test_key"
-    assert call["headers"]["Idempotency-Key"] == "order-confirmation/abc"
-    assert call["json"]["to"] == ["sam@example.com"]
-    assert call["json"]["from"] == "Zenoeats <orders@zenoeats.com>"
+    [call] = sendgrid.calls
+    body = call["json"]
+    assert call["url"] == "https://api.sendgrid.com/v3/mail/send"
+    assert call["headers"]["Authorization"] == "Bearer SG.test_key"
+    assert body["personalizations"] == [{"to": [{"email": "sam@example.com"}]}]
+    assert body["from"] == {"email": "orders@zenoeats.com", "name": "Zenoeats"}
+    assert body["subject"] == "Hi"
+    # Plain text first: SendGrid refuses the other order.
+    assert body["content"] == [
+        {"type": "text/plain", "value": "Hi"},
+        {"type": "text/html", "value": "<p>Hi</p>"},
+    ]
+    assert body["custom_args"] == {"idempotency_key": "order-confirmation/abc"}
+    assert "reply_to" not in body
+
+
+def test_links_are_never_rewritten_to_pass_through_the_provider(sendgrid):
+    """Click tracking would carry a guest's order link, token and all, through
+    SendGrid's redirect and into its logs."""
+    email.send(_message())
+    tracking = sendgrid.calls[0]["json"]["tracking_settings"]
+    assert tracking["click_tracking"] == {"enable": False, "enable_text": False}
+    assert tracking["open_tracking"] == {"enable": False}
+
+
+def test_a_reply_address_is_passed_on(sendgrid, monkeypatch):
+    monkeypatch.setattr(settings, "EMAIL_REPLY_TO", "help@zenoeats.com")
+    email.send(_message())
+    assert sendgrid.calls[0]["json"]["reply_to"] == {"email": "help@zenoeats.com"}
 
 
 @pytest.mark.parametrize("status", [429, 500, 503])
-def test_rate_limits_and_outages_are_retried(resend, status):
-    resend.answer["status"] = status
+def test_rate_limits_and_outages_are_retried(sendgrid, status):
+    sendgrid.answer["status"] = status
     with pytest.raises(email.RetryableEmailError):
         email.send(_message())
 
 
-def test_an_unreachable_provider_is_retried(resend):
-    resend.answer["error"] = httpx.ConnectTimeout("timed out")
+@pytest.mark.parametrize("error", [
+    httpx.ConnectTimeout("timed out"),
+    httpx.ConnectError("refused"),
+])
+def test_a_provider_never_reached_is_retried(sendgrid, error):
+    sendgrid.answer["error"] = error
     with pytest.raises(email.RetryableEmailError):
         email.send(_message())
 
 
-def test_a_rejected_message_is_not_retried(resend):
-    """A 4xx -- an unverified sender domain, a bad address -- will not fix
-    itself, so it is logged rather than retried six times."""
-    resend.answer["status"] = 422
+def test_no_answer_after_sending_is_not_retried(sendgrid):
+    """SendGrid has no idempotency key: it may have taken the message, and a
+    retry would deliver it twice."""
+    sendgrid.answer["error"] = httpx.ReadTimeout("no reply")
+    outcome = email.deliver(_message())
+    assert outcome.status == "FAILED"
+    assert "may still arrive" in outcome.problem
+
+
+def test_a_rejected_message_is_not_retried(sendgrid):
+    """A 4xx -- an unverified sender, a bad address -- will not fix itself, so
+    it is logged rather than retried six times."""
+    sendgrid.answer["status"] = 400
     assert email.send(_message()) is False
 
 
@@ -246,33 +284,34 @@ def paid_order():
 
 
 @integration
-def test_a_paid_order_is_confirmed_once(paid_order, resend):
+def test_a_paid_order_is_confirmed_once(paid_order, sendgrid):
     assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id)
     assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id) is False
-    [call] = resend.calls
-    assert call["json"]["to"] == [paid_order.email]
-    assert call["headers"]["Idempotency-Key"] == f"order-confirmation/{paid_order.order_id}"
-    assert "Hi Sam," in call["json"]["text"]
+    [call] = sendgrid.calls
+    body = call["json"]
+    assert body["personalizations"] == [{"to": [{"email": paid_order.email}]}]
+    assert body["custom_args"]["idempotency_key"] == f"order-confirmation/{paid_order.order_id}"
+    assert "Hi Sam," in body["content"][0]["value"]
 
 
 @integration
-def test_a_failed_send_is_not_marked_as_sent(paid_order, resend):
-    resend.answer["status"] = 503
+def test_a_failed_send_is_not_marked_as_sent(paid_order, sendgrid):
+    sendgrid.answer["status"] = 503
     with pytest.raises(email.RetryableEmailError):
         notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id)
-    resend.answer["status"] = 200
+    sendgrid.answer["status"] = 202
     assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id)
 
 
 @integration
-def test_no_confirmation_goes_to_a_placeholder_address(paid_order, resend):
+def test_no_confirmation_goes_to_a_placeholder_address(paid_order, sendgrid):
     from app.db.session import system_session
     from app.models import User
 
     with system_session() as session:
         session.get(User, paid_order.customer_id).email = f"{uuid.uuid4().hex}@pending.local"
     assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id) is False
-    assert resend.calls == []
+    assert sendgrid.calls == []
 
 
 @integration

@@ -227,15 +227,29 @@ def test_a_late_answer_does_not_overwrite_a_newer_resend(admin_user, cleanup):
 
 
 def test_a_provider_refusal_is_explained_without_its_raw_reply():
-    """Resend's reply names the platform's own account address. That belongs
-    in the worker log, not in front of a restaurant admin."""
+    """The provider's reply names the platform's own sender address. That
+    belongs in the worker log, not in front of a restaurant admin."""
     from app.services import email
 
     reply = (
-        '{"statusCode":403,"name":"validation_error","message":"You can only send '
-        "testing emails to your own email address (owner@platform.example). To send "
-        'emails to other recipients, please verify a domain at resend.com/domains"}'
+        '{"errors":[{"message":"The from address does not match a verified Sender '
+        'Identity. Mail cannot be sent until this error is resolved. Visit '
+        'https://sendgrid.com/docs/for-developers/sending-email/sender-identity/ to see '
+        'the Sender Identity requirements","field":"from","help":null}]}'
     )
     for_admin = email._problem(403, reply)
-    assert "owner@platform.example" not in for_admin
-    assert "domain" in for_admin
+    assert "sendgrid.com" not in for_admin
+    assert "sending address is not verified" in for_admin
+
+
+@pytest.mark.parametrize("status, reply, expected", [
+    (401, '{"errors":[{"message":"The provided authorization grant is invalid, expired, '
+          'or revoked","field":null}]}', "did not accept Zenoeats' credentials"),
+    (400, '{"errors":[{"message":"Does not contain a valid address.",'
+          '"field":"personalizations.0.to.0.email"}]}', "address is not valid"),
+    (413, '{"errors":[{"message":"too big"}]}', "refused it (HTTP 413)"),
+])
+def test_each_refusal_is_worded_for_the_admin(status, reply, expected):
+    from app.services import email
+
+    assert expected in email._problem(status, reply)

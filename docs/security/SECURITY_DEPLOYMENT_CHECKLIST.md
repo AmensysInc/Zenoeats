@@ -43,7 +43,7 @@ before real money.
 | Redis passwords | `.env` | Change and restart both Redis and the app together |
 | Stripe live secret, webhook secret | `.env` | Roll in the Stripe dashboard; update; restart |
 | Clerk secret, webhook secret | `.env` | Roll in Clerk; update; restart |
-| Resend key | `.env` | Roll in Resend |
+| SendGrid key | `.env` | Roll in SendGrid (Settings › API Keys) |
 | Backup age private key | Password manager + offline copy | Never on the server |
 | Cloudflare origin certificate key | `infra/certs/privkey.pem`, mode 600 | 15-year validity; calendar reminder |
 

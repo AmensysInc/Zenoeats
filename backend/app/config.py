@@ -144,11 +144,11 @@ class Settings(BaseSettings):
     # in the database changes, because rows hold keys and never URLs.
     IMAGES_PUBLIC_BASE: str = "/images"
 
-    # --- Email (Resend) ---------------------------------------------------
-    # Order confirmations and staff invitations. Empty key means nothing is
-    # sent; each message is logged (without its contents) instead.
-    RESEND_API_KEY: str = ""
-    # Must be on a domain verified in Resend, e.g. "Zenoeats <orders@zenoeats.com>".
+    # --- Email (SendGrid) -------------------------------------------------
+    # Every email Zenoeats itself sends. Empty key means nothing is sent;
+    # each message is logged (without its contents) instead.
+    SENDGRID_API_KEY: str = ""
+    # Must be a sender verified in SendGrid, e.g. "Zenoeats <orders@zenoeats.com>".
     EMAIL_FROM: str = "Zenoeats <no-reply@zenoeats.local>"
     EMAIL_REPLY_TO: str = ""
     # How links in emails reach a restaurant's storefront or portal. {slug}

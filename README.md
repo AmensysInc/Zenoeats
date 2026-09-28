@@ -636,13 +636,13 @@ Two senders, for two different kinds of email:
 | Email | Sent by | Set up in |
 |---|---|---|
 | Customer verification and password-reset codes | Clerk | Clerk's dashboard (templates, branding) |
-| Staff and owner invitations | Zenoeats, through Resend | `.env` |
-| Order confirmations | Zenoeats, through Resend | `.env` |
+| Staff and owner invitations | Zenoeats, through SendGrid | `.env` |
+| Order confirmations | Zenoeats, through SendGrid | `.env` |
 
 Clerk cannot send the last two: staff are not Clerk users — they sign in
 with passwords the platform issues — and Clerk sends no business email.
 
-Resend is optional. With `RESEND_API_KEY` empty nothing is sent: the worker
+SendGrid is optional. With `SENDGRID_API_KEY` empty nothing is sent: the worker
 logs each skipped email, and the portal says no invitation went out so the
 admin passes the sign-in link on by hand. What is lost without it is a
 branded order confirmation and, for a guest, the private link in it that
@@ -651,19 +651,21 @@ a payment receipt — the app already gives it the customer's address — once
 "email customers for successful payments" is on in each restaurant's Stripe
 settings.
 
-**Turning it on.** Put a key from resend.com › API Keys in `.env`, then
-recreate the two containers that read it — a running container keeps the
-environment it started with:
+**Turning it on.** Put a key from SendGrid › Settings › API Keys (with *Mail
+Send* access; it starts `SG.`) in `.env` as `SENDGRID_API_KEY`, then recreate
+the two containers that read it — a running container keeps the environment
+it started with:
 
 ```
 docker compose --profile app up -d --force-recreate api worker
 ```
 
-Until a domain of yours is verified in Resend › Domains, the only sender
-Resend allows is `onboarding@resend.dev`, and it delivers only to the address
-the Resend account is registered with; any other recipient is refused, and the
-worker logs the refusal. That is enough to see an invitation arrive in your
-own inbox. For real staff and customers, verify the domain and set:
+SendGrid only sends from an address it has verified; anything else is
+refused, and the worker logs the refusal. To see an invitation arrive in your
+own inbox, verify one address under Settings › Sender Authentication ›
+*Single Sender Verification* and put it in `EMAIL_FROM`. For real staff and
+customers, authenticate your whole domain there instead (step 5 of the
+production guide below) and set:
 
 ```
 EMAIL_FROM=Zenoeats <orders@yourdomain.com>
@@ -678,7 +680,7 @@ people a sign-in link that goes nowhere.
 **Checking it.** Each attempt is in the worker's log, sent or not:
 
 ```
-docker compose --profile app logs worker | Select-String "invitation|confirmation|RESEND"
+docker compose --profile app logs worker | Select-String "invitation|confirmation|SENDGRID"
 ```
 
 **Editing an email.** The words and layout of every email Zenoeats sends are
@@ -962,7 +964,7 @@ development ones; never reuse development keys.
 | 2 | Stripe (live, Connect) | Taking payments | `STRIPE_*`, `PLATFORM_FEE_*` |
 | 3 | Clerk (production instance) | Customer sign-in | `CLERK_*`, `VITE_CLERK_PUBLISHABLE_KEY` |
 | 4 | Google Maps Platform | Delivery: addresses, fees, tracking map | `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_BROWSER_KEY` |
-| 5 | Resend | Order confirmations, staff invitations | `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` |
+| 5 | SendGrid | Order and staff emails | `SENDGRID_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` |
 | 6 | Sentry | Error tracking | `SENTRY_DSN` |
 | 7 | Cloudflare R2, healthchecks.io | Off-site backups | `/etc/zenoeats/backup.env` |
 | 8 | UptimeRobot (or similar) | Downtime alerts | — |
@@ -990,7 +992,7 @@ still missing.
    | A | `*` | server IP |
    | A | `admin` | server IP |
 
-   Records that Clerk (§3) and Resend (§5) ask for later must be **DNS only**
+   Records that Clerk (§3) and SendGrid (§5) ask for later must be **DNS only**
    (grey cloud).
 4. **SSL/TLS → Overview:** mode **Full (strict)**. **Edge Certificates:**
    *Always Use HTTPS* on, *Minimum TLS Version* 1.2.
@@ -1210,23 +1212,28 @@ of a real address. Suggestions appear; pick one, and a delivery fee replaces
 the "checking address" message. A restaurant must also have placed itself on
 the map and drawn its delivery rings (portal → Settings → Delivery).
 
-### 5. Resend (email)
+### 5. SendGrid (email)
 
-The app sends two kinds of email itself: order confirmations and staff
+The app sends its own emails, such as order confirmations and staff
 invitations. Customer verification codes come from Clerk (§3).
 
-1. resend.com → **Domains → Add domain**: use `<domain>` or a subdomain
-   such as `mail.<domain>`. Add the SPF and DKIM records it lists in
-   Cloudflare, as **DNS only**, and wait for *Verified*.
-2. **API Keys → Create**, with *Sending access* for that domain →
-   `RESEND_API_KEY`.
+1. sendgrid.com → **Settings → Sender Authentication → Authenticate Your
+   Domain**: use `<domain>` or a subdomain such as `mail.<domain>`, with
+   Cloudflare as the DNS host. Add the CNAME records it lists in Cloudflare,
+   as **DNS only**, and press *Verify*.
+2. **Settings → API Keys → Create API Key**, *Restricted Access* with only
+   *Mail Send* turned on → `SENDGRID_API_KEY`.
 3. In `.env`:
-   - `EMAIL_FROM=Zenoeats <orders@<domain>>`: must be on the verified domain
+   - `EMAIL_FROM=Zenoeats <orders@<domain>>`: must be on the authenticated
+     domain
    - `EMAIL_REPLY_TO=`: an inbox someone reads
    - `STOREFRONT_URL_TEMPLATE=https://{slug}.{root_domain}`: where links in
      emails point, already set by `make_prod_env.py`
 
-With `RESEND_API_KEY` empty nothing is sent, and the portal says so.
+The app turns SendGrid's click and open tracking off on every message, so
+links reach customers exactly as written.
+
+With `SENDGRID_API_KEY` empty nothing is sent, and the portal says so.
 
 ### 6. Sentry (errors)
 

@@ -8,6 +8,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Email templates: the words and layout of every email are files under
+  `backend/app/templates/email/`, one folder per email, with
+  `scripts/preview_emails.py` to see them without sending (#50).
+- A customer whose order the restaurant cancelled and refunded is told so on
+  the order page, with the amount and when to expect it (#48).
 - The production setup guide in the README: Stripe live, Clerk production,
   Google Maps, Resend, Sentry, backups, monitoring and platform admins, step
   by step (#42).
@@ -20,8 +25,17 @@ versions follow [Semantic Versioning](https://semver.org/).
   `CONTRIBUTING.md`, `SECURITY.md`, `CODEOWNERS` and a pull request template.
 
 ### Changed
+- Email is sent through SendGrid instead of Resend. `RESEND_API_KEY` is
+  replaced by `SENDGRID_API_KEY`, and `EMAIL_FROM` must be a sender SendGrid
+  has verified (#51).
+- The refund policy gives the same 10 to 14 business days as the order page
+  (#49).
 - Documentation moved under `docs/`: `operations/`, `security/`, `design/`,
   `development/`. There is an index at `docs/README.md`.
+
+### Fixed
+- The delivery tracking map no longer reloads on every five-second poll for
+  restaurants with themed pins or a palette map; only the driver moves (#47).
 
 ## [1.0.1] - 2026-09-26
 

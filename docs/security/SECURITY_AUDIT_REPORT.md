@@ -94,7 +94,7 @@ Internet ─▶ Cloudflare ─▶ nginx edge (TLS, HSTS, CF real-IP, fixed IP)
    └─ admin.<domain> only                          platform API (host-pinned)
 api ─▶ Postgres (owner / app NOBYPASSRLS + RLS / system narrow) ─▶ backups (age → R2)
     ─▶ redis-runtime (rate limits; fails open)  redis-broker ◀─ worker/beat (JSON only)
-    ─▶ Stripe · Clerk · Google · Resend (fixed hosts; no user-controlled URLs)
+    ─▶ Stripe · Clerk · Google · SendGrid (fixed hosts; no user-controlled URLs)
 ```
 
 | Asset | Threat | Primary control |

@@ -15,7 +15,7 @@ Writing: starts from .env.example, so every setting keeps its explanation.
   - Commented out: the development URLs. docker-compose.prod.yml builds every
     database and Redis URL from the passwords above.
   - Left EMPTY, marked "# FILL IN:": what only your accounts can supply
-    (Clerk, Stripe, Resend, Sentry, ADMIN_USERS). Empty on purpose: the API
+    (Clerk, Stripe, SendGrid, Sentry, ADMIN_USERS). Empty on purpose: the API
     refuses to start without the required ones, where a placeholder word
     would count as set and get through.
 
@@ -69,7 +69,7 @@ FROM_ACCOUNTS = {
     "STRIPE_PUBLISHABLE_KEY": "Stripe live mode > Developers > API keys (pk_live_...)",
     "STRIPE_CONNECT_WEBHOOK_SECRET": "Stripe > Webhooks, CONNECT endpoint > signing secret",
     "ADMIN_USERS": "docker run --rm -it <API_IMAGE> python scripts/hash_password.py you@example.com",
-    "RESEND_API_KEY": "Resend > API Keys, once the sending domain is verified",
+    "SENDGRID_API_KEY": "SendGrid > Settings > API Keys (Mail Send), once the sender is verified",
     "SENTRY_DSN": "Sentry > project > Client Keys (DSN)",
 }
 # Without these the API refuses to start, or checkout cannot take a payment.
@@ -81,7 +81,7 @@ REQUIRED = (
     "ADMIN_USERS",
 )
 # Wanted for a credible launch; reported, but not as blockers.
-RECOMMENDED = ("CLERK_WEBHOOK_SECRET", "RESEND_API_KEY", "SENTRY_DSN")
+RECOMMENDED = ("CLERK_WEBHOOK_SECRET", "SENDGRID_API_KEY", "SENTRY_DSN")
 
 LINE = re.compile(r"^(#\s*)?([A-Z][A-Z0-9_]*)=(.*)$")
 # A setting, live or commented out with a single "# ". Examples inside
