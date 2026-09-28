@@ -1,0 +1,33 @@
+{#-
+  Sent once, when a customer's payment for an order succeeds.
+
+  Never put the pickup PIN in here: it releases the food at the counter, so
+  it stays behind the order page, which this links to.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Order #{{ order_number }} confirmed{% endblock %}
+
+{% block body %}
+<p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
+<p>{{ restaurant_name }} has your order and is making it now.</p>
+<table role="presentation" style="width:100%;border-collapse:collapse;margin:20px 0;border-top:1px solid {{ ui.line }};border-bottom:1px solid {{ ui.line }};font-size:14px">
+{% for item in items %}
+<tr><td style="padding:8px 0;vertical-align:top">{{ item.quantity }}&times; {{ item.name }}<span style="color:{{ ui.muted }}">{% if item.options %} ({{ item.options }}){% endif %}</span></td><td style="padding:8px 0 8px 16px;text-align:right;vertical-align:top;white-space:nowrap">{{ item.total }}</td></tr>
+{% endfor %}
+</table>
+<table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px">
+{{ ui.total_row("Subtotal", amounts.subtotal) }}
+{% if amounts.discount %}{{ ui.total_row("Discount", amounts.discount) }}{% endif %}
+{% if amounts.delivery_fee %}{{ ui.total_row("Delivery fee", amounts.delivery_fee) }}{% endif %}
+{{ ui.total_row("Tax", amounts.tax) }}
+{{ ui.total_row("Total", amounts.total, total=true) }}
+</table>
+{% if delivering %}
+<p style="margin-top:20px">Your order page shows its progress, and where your driver is once it is on the way.</p>
+{% else %}
+<p style="margin-top:20px">Your pickup PIN is on your order page. Show it at the counter to collect.</p>
+{% endif %}
+{{ ui.button(order_url, "View your order") }}
+{% endblock %}

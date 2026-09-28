@@ -1,0 +1,25 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+{{ restaurant_name }} has your order #{{ order_number }} and is making it now.
+
+{% for item in items %}
+  {{ item.quantity }} x {{ item.name }}{% if item.options %} ({{ item.options }}){% endif %}  {{ item.total }}
+{% endfor %}
+
+  Subtotal: {{ amounts.subtotal }}
+{% if amounts.discount %}
+  Discount: {{ amounts.discount }}
+{% endif %}
+{% if amounts.delivery_fee %}
+  Delivery fee: {{ amounts.delivery_fee }}
+{% endif %}
+  Tax: {{ amounts.tax }}
+  Total: {{ amounts.total }}
+
+{% if delivering %}
+Your order page shows its progress, and where your driver is once it is on the way:
+{% else %}
+Your pickup PIN is on your order page. Show it at the counter to collect:
+{% endif %}
+{{ order_url }}

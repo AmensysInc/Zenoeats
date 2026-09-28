@@ -1,0 +1,31 @@
+{#-
+  Sent when a restaurant adds someone to its team, and again when a manager
+  presses "Resend".
+
+  Three kinds of invitee, told apart by what is available:
+    temporary_password       a new login, with the password it was issued
+    has_temporary_password   a new login whose password the manager hands over
+    neither                  someone who already works at another restaurant
+
+  The temporary password is only ever given while it still works: it must be
+  replaced at first sign-in and stops working then.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Join {{ restaurant_name }}{% endblock %}
+
+{% block body %}
+<p>{{ restaurant_name }} has invited you to join their team as {{ role }}.</p>
+{% if temporary_password %}
+<p>Sign in with the temporary password below. You'll choose your own the first time you sign in (this one stops working then), and then accept the invitation.</p>
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">Temporary password</p>
+<p style="margin:4px 0 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;letter-spacing:1px">{{ temporary_password }}</p>
+{% elif has_temporary_password %}
+<p>Your manager will give you a temporary password. You'll choose your own the first time you sign in, then accept the invitation.</p>
+{% else %}
+<p>Sign in with the Zenoeats staff password you already use, then accept the invitation.</p>
+{% endif %}
+{{ ui.button(sign_in_url, "Sign in to " ~ restaurant_name) }}
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">If you weren't expecting this, you can ignore it. The invitation gives no access until it's accepted.</p>
+{% endblock %}

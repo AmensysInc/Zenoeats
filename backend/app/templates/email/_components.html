@@ -1,0 +1,31 @@
+{#-
+  The pieces every email shares: its colours, its fonts and its button.
+
+  Inline styles and a table layout, because mail clients ignore stylesheets
+  and many ignore max-width on a div. No webfonts, images or SVG: nothing
+  that needs a request to render, and nothing a client may strip.
+
+  Change a colour here and every email picks it up. Use them in a template
+  after {% import "_components.html" as ui %}, as {{ ui.muted }} and so on.
+-#}
+{% set paper = "#F7F4EF" %}
+{% set card = "#FFFFFF" %}
+{% set line = "#DDDCD3" %}
+{% set ink = "#252620" %}
+{% set muted = "#67695F" %}
+{% set cta = "#A83E2A" %}
+{% set body_font = "system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif"|safe %}
+{% set heading_font = "Georgia,'Times New Roman',serif"|safe %}
+
+{#- The one call to action: an ordinary link, which the plain-text part repeats. -#}
+{% macro button(href, label) -%}
+<p style="margin:24px 0 0"><a href="{{ href }}" style="display:inline-block;background:{{ cta }};color:#FFFFFF;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">{{ label }}</a></p>
+{%- endmacro %}
+
+{#- A row of figures under an order: the label on the left, the amount on the
+    right. The total is the one figure that is ink and bold; the rest are its
+    parts. -#}
+{% macro total_row(label, amount, total=false) -%}
+{% set weight = "font-weight:600" if total else "color:" ~ muted %}
+<tr><td style="padding:4px 0;{{ weight }}">{{ label }}</td><td style="padding:4px 0;text-align:right;{{ weight }}">{{ amount }}</td></tr>
+{%- endmacro %}
