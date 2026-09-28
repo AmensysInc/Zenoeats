@@ -187,7 +187,7 @@ account and the rest of this list is ticked.
 ## 2. Code changes required before launch
 
 These were found by reading the code. All of them are now fixed, including the
-three that needed a business decision (Stripe Tax, Resend, refunds in the
+three that needed a business decision (Stripe Tax, email, refunds in the
 Stripe Dashboard).
 
 ### 2.1 Security
@@ -571,12 +571,16 @@ provider page in Clerk shows the **redirect URI** to paste into the provider.
       and per transaction on the restaurant's account. Test mode allows 1,000
       calculations a day.
 
-### 3.6 Resend (email)
+### 3.6 SendGrid (email)
 
-- [ ] **[LAUNCH]** Create a Resend account, add your sending domain under
-      **Domains**, and add the DNS records it lists (SPF, DKIM) until verified.
-- [ ] **[LAUNCH]** Set `RESEND_API_KEY`, `EMAIL_FROM` (on the verified domain,
-      e.g. `Zenoeats <orders@zenoeats.com>`) and optionally `EMAIL_REPLY_TO`.
+- [ ] **[LAUNCH]** Create a SendGrid account, authenticate your sending domain
+      under **Settings → Sender Authentication**, and add the CNAME records it
+      lists until verified.
+- [ ] **[LAUNCH]** Set `SENDGRID_API_KEY` (a key with *Mail Send* access only),
+      `EMAIL_FROM` (on the authenticated domain, e.g.
+      `Zenoeats <orders@zenoeats.com>`) and optionally `EMAIL_REPLY_TO`.
+- [ ] **[LAUNCH]** Check SendGrid's current plan and daily sending limit
+      against the orders you expect: every paid order sends at least one email.
 - [ ] **[LAUNCH]** Set `STOREFRONT_URL_TEMPLATE` (`https://{slug}.{root_domain}`)
       so links in emails point at the right storefront.
 - [ ] **[SOON]** Register the sending domain with Apple's private email relay
@@ -884,7 +888,7 @@ below that does not come from an account, and leaves those that do empty.
 | `ADMIN_SESSION_TTL_MINUTES`, `STAFF_SESSION_TTL_MINUTES` | 480 / 720, or your policy | |
 | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_CONNECT_WEBHOOK_SECRET` | live values | Secret and webhook secret required at startup. |
 | `PLATFORM_FEE_BPS`, `PLATFORM_FEE_FIXED_MINOR` | your fee | 0 = no fee. |
-| `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | Resend key; sender on a verified domain | Empty key = no emails. |
+| `SENDGRID_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | SendGrid key (Mail Send); sender on an authenticated domain | Empty key = no emails. |
 | `STOREFRONT_URL_TEMPLATE` | `https://{slug}.{root_domain}` | Links in emails. |
 | `FIELD_ENCRYPTION_KEY` | generated | Required at startup. Never reuse the dev key, never regenerate a live one; escrow it (§5). |
 | `IMAGES_DIR`, `IMAGES_PUBLIC_BASE` | persistent path or bucket URL | |
@@ -1066,7 +1070,7 @@ that. Everything below runs on it, as a user with `sudo`.
    python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1
    ```
 
-   Fill in each value marked `# FILL IN:` from §3 (Clerk, Stripe, Resend,
+   Fill in each value marked `# FILL IN:` from §3 (Clerk, Stripe, SendGrid,
    Sentry). For `ADMIN_USERS`:
 
    ```bash
