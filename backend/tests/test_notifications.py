@@ -43,7 +43,7 @@ def test_the_confirmation_escapes_what_restaurants_typed(monkeypatch):
     assert subject == "Order #1042 confirmed at Tom & Jerry's"
     assert "<script>" not in body_html
     assert "&lt;script&gt;" in body_html
-    assert "Tom &amp; Jerry&#x27;s" in body_html
+    assert "Tom &amp; Jerry&#39;s" in body_html
     assert f"https://tomjerry.zenoeats.com/orders/{order.id}" in body_html
     assert f"https://tomjerry.zenoeats.com/orders/{order.id}" in body_text
     assert "$23.38" in body_html and "-$2.40" in body_html

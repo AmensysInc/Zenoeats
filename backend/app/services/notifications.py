@@ -14,10 +14,13 @@ Content rules, both from how the rest of the platform treats the same data:
     still pending, and never for a login that already has its own password.
 
   * Everything a restaurant or customer typed -- item names, the restaurant's
-    name, notes -- is HTML-escaped before it goes into a message.
+    name, notes -- is HTML-escaped before it goes into a message. The
+    templates do that themselves (services/email_templates.py).
+
+The words and layout of each email live in app/templates/email/, one folder
+per email. This module decides what goes into them.
 """
 
-import html
 import logging
 from datetime import timezone
 from uuid import UUID
@@ -32,7 +35,7 @@ from app.core import guest_auth
 from app.models import (
     Order, OrderItem, Restaurant, RestaurantUser, StaffStatus, User, UserKind,
 )
-from app.services import clerk_customers, email
+from app.services import clerk_customers, email, email_templates
 
 log = logging.getLogger(__name__)
 
@@ -44,28 +47,6 @@ ROLE_WORDS = {
     "DRIVER": "a driver",
     "IT_SUPPORT": "IT support",
 }
-
-# The design tokens for transactional email (design-tokens.json, "emails").
-# Inline styles and a table layout, because mail clients ignore stylesheets
-# and many ignore max-width on a div. No webfonts, images or SVG: nothing
-# that needs a request to render, and nothing a client may strip.
-_PAPER = "#F7F4EF"
-_CARD = "#FFFFFF"
-_LINE = "#DDDCD3"
-_INK = "#252620"
-_MUTED = "#67695F"
-_CTA = "#A83E2A"
-_BODY_FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif"
-
-
-def _button(href: str, label_html: str) -> str:
-    """The one call to action: an ordinary link, which the plain-text part repeats."""
-    return (
-        f"<p style=\"margin:24px 0 0\"><a href=\"{html.escape(href)}\" "
-        f"style=\"display:inline-block;background:{_CTA};color:#FFFFFF;text-decoration:none;"
-        f"font-weight:600;padding:12px 20px;border-radius:10px\">{label_html}</a></p>"
-    )
-
 
 def storefront_url(slug: str, path: str = "/") -> str:
     base = settings.STOREFRONT_URL_TEMPLATE.format(slug=slug, root_domain=settings.ROOT_DOMAIN)
@@ -80,22 +61,32 @@ def money(amount_minor: int, currency: str) -> str:
     return f"{sign}{whole:,}.{cents:02d} {currency.upper()}"
 
 
-def _layout(title: str, body_html: str) -> str:
-    return (
-        "<!doctype html><html><head><meta name=\"viewport\" "
-        "content=\"width=device-width,initial-scale=1\"></head>"
-        f"<body style=\"margin:0;padding:0;background:{_PAPER}\">"
-        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
-        f"style=\"background:{_PAPER}\"><tr><td align=\"center\" style=\"padding:24px 16px\">"
-        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "
-        f"style=\"max-width:600px;background:{_CARD};border:1px solid {_LINE};border-radius:14px\">"
-        f"<tr><td style=\"padding:30px 28px;font-family:{_BODY_FONT};font-size:15px;"
-        f"line-height:1.55;color:{_INK};text-align:left\">"
-        "<h1 style=\"font-family:Georgia,'Times New Roman',serif;font-weight:400;"
-        f"font-size:30px;line-height:1.2;margin:0 0 20px;color:{_INK}\">"
-        f"{html.escape(title)}</h1>{body_html}"
-        "</td></tr></table></td></tr></table></body></html>"
-    )
+def _order_lines(order: Order) -> list[dict]:
+    """The order's lines, as every order email lists them."""
+    return [
+        {
+            "quantity": item.quantity,
+            "name": item.name_snapshot,
+            "options": ", ".join(m.option_name_snapshot for m in item.modifiers),
+            "total": money(item.line_total_minor, order.currency),
+        }
+        for item in order.items
+    ]
+
+
+def _order_amounts(order: Order) -> dict:
+    """The figures under an order, formatted. A figure that is zero and would
+    only be noise -- no discount, no delivery fee -- is None."""
+    return {
+        "subtotal": money(order.subtotal_minor, order.currency),
+        "discount": money(-order.discount_minor, order.currency) if order.discount_minor else None,
+        # Without its fee a delivery's figures would not add up to its total.
+        "delivery_fee": (
+            money(order.delivery_fee_minor, order.currency) if order.delivery_fee_minor else None
+        ),
+        "tax": money(order.tax_minor, order.currency),
+        "total": money(order.total_minor, order.currency),
+    }
 
 
 # ------------------------------------------------------ order confirmation ---
@@ -122,73 +113,19 @@ def compose_order_confirmation(
         # and Referer on the way; the page reads it from there and hands it to
         # the API in a header.
         path += f"#t={guest_auth.issue_order_token(order.id)}"
-    order_url = storefront_url(slug, path)
-    subject = f"Order #{order.order_number} confirmed at {restaurant_name}"
-    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
-
-    rows_html, rows_text = [], []
-    for item in order.items:
-        extras = [m.option_name_snapshot for m in item.modifiers]
-        detail = f" ({', '.join(extras)})" if extras else ""
-        rows_html.append(
-            "<tr><td style=\"padding:8px 0;vertical-align:top\">"
-            f"{item.quantity}&times; {html.escape(item.name_snapshot)}"
-            f"<span style=\"color:{_MUTED}\">{html.escape(detail)}</span></td>"
-            "<td style=\"padding:8px 0 8px 16px;text-align:right;vertical-align:top;"
-            "white-space:nowrap\">"
-            f"{money(item.line_total_minor, order.currency)}</td></tr>"
-        )
-        rows_text.append(
-            f"  {item.quantity} x {item.name_snapshot}{detail}  "
-            f"{money(item.line_total_minor, order.currency)}"
-        )
-
-    delivering = order.fulfillment_type == "DELIVERY"
-    totals = [("Subtotal", order.subtotal_minor)]
-    if order.discount_minor:
-        totals.append(("Discount", -order.discount_minor))
-    # Without its fee a delivery's figures would not add up to its total.
-    if order.delivery_fee_minor:
-        totals.append(("Delivery fee", order.delivery_fee_minor))
-    totals += [("Tax", order.tax_minor), ("Total", order.total_minor)]
-    def total_row(label: str, amount: int) -> str:
-        # The total is the one figure that is ink and bold; the rest are its parts.
-        weight = "font-weight:600" if label == "Total" else f"color:{_MUTED}"
-        return (
-            f"<tr><td style=\"padding:4px 0;{weight}\">{label}</td>"
-            f"<td style=\"padding:4px 0;text-align:right;{weight}\">"
-            f"{money(amount, order.currency)}</td></tr>"
-        )
-
-    totals_html = "".join(total_row(label, amount) for label, amount in totals)
-
-    # A delivery has no PIN: nobody collects it at a counter. Promising one
-    # sends the customer looking for something that does not exist.
-    next_step = (
-        "Your order page shows its progress, and where your driver is once it is on the way."
-        if delivering
-        else "Your pickup PIN is on your order page. Show it at the counter to collect."
+    out = email_templates.render(
+        "order_confirmation",
+        restaurant_name=restaurant_name,
+        customer_name=customer_name,
+        order_number=order.order_number,
+        items=_order_lines(order),
+        amounts=_order_amounts(order),
+        # A delivery has no PIN: nobody collects it at a counter. Promising
+        # one sends the customer looking for something that does not exist.
+        delivering=order.fulfillment_type == "DELIVERY",
+        order_url=storefront_url(slug, path),
     )
-
-    body = (
-        f"<p>{html.escape(greeting)}</p>"
-        f"<p>{html.escape(restaurant_name)} has your order and is making it now.</p>"
-        "<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:20px 0;"
-        f"border-top:1px solid {_LINE};border-bottom:1px solid {_LINE};font-size:14px\">"
-        f"{''.join(rows_html)}</table>"
-        "<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;font-size:14px\">"
-        f"{totals_html}</table>"
-        f"<p style=\"margin-top:20px\">{html.escape(next_step)}</p>"
-        + _button(order_url, "View your order")
-    )
-    text = "\n".join(
-        [greeting, "", f"{restaurant_name} has your order #{order.order_number} and is making it now.", ""]
-        + rows_text
-        + [""]
-        + [f"  {label}: {money(amount, order.currency)}" for label, amount in totals]
-        + ["", f"{next_step[:-1]}:", order_url]
-    )
-    return subject, _layout(f"Order #{order.order_number} confirmed", body), text
+    return out.subject, out.html, out.text
 
 
 def send_order_confirmation(restaurant_id: UUID, order_id: UUID) -> bool:
@@ -241,53 +178,15 @@ def compose_staff_invitation(
     *, restaurant_name: str, slug: str, role_code: str, has_temporary_password: bool,
     temporary_password: str | None = None,
 ) -> tuple[str, str, str]:
-    sign_in_url = storefront_url(slug, "/manage/login")
-    role = ROLE_WORDS.get(role_code, role_code.lower())
-    subject = f"You're invited to join {restaurant_name} on Zenoeats"
-    password_html = ""
-    if temporary_password:
-        password_line = (
-            "Sign in with the temporary password below. You'll choose your own the first time "
-            "you sign in (this one stops working then), and then accept the invitation."
-        )
-        password_html = (
-            f"<p style=\"margin:16px 0 0;color:{_MUTED};font-size:13px\">Temporary password</p>"
-            "<p style=\"margin:4px 0 0;font-family:ui-monospace,Menlo,Consolas,monospace;"
-            "font-size:20px;letter-spacing:1px\">"
-            f"{html.escape(temporary_password)}</p>"
-        )
-    elif has_temporary_password:
-        password_line = (
-            "Your manager will give you a temporary password. You'll choose your own the first "
-            "time you sign in, then accept the invitation."
-        )
-    else:
-        password_line = (
-            "Sign in with the Zenoeats staff password you already use, then accept the invitation."
-        )
-
-    body = (
-        f"<p>{html.escape(restaurant_name)} has invited you to join their team as "
-        f"{html.escape(role)}.</p>"
-        f"<p>{html.escape(password_line)}</p>"
-        + password_html
-        + _button(sign_in_url, f"Sign in to {html.escape(restaurant_name)}")
-        + f"<p style=\"color:{_MUTED};font-size:13px;margin-top:24px\">If you weren't expecting "
-        "this, you can "
-        "ignore it. The invitation gives no access until it's accepted.</p>"
+    out = email_templates.render(
+        "staff_invitation",
+        restaurant_name=restaurant_name,
+        role=ROLE_WORDS.get(role_code, role_code.lower()),
+        temporary_password=temporary_password,
+        has_temporary_password=has_temporary_password,
+        sign_in_url=storefront_url(slug, "/manage/login"),
     )
-    text = "\n".join([
-        f"{restaurant_name} has invited you to join their team as {role}.",
-        "",
-        password_line,
-        *(["", f"Temporary password: {temporary_password}"] if temporary_password else []),
-        "",
-        f"Sign in: {sign_in_url}",
-        "",
-        "If you weren't expecting this, you can ignore it. The invitation gives no access "
-        "until it's accepted.",
-    ])
-    return subject, _layout(f"Join {restaurant_name}", body), text
+    return out.subject, out.html, out.text
 
 
 def send_staff_invitation(

@@ -1,0 +1,16 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+{{ restaurant_name }} has invited you to join their team as {{ role }}.
+
+{% if temporary_password %}
+Sign in with the temporary password below. You'll choose your own the first time you sign in (this one stops working then), and then accept the invitation.
+
+Temporary password: {{ temporary_password }}
+{% elif has_temporary_password %}
+Your manager will give you a temporary password. You'll choose your own the first time you sign in, then accept the invitation.
+{% else %}
+Sign in with the Zenoeats staff password you already use, then accept the invitation.
+{% endif %}
+
+Sign in: {{ sign_in_url }}
+
+If you weren't expecting this, you can ignore it. The invitation gives no access until it's accepted.

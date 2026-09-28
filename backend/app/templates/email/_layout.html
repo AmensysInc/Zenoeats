@@ -1,0 +1,21 @@
+{#-
+  The frame around every email: the page colour, the white card and its
+  heading. An email fills in two blocks:
+
+    {% block heading %}  the large title at the top of the card
+    {% block body %}     everything under it
+-#}
+{% import "_components.html" as ui -%}
+<!doctype html>
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:{{ ui.paper }}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{{ ui.paper }}"><tr><td align="center" style="padding:24px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:{{ ui.card }};border:1px solid {{ ui.line }};border-radius:14px">
+<tr><td style="padding:30px 28px;font-family:{{ ui.body_font }};font-size:15px;line-height:1.55;color:{{ ui.ink }};text-align:left">
+<h1 style="font-family:{{ ui.heading_font }};font-weight:400;font-size:30px;line-height:1.2;margin:0 0 20px;color:{{ ui.ink }}">{% block heading %}{% endblock %}</h1>
+{% block body %}{% endblock %}
+</td></tr></table>
+</td></tr></table>
+</body>
+</html>

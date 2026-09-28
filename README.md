@@ -681,6 +681,12 @@ people a sign-in link that goes nowhere.
 docker compose --profile app logs worker | Select-String "invitation|confirmation|RESEND"
 ```
 
+**Editing an email.** The words and layout of every email Zenoeats sends are
+templates in [`backend/app/templates/email/`](backend/app/templates/email/),
+one folder per email. Its README says how to edit them. To see a change without
+sending anything, run `python scripts/preview_emails.py` from `backend/` and
+open the `index.html` it prints.
+
 ## Development without Clerk
 
 For backend work you can skip Clerk entirely:

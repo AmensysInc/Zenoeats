@@ -33,3 +33,6 @@ dist/
 /artifacts/
 # Local HTTPS certificate for *.zenoeats.local (see README). Never committed.
 /infra/certs-local/
+
+# Rendered by backend/scripts/preview_emails.py. Made-up data, local only.
+/backend/email-previews/

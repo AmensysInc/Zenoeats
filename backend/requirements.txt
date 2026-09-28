@@ -16,6 +16,8 @@ redis==5.2.1
 cryptography==50.0.1
 svix==1.44.0
 httpx==0.28.1
+# Email templates (app/templates/email/), HTML-escaped by default.
+Jinja2==3.1.6
 pytest==9.0.3
 # Password hashing for platform-admin and (later) restaurant credentials.
 argon2-cffi==23.1.0
