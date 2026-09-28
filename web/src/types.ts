@@ -279,4 +279,8 @@ export type Order = {
   tracking: Tracking | null;
   expires_at: string | null;
   created_at: string;
+  /** The restaurant cancelled it after it was paid. */
+  cancelled_by_restaurant: boolean;
+  /** On its way back to the customer's card; null until a refund is issued. */
+  refund_minor: number | null;
 };
