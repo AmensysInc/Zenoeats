@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { StatePage } from "@/components/common/Feedback";
 import { Cloche } from "@/components/common/icons";
@@ -83,6 +83,18 @@ export function OrderPage() {
   );
   // For the map key. Public and already cached from the menu in most visits.
   const portal = usePortalQuery();
+  // The map's colours, built once per restaurant setting rather than on every
+  // render. The map is rebuilt when these change, and this page re-renders on
+  // each poll, so a fresh object here would reload the whole map every five
+  // seconds instead of just moving the driver.
+  const theme = portal.data?.storefront?.theme ?? null;
+  const pinsThemed = portal.data?.map_pins_themed ?? true;
+  const styleKey = portal.data?.map_style_key;
+  const pins = useMemo(() => mapPins(theme, pinsThemed), [theme, pinsThemed]);
+  const style = useMemo(
+    () => mapStyle(isMapStyleKey(styleKey) ? styleKey : null, theme),
+    [styleKey, theme],
+  );
 
   useEffect(() => {
     if (!order) return;
@@ -170,16 +182,9 @@ export function OrderPage() {
               status={order.status}
               destination={order.delivery_address}
               mapsKey={portal.data?.maps_browser_key ?? null}
-
               restaurantName={portal.data?.name ?? "The restaurant"}
-              pins={mapPins(
-                portal.data?.storefront?.theme ?? null,
-                portal.data?.map_pins_themed ?? true,
-              )}
-              style={mapStyle(
-                isMapStyleKey(portal.data?.map_style_key) ? portal.data.map_style_key : null,
-                portal.data?.storefront?.theme ?? null,
-              )}
+              pins={pins}
+              style={style}
             />
           )}
 
