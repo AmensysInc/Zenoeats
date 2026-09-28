@@ -170,6 +170,23 @@ def create_pending_order(
     return order
 
 
+def refund_minor(payment: Payment | None) -> int | None:
+    """The amount going back to the customer, once a refund has been issued.
+
+    A refund Stripe has only accepted has no amount recorded yet -- the
+    webhook writes that -- but a restaurant refund is always the whole
+    charge, so the charge is the figure to show until the webhook lands.
+    None while nothing has been refunded.
+    """
+    if payment is None:
+        return None
+    if payment.refunded_minor > 0:
+        return payment.refunded_minor
+    if payment.status in (PaymentStatus.REFUND_PENDING.value, PaymentStatus.REFUNDED.value):
+        return payment.amount_minor
+    return None
+
+
 def transition(order: Order, to_status: str, *, reason: str | None = None) -> None:
     """Apply a state change against the normative transition matrix."""
     allowed = ALLOWED_TRANSITIONS.get(order.status, set())

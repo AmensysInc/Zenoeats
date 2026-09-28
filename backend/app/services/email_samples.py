@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Callable
 from types import SimpleNamespace
 
-from app.services import notifications
+from app.services import notifications, order_emails
 
 
 def _order(**overrides) -> SimpleNamespace:
@@ -38,9 +38,33 @@ def _order(**overrides) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+def _update(kind: str, *, order=None, **kw) -> tuple[str, str, str]:
+    """One of the emails that follow an order, for Spice House's order 1042."""
+    values = dict(
+        restaurant_name="Spice House", slug="spicehouse", order=order or _order(),
+        customer_name="Sam", for_guest=False,
+    )
+    values.update(kw)
+    return order_emails.compose(kind, **values)
+
+
 def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
     """name/case -> a function returning (subject, html, text)."""
+    delivery = _order(fulfillment_type="DELIVERY", discount_minor=0, delivery_fee_minor=399,
+                      total_minor=2816)
     return {
+        "order_ready/with_address": lambda: _update(
+            "order_ready", pickup_address="1200 Main St, Dallas, TX 75201, US",
+        ),
+        "order_ready/no_address": lambda: _update("order_ready", customer_name=None),
+        "order_on_the_way/delivery": lambda: _update(
+            "order_on_the_way", order=delivery, driver_name="Dana",
+        ),
+        "order_on_the_way/no_driver_name": lambda: _update("order_on_the_way"),
+        "order_delivered/delivery": lambda: _update("order_delivered", order=delivery),
+        "order_cancelled/refunded": lambda: _update("order_cancelled", refund=2192),
+        "order_cancelled/no_refund": lambda: _update("order_cancelled"),
+        "refund_issued/part": lambda: _update("refund_issued", refund=450),
         "order_confirmation/pickup": lambda: notifications.compose_order_confirmation(
             restaurant_name="Spice House", slug="spicehouse", order=_order(),
             customer_name="Sam",

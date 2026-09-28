@@ -1,0 +1,1 @@
+Your order #{{ order_number }} from {{ restaurant_name }} has been delivered

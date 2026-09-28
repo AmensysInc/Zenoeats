@@ -250,6 +250,13 @@ def _handle_charge_refunded(payload: dict, event_account_id: str | None):
         if payment is None:
             return
         order_id = payment.order_id
+        # What the customer had been told was coming back before this event:
+        # the amount recorded, or the whole charge while a refund from the
+        # board is still pending. Only more than that is news to them.
+        told = (
+            payment.amount_minor if payment.status == PaymentStatus.REFUND_PENDING.value
+            else payment.refunded_minor
+        )
         payment.status = (
             PaymentStatus.REFUNDED.value if refunded >= total
             else PaymentStatus.PARTIALLY_REFUNDED.value
@@ -261,6 +268,17 @@ def _handle_charge_refunded(payload: dict, event_account_id: str | None):
     # The restaurant's tax reports must show the refund too. Cumulative and
     # idempotent, so redelivery is safe; a no-op for flat-rate restaurants.
     stripe_tax.record_refund(restaurant_id, order_id, refunded)
+
+    # A refund the customer has not heard about -- one issued from Stripe's
+    # dashboard, typically. The board's own refunds were told at the time,
+    # and their keys stop a second email even if this arrives first.
+    if refunded > told:
+        from app.services import order_emails
+
+        order_emails.queue(
+            "refund_issued", restaurant_id, order_id,
+            refunded_before=told, refunded_after=min(refunded, total) if total else refunded,
+        )
 
 
 def _handle_account_updated(payload: dict, event_account_id: str | None):
@@ -355,6 +373,22 @@ def send_order_confirmation(self, restaurant_id: str, order_id: str):
 
     try:
         return notifications.send_order_confirmation(UUID(restaurant_id), UUID(order_id))
+    except email.RetryableEmailError as exc:
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@celery_app.task(
+    bind=True, max_retries=6, default_retry_delay=60,
+    name="app.workers.tasks.send_order_email",
+)
+def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: dict | None = None):
+    """Email the customer that their order moved on: ready, on its way,
+    delivered, cancelled or refunded (services/order_emails.py). Retries
+    while the email provider is rate limiting or down; sends at most once."""
+    from app.services import email, order_emails
+
+    try:
+        return order_emails.send(kind, UUID(restaurant_id), UUID(order_id), extra)
     except email.RetryableEmailError as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 

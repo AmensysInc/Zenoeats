@@ -1,0 +1,24 @@
+{#-
+  Sent when the driver marks the order picked up.
+
+  driver_name is the driver's first name, or None if they have not given
+  one. delivering is true for an order placed as a delivery, whose order
+  page shows the driver on a map; a pick-up order the restaurant agreed to
+  run out has no map, only its progress.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}On its way{% endblock %}
+
+{% block body %}
+<p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
+<p>{{ driver_name or "Your driver" }} has picked up your order #{{ order_number }} from {{ restaurant_name }} and is on the way to you.</p>
+{% if delivering %}
+<p>Follow them live on your order page.</p>
+{{ ui.button(order_url, "Track your order") }}
+{% else %}
+<p>Your order page shows its progress.</p>
+{{ ui.button(order_url, "View your order") }}
+{% endif %}
+{% endblock %}

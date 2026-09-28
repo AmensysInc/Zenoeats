@@ -1,0 +1,1 @@
+Your refund from {{ restaurant_name }} is on its way

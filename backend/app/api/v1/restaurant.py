@@ -41,6 +41,7 @@ from app.schemas.api import (
 )
 from app.services import geocoding, images, restaurant_profile, stripe_service, tracking, storefront
 from app.services import email as email_service
+from app.services import order_emails
 from app.schemas.storefront import ThemePatch, CategoryPatch, BannersIn, CollectionsIn, MapPatch, ShortcutsIn
 from app.services.images import ImageKind
 from app.services.menu import load_item_types, load_menu
@@ -3038,6 +3039,7 @@ def order_history(
 @router.post("/orders/{order_id}/ready")
 def mark_ready(
     order_id: UUID,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(ANY_STAFF),
@@ -3054,6 +3056,10 @@ def mark_ready(
     )
     transition(order, ready)
     _record(db, order, membership, OrderEventAction.MARKED_READY)
+    # A collection is told it can come. A delivery waits for its driver, and
+    # hears when they set off.
+    if ready == OrderStatus.READY_FOR_PICKUP.value:
+        background.add_task(order_emails.queue, "order_ready", restaurant.id, order.id)
     return {"order_id": str(order.id), "status": order.status}
 
 
@@ -3217,6 +3223,7 @@ class CancelOrderIn(OrderReasonIn):
 def cancel_order(
     order_id: UUID,
     body: CancelOrderIn,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(MANAGE),
@@ -3254,6 +3261,8 @@ def cancel_order(
         db.flush()
         problem = _refund(db, order, payment, membership, reason)
 
+    # With the refund in it if one went through; without, if not.
+    background.add_task(order_emails.queue, "order_cancelled", restaurant.id, order.id)
     return {
         "order_id": str(order.id),
         "status": order.status,
@@ -3345,6 +3354,7 @@ def refunds_due(
 def refund_order(
     order_id: UUID,
     body: OrderReasonIn,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(MANAGE),
@@ -3367,9 +3377,14 @@ def refund_order(
         raise errors.order_state_conflict("This order has already been refunded.")
 
     db.flush()
+    refunded_before = payment.refunded_minor
     problem = _refund(db, order, payment, membership, reason)
     if problem:
         raise errors.ApiError(502, "REFUND_FAILED", problem)
+    background.add_task(
+        order_emails.queue, "refund_issued", restaurant.id, order.id,
+        refunded_before=refunded_before,
+    )
     return {
         "order_id": str(order.id),
         "status": order.status,
@@ -3630,6 +3645,7 @@ def deliveries(
 @router.post("/orders/{order_id}/picked-up")
 def picked_up(
     order_id: UUID,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(DELIVERY),
@@ -3638,12 +3654,14 @@ def picked_up(
     order = _delivery_order(db, order_id, membership)
     transition(order, OrderStatus.OUT_FOR_DELIVERY.value)
     _record(db, order, membership, OrderEventAction.PICKED_UP)
+    background.add_task(order_emails.queue, "order_on_the_way", restaurant.id, order.id)
     return {"order_id": str(order.id), "status": order.status}
 
 
 @router.post("/orders/{order_id}/delivered")
 def delivered(
     order_id: UUID,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(DELIVERY),
@@ -3658,6 +3676,7 @@ def delivered(
     transition(order, OrderStatus.COMPLETED.value)
     order.completed_at = utcnow()
     _record(db, order, membership, OrderEventAction.DELIVERED)
+    background.add_task(order_emails.queue, "order_delivered", restaurant.id, order.id)
     return {"order_id": str(order.id), "status": order.status}
 
 

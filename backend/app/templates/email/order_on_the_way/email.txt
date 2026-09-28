@@ -1,0 +1,11 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+{{ driver_name or "Your driver" }} has picked up your order #{{ order_number }} from {{ restaurant_name }} and is on the way to you.
+
+{% if delivering %}
+Follow them live on your order page:
+{% else %}
+Your order page shows its progress:
+{% endif %}
+{{ order_url }}

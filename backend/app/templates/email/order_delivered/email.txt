@@ -1,0 +1,8 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+Your order #{{ order_number }} from {{ restaurant_name }} has been delivered. Enjoy your meal.
+
+Thanks for ordering. If anything isn't right, contact {{ restaurant_name }}.
+
+Order again: {{ menu_url }}
