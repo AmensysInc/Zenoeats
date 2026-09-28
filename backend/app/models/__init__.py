@@ -31,6 +31,7 @@ from app.models.commerce import (
     OrderItemModifier,
     OrderStatus,
     RestaurantOrderCounter,
+    SentEmail,
 )
 from app.models.identity import RestaurantUser, StaffRole, StaffStatus, User, UserKind
 from app.models.payments import (
@@ -63,7 +64,7 @@ __all__ = [
     "ModifierGroupItemType",
     "Order", "OrderItem", "OrderItemModifier", "OrderStatus", "OrderEvent", "OrderEventAction",
     "FulfillmentType",
-    "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS",
+    "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS", "SentEmail",
     "Payment", "PaymentStatus", "PaymentMethod",
     "RestaurantPaymentAccount", "StripeEvent", "StripeEventStatus", "ClerkEvent",
 ]

@@ -1,0 +1,20 @@
+{#-
+  Sent when money goes back after the fact: the restaurant refunds an order
+  it cancelled without one, or refunds some or all of an order from its
+  Stripe dashboard. A cancellation that came with its refund already said
+  so, and this is not sent again for it.
+
+  refund is this refund's amount, formatted -- part of the order, perhaps,
+  not necessarily all of it. The 10 to 14 business days match the order
+  page and legal/refunds.html; change all three together.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Refund on its way{% endblock %}
+
+{% block body %}
+<p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
+<p>{{ restaurant_name }} has refunded {{ refund }} for your order #{{ order_number }}. It will be credited to your original payment method within 10 to 14 business days.</p>
+{{ ui.button(order_url, "View your order") }}
+{% endblock %}

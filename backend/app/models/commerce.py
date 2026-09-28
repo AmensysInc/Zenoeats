@@ -338,3 +338,35 @@ class IdempotencyKey(Base):
     response_body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SentEmail(Base):
+    """An email that has been sent, or is being sent, once and only once.
+
+    The key names what the email was about -- "order-cancelled/<order id>",
+    "refund/<order id>/<total refunded>" -- and is claimed before the email
+    goes out. A second attempt at the same key finds it taken and sends
+    nothing: a task Celery runs twice, a Stripe webhook delivered again, or
+    a refund both issued from the board and reported back by Stripe.
+
+    The email provider cannot do this for us: SendGrid has no idempotency
+    key. Nothing about the message itself is kept -- not the address, not
+    the words -- only that it was sent and how that went.
+    """
+
+    __tablename__ = "sent_emails"
+
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    # SENDING while the provider is being asked; then SENT, FAILED or
+    # NOT_CONFIGURED as email.Outcome says. COVERED when another email said
+    # the same thing -- a cancellation that already mentioned its refund.
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

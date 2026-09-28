@@ -1,0 +1,9 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+Your order #{{ order_number }} is ready at {{ restaurant_name }}. Show your pickup PIN at the counter to collect it. The PIN is on your order page:
+{{ order_url }}
+{% if pickup_address %}
+
+Collect from: {{ pickup_address }}
+{% endif %}

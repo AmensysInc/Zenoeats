@@ -1,0 +1,23 @@
+{#-
+  Sent when the kitchen marks a pick-up order ready. Not for a delivery:
+  that one waits for its driver, and "on the way" follows.
+
+  Never put the pickup PIN in here. It releases the food at the counter, so
+  it stays behind the order page, which this links to.
+
+  pickup_address is the restaurant's address, or None if it has not set one.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Ready to collect{% endblock %}
+
+{% block body %}
+<p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
+<p>Your order #{{ order_number }} is ready at {{ restaurant_name }}. Show your pickup PIN at the counter to collect it. The PIN is on your order page.</p>
+{% if pickup_address %}
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">Collect from</p>
+<p style="margin:4px 0 0">{{ pickup_address }}</p>
+{% endif %}
+{{ ui.button(order_url, "Show my pickup PIN") }}
+{% endblock %}

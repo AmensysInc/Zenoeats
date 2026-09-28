@@ -1,0 +1,12 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+{% if refund %}
+Your order #{{ order_number }} has been cancelled, and a refund of {{ refund }} will be credited to your original payment method within 10 to 14 business days.
+{% else %}
+Your order #{{ order_number }} from {{ restaurant_name }} has been cancelled.
+
+If you have questions about a refund, contact {{ restaurant_name }}. Refunds are issued by the restaurant.
+{% endif %}
+
+View your order: {{ order_url }}

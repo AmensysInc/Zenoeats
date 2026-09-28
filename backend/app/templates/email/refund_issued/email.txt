@@ -1,0 +1,6 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if customer_name %} {{ customer_name }}{% endif %},
+
+{{ restaurant_name }} has refunded {{ refund }} for your order #{{ order_number }}. It will be credited to your original payment method within 10 to 14 business days.
+
+View your order: {{ order_url }}

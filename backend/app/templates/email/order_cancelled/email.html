@@ -1,0 +1,27 @@
+{#-
+  Sent when the restaurant cancels a paid order. Not when a payment never
+  went through: nothing was charged, and the checkout already said so.
+
+  refund is the amount going back, formatted, when the cancellation came
+  with a refund, and None when it did not (a no-show, say). Never promise a
+  refund when it is None. The 10 to 14 business days match the order page
+  and legal/refunds.html; change all three together.
+
+  The restaurant's reason for cancelling is kept for its own records and is
+  not shown here.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Order #{{ order_number }} cancelled{% endblock %}
+
+{% block body %}
+<p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
+{% if refund %}
+<p>Your order #{{ order_number }} has been cancelled, and a refund of {{ refund }} will be credited to your original payment method within 10 to 14 business days.</p>
+{% else %}
+<p>Your order #{{ order_number }} from {{ restaurant_name }} has been cancelled.</p>
+<p>If you have questions about a refund, contact {{ restaurant_name }}. Refunds are issued by the restaurant.</p>
+{% endif %}
+{{ ui.button(order_url, "View your order") }}
+{% endblock %}

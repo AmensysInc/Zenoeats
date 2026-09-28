@@ -378,6 +378,7 @@ _PURGE_ORDER = [
     "order_items",
     # Before orders: an event names the order it happened to.
     "order_events",
+    "sent_emails",
     # Before orders: a payment points at the order it paid for.
     "payments",
     "orders",

@@ -8,6 +8,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Order emails after the confirmation: ready to collect, on its way,
+  delivered, cancelled (with the refund and its 10 to 14 business days when
+  one was issued) and refund issued, for refunds made later from the board or
+  Stripe's dashboard. Each is sent once, recorded in the new `sent_emails`
+  table (migration 0042) (#53).
 - Email templates: the words and layout of every email are files under
   `backend/app/templates/email/`, one folder per email, with
   `scripts/preview_emails.py` to see them without sending (#50).

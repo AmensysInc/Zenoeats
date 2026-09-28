@@ -41,7 +41,7 @@ from app.services import (
     clerk_customers, customer_profile, delivery, guest_customers, stripe_service, terms,
     tracking,
 )
-from app.services.orders import DeliveryDetails, create_pending_order
+from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
 from app.services.pricing import price_cart
 from app.workers.tasks import reconcile_payment_intent
 
@@ -117,24 +117,8 @@ def _serialize(
             order.status == OrderStatus.CANCELLED.value
             and order.cancelled_reason == "CANCELLED_BY_RESTAURANT"
         ),
-        refund_minor=_refund_minor(payment),
+        refund_minor=refund_minor(payment),
     )
-
-
-def _refund_minor(payment: Payment | None) -> int | None:
-    """The amount going back to the customer, once a refund has been issued.
-
-    A refund Stripe has only accepted has no amount recorded yet -- the
-    webhook writes that -- but a restaurant refund is always the whole
-    charge, so the charge is the figure to show until the webhook lands.
-    """
-    if payment is None:
-        return None
-    if payment.refunded_minor > 0:
-        return payment.refunded_minor
-    if payment.status in (PaymentStatus.REFUND_PENDING.value, PaymentStatus.REFUNDED.value):
-        return payment.amount_minor
-    return None
 
 
 @router.post(

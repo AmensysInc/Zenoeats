@@ -5,7 +5,15 @@ Every email Zenoeats sends is a folder here:
 | Folder | Sent when |
 | --- | --- |
 | `order_confirmation/` | A customer's payment for an order succeeds |
+| `order_ready/` | The kitchen marks a pick-up order ready |
+| `order_on_the_way/` | The driver picks the order up |
+| `order_delivered/` | The driver marks the order delivered |
+| `order_cancelled/` | The restaurant cancels a paid order, with the refund if one was issued |
+| `refund_issued/` | Money goes back later: a refund from the board, or from Stripe's dashboard |
 | `staff_invitation/` | A restaurant adds someone to its team, or resends the invitation |
+
+Each email is sent at most once for what it's about. Order emails go to the
+address the customer gave at checkout, or their account's address.
 
 Each folder holds three files:
 
