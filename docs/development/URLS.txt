@@ -3,39 +3,28 @@
 ================================================================================
 
  Local development. Replace "spicehouse" with any restaurant slug.
- Production swaps "zenoeats.local:8080" for "zenoeats.com".
- Every page also works over HTTPS on this laptop -- see section 0.
+ Production swaps "zenoeats.local:8443" for "zenoeats.com".
 
- IMPORTANT: Browse through nginx on :8080 (HTTPS: :8443), or a
- *.zenoeats.local subdomain on :3000. The restaurant is resolved from the
- Host header, so plain localhost:3000/manage will NOT work.
+ IMPORTANT: Development is HTTPS only. Browse through nginx at
+ https://<slug>.zenoeats.local:8443 -- there is no plain-HTTP address. The
+ restaurant is resolved from the Host header, so a bare localhost address
+ will NOT work.
 
- Hosts file entries needed:
+ Hosts file entries needed (one per restaurant slug you open):
    127.0.0.1  zenoeats.local
    127.0.0.1  spicehouse.zenoeats.local
    127.0.0.1  admin.zenoeats.local
 
 
 --------------------------------------------------------------------------------
- 0. HTTPS ADDRESSES
+ 0. HTTPS SETUP
 --------------------------------------------------------------------------------
- On this laptop (optional; README "HTTPS on this laptop"). Start it with:
-   docker compose --profile app --profile https up -d
+ nginx will not start without the certificate (README "Running it", step 3).
+ Once, from the repository root:
+   bash scripts/local_https_cert.sh
  For the padlock, trust the local authority once (PowerShell):
    Import-Certificate -FilePath "$env:USERPROFILE\zenoeats-secrets\local-ca\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root
-
- Every http://...:8080 page in sections 1-3 is the same page at
- https://...:8443. The ones used most:
-
- Storefront             https://spicehouse.zenoeats.local:8443/
- Customer sign in       https://spicehouse.zenoeats.local:8443/account/sign-in
- Checkout               https://spicehouse.zenoeats.local:8443/checkout
- Profile                https://spicehouse.zenoeats.local:8443/profile
- Staff login            https://spicehouse.zenoeats.local:8443/manage/login
- Kitchen board          https://spicehouse.zenoeats.local:8443/manage
- Admin login            https://admin.zenoeats.local:8443/admin/login
- Admin (restaurants)    https://admin.zenoeats.local:8443/admin
- Health (operations)    https://spicehouse.zenoeats.local:8443/health/operations
+ Then start as usual (make infra, or make up-all).
 
  In production (real domain, no port; publicly trusted certificate):
  Storefront             https://<slug>.<domain>/
@@ -48,16 +37,16 @@
 --------------------------------------------------------------------------------
  1. CUSTOMER STOREFRONT   (Clerk sign-in required where marked *)
 --------------------------------------------------------------------------------
- Menu / storefront      http://spicehouse.zenoeats.local:8080/   (sign-in offered in the header)
- Sign in                http://spicehouse.zenoeats.local:8080/account/sign-in
- Create account         http://spicehouse.zenoeats.local:8080/account/sign-up
- Forgot password        http://spicehouse.zenoeats.local:8080/account/forgot-password
- Google return          http://spicehouse.zenoeats.local:8080/account/sso-callback   (Clerk redirects here)
- Checkout *             http://spicehouse.zenoeats.local:8080/checkout
- Payment *              http://spicehouse.zenoeats.local:8080/checkout/pay/{orderId}
- Profile *              http://spicehouse.zenoeats.local:8080/profile   (?tab=orders, ?tab=favourites)
- Order tracking *       http://spicehouse.zenoeats.local:8080/orders/{orderId}
- Order tracking (guest) http://spicehouse.zenoeats.local:8080/orders/{orderId}#t={token}   (email link; the page sends it as a header)
+ Menu / storefront      https://spicehouse.zenoeats.local:8443/   (sign-in offered in the header)
+ Sign in                https://spicehouse.zenoeats.local:8443/account/sign-in
+ Create account         https://spicehouse.zenoeats.local:8443/account/sign-up
+ Forgot password        https://spicehouse.zenoeats.local:8443/account/forgot-password
+ Google return          https://spicehouse.zenoeats.local:8443/account/sso-callback   (Clerk redirects here)
+ Checkout *             https://spicehouse.zenoeats.local:8443/checkout
+ Payment *              https://spicehouse.zenoeats.local:8443/checkout/pay/{orderId}
+ Profile *              https://spicehouse.zenoeats.local:8443/profile   (?tab=orders, ?tab=favourites)
+ Order tracking *       https://spicehouse.zenoeats.local:8443/orders/{orderId}
+ Order tracking (guest) https://spicehouse.zenoeats.local:8443/orders/{orderId}#t={token}   (email link; the page sends it as a header)
                         (the link in a guest's confirmation email; opens that
                         one order on any device, no session needed)
 
@@ -65,41 +54,43 @@
 --------------------------------------------------------------------------------
  2. RESTAURANT STAFF PORTAL   (must be on the restaurant's own subdomain)
 --------------------------------------------------------------------------------
- Staff login            http://spicehouse.zenoeats.local:8080/manage/login
- Change password        http://spicehouse.zenoeats.local:8080/manage/change-password
- Kitchen board          http://spicehouse.zenoeats.local:8080/manage
- Menu builder           http://spicehouse.zenoeats.local:8080/manage/menu
- Staff                  http://spicehouse.zenoeats.local:8080/manage/staff
- Reports                http://spicehouse.zenoeats.local:8080/manage/reports
+ Staff login            https://spicehouse.zenoeats.local:8443/manage/login
+ Change password        https://spicehouse.zenoeats.local:8443/manage/change-password
+ Kitchen board          https://spicehouse.zenoeats.local:8443/manage
+ Menu builder           https://spicehouse.zenoeats.local:8443/manage/menu
+ Staff                  https://spicehouse.zenoeats.local:8443/manage/staff
+ Reports                https://spicehouse.zenoeats.local:8443/manage/reports
 
 
 --------------------------------------------------------------------------------
  3. SUPER ADMIN PORTAL   (accounts from ADMIN_USERS in .env)
 --------------------------------------------------------------------------------
- Admin login            http://admin.zenoeats.local:8080/admin/login
- Restaurants            http://admin.zenoeats.local:8080/admin
- Restaurant orders      http://admin.zenoeats.local:8080/admin/restaurants/{id}/orders
+ Admin login            https://admin.zenoeats.local:8443/admin/login
+ Restaurants            https://admin.zenoeats.local:8443/admin
+ Restaurant orders      https://admin.zenoeats.local:8443/admin/restaurants/{id}/orders
 
 
 --------------------------------------------------------------------------------
  4. LOCAL SERVICES & PORTS
 --------------------------------------------------------------------------------
- nginx (main entry)     http://localhost:8080
- HTTPS door (optional)  https://<name>.zenoeats.local:8443   (--profile https)
- Web (Vite dev server)  http://localhost:3000        (proxies /api, /images to :8000)
- API (FastAPI)          http://localhost:8000
- API docs (Swagger)     http://localhost:8000/docs           (not in production)
- OpenAPI schema         http://localhost:8000/openapi.json   (not in production)
- Health (liveness)      http://localhost:8000/health         (also :8080/health)
- Health (readiness)     http://localhost:8000/health/ready
- Menu images            http://localhost:8000/images/restaurants/{restaurant_id}/{items|options}/{file}.webp
+ nginx (the only entry) https://<slug>.zenoeats.local:8443
+ Health (liveness)      https://spicehouse.zenoeats.local:8443/health
+ Health (readiness)     https://spicehouse.zenoeats.local:8443/health/ready
+ Menu images            https://spicehouse.zenoeats.local:8443/images/restaurants/{restaurant_id}/{items|options}/{file}.webp
+
+ Behind nginx, bound to 127.0.0.1 only. nginx terminates HTTPS and talks
+ to these over the loopback; they are not addresses to browse the app at.
+ Web (Vite / static)    127.0.0.1:3000
+ API (FastAPI)          127.0.0.1:8000
+ API docs (Swagger)     127.0.0.1:8000/docs           (not in production)
+ OpenAPI schema         127.0.0.1:8000/openapi.json   (not in production)
  PostgreSQL             postgresql://127.0.0.1:5433/zenoeats
  Redis - Celery broker  redis://127.0.0.1:6379/0   (results: /1)
  Redis - cache/limits   redis://127.0.0.1:6380/0
 
 
 --------------------------------------------------------------------------------
- 5. API ENDPOINTS   (base: http://spicehouse.zenoeats.local:8080/api/v1)
+ 5. API ENDPOINTS   (base: https://spicehouse.zenoeats.local:8443/api/v1)
 --------------------------------------------------------------------------------
 
  Portal (public, tenant from Host)
@@ -177,7 +168,7 @@
    DELETE  /api/v1/restaurant/staff/{membership_id}
    GET     /api/v1/restaurant/reports
 
- Super admin   (base: http://admin.zenoeats.local:8080/api/v1)
+ Super admin   (base: https://admin.zenoeats.local:8443/api/v1)
    POST    /api/v1/admin/login
    POST    /api/v1/admin/logout
    GET     /api/v1/admin/me

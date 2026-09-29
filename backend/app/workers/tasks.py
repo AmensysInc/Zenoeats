@@ -17,6 +17,7 @@ import logging
 from uuid import UUID
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 
 from app.db.base import utcnow
 from app.db.session import system_session, tenant_session
@@ -376,12 +377,13 @@ def process_clerk_event(self, event_row_id: str):
 )
 def send_order_confirmation(self, restaurant_id: str, order_id: str):
     """Email the customer that their paid order is confirmed. Retries while
-    the email provider is rate limiting or down; sends at most once."""
+    the email provider is rate limiting or down, or the database cannot be
+    reached; sends at most once."""
     from app.services import email, notifications
 
     try:
         return notifications.send_order_confirmation(UUID(restaurant_id), UUID(order_id))
-    except email.RetryableEmailError as exc:
+    except (email.RetryableEmailError, OperationalError) as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
@@ -392,12 +394,13 @@ def send_order_confirmation(self, restaurant_id: str, order_id: str):
 def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: dict | None = None):
     """Email the customer that their order moved on: ready, on its way,
     delivered, cancelled or refunded (services/order_emails.py). Retries
-    while the email provider is rate limiting or down; sends at most once."""
+    while the email provider is rate limiting or down, or the database
+    cannot be reached; sends at most once."""
     from app.services import email, order_emails
 
     try:
         return order_emails.send(kind, UUID(restaurant_id), UUID(order_id), extra)
-    except email.RetryableEmailError as exc:
+    except (email.RetryableEmailError, OperationalError) as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
@@ -427,12 +430,12 @@ def send_clerk_email(self, sealed: str, event_id: str):
 def send_account_email(self, kind: str, args: dict):
     """Email a customer about their account: welcome, or closed
     (services/account_emails.py). Retries while the email provider is rate
-    limiting or down."""
+    limiting or down, or the database cannot be reached."""
     from app.services import account_emails, email
 
     try:
         return account_emails.send(kind, args)
-    except email.RetryableEmailError as exc:
+    except (email.RetryableEmailError, OperationalError) as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
@@ -444,12 +447,13 @@ def send_staff_email(self, kind: str, restaurant_id: str, args: dict):
     """Email a restaurant's team about a change: someone joined, a role
     changed, someone was removed, a password was reset, a refund failed
     (services/staff_emails.py). Retries while the email provider is rate
-    limiting or down; each email is sent at most once."""
+    limiting or down, or the database cannot be reached; each email is sent
+    at most once."""
     from app.services import email, staff_emails
 
     try:
         return staff_emails.send(kind, UUID(restaurant_id), args)
-    except email.RetryableEmailError as exc:
+    except (email.RetryableEmailError, OperationalError) as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
@@ -475,7 +479,7 @@ def send_staff_invitation(
         return notifications.send_staff_invitation(
             UUID(restaurant_id), UUID(membership_id), temporary_password
         )
-    except email.RetryableEmailError as exc:
+    except (email.RetryableEmailError, OperationalError) as exc:
         if self.request.retries >= self.max_retries:
             # Out of retries: say so on the team list rather than leaving the
             # invitation looking as if it were still on its way.

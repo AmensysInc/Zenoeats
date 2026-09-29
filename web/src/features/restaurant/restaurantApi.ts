@@ -133,7 +133,8 @@ export type BoardOrder = {
    *  Dashboard. A refund never moves the order itself, so this is how the
    *  board knows to say so. */
   payment_status: string | null;
-  /** Five wrong PINs. Only a manager override can hand it over now. */
+  /** Five wrong PINs. Only handing it over without the PIN, with a reason,
+   *  can move it now. */
   pin_locked: boolean;
   /** DELIVERY when the customer chose it at checkout, or when a manager
    *  handed a phone order to one of the restaurant's drivers. */

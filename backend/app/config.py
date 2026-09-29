@@ -153,7 +153,7 @@ class Settings(BaseSettings):
     EMAIL_REPLY_TO: str = ""
     # How links in emails reach a restaurant's storefront or portal. {slug}
     # and {root_domain} are filled in. Development behind nginx:
-    # http://{slug}.{root_domain}:8080
+    # https://{slug}.{root_domain}:8443
     STOREFRONT_URL_TEMPLATE: str = "https://{slug}.{root_domain}"
 
     # --- Geocoding (delivery) ---------------------------------------------

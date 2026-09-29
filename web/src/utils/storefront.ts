@@ -4,7 +4,7 @@
  * The portal runs at admin.<root> and every storefront at <slug>.<root>, over
  * the same scheme and port. Reading both off the current address means the
  * link is right in every environment with nothing to configure: in
- * development http://spicehouse.zenoeats.local:8080, in production
+ * development https://spicehouse.zenoeats.local:8443, in production
  * https://spicehouse.zenoeats.com.
  *
  * This replaced a link hard-coded to http://<slug>.<VITE_ROOT_DOMAIN>:3000 --

@@ -1,9 +1,10 @@
 """Stuck orders can leave the board, and who moved them is kept.
 
-There was no way to cancel an order and no manager override for the PIN, so a
+There was no way to cancel an order and no override for the PIN, so a
 customer who lost their PIN, never came, or was refunded from the Stripe
 Dashboard left a ticket on the board for good -- and an order locked by five
-wrong PINs could never be completed by anyone.
+wrong PINs could never be completed by anyone. Both are now open to the whole
+floor, kitchen and cashier included, always with a reason.
 """
 
 import uuid
@@ -154,14 +155,25 @@ def test_a_manager_hands_over_a_locked_order_and_it_is_recorded(shop):
     assert all(o["order_id"] != order_id for o in shop.manager.get("/api/v1/restaurant/orders").json())
 
 
-def test_an_override_needs_a_reason_and_a_manager(shop):
+def test_an_override_needs_a_reason(shop):
     order_id = shop.order()
 
     assert _post(shop.manager, order_id, "override-complete", reason="  ").status_code == 422
     assert _post(shop.manager, order_id, "override-complete").status_code == 422
-    assert _post(shop.cook, order_id, "override-complete", reason="checked name").status_code == 403
+    assert _post(shop.cook, order_id, "override-complete", reason="  ").status_code == 422
     assert shop.row(order_id).status == "READY_FOR_PICKUP"
     assert shop.events(order_id) == []
+
+
+def test_kitchen_staff_hand_over_a_locked_order_and_it_is_recorded_against_them(shop):
+    order_id = shop.order(attempts=5)
+
+    res = _post(shop.cook, order_id, "override-complete", reason="Phone died, checked name")
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "COMPLETED"
+    assert shop.events(order_id) == [
+        ("COMPLETED_BY_OVERRIDE", shop.cook_id, "Phone died, checked name")
+    ]
 
 
 def test_an_override_skips_the_pin_and_nothing_else(shop):
@@ -212,16 +224,27 @@ def test_a_refunded_order_is_flagged_on_the_board_and_needs_no_refund(shop):
     assert res.json()["refund_problem"] is None
 
 
-def test_cancel_is_refused_for_kitchen_staff_and_unpaid_orders(shop):
-    paid = shop.order()
-    assert _post(shop.cook, paid, "cancel", reason="never came").status_code == 403
+def test_kitchen_staff_cancel_a_paid_order_and_it_is_recorded_against_them(shop):
+    order_id = shop.order()
 
+    assert _post(shop.cook, order_id, "cancel", reason="  ", refund=False).status_code == 422
+    res = _post(shop.cook, order_id, "cancel", reason="Never came", refund=False)
+    assert res.status_code == 200, res.text
+    assert res.json()["refund_needed"] is True
+    assert shop.row(order_id).status == "CANCELLED"
+    assert shop.events(order_id) == [("CANCELLED", shop.cook_id, "Never came")]
+
+    # Refunding it afterwards is still a manager's.
+    assert _post(shop.cook, order_id, "refund", reason="agreed").status_code == 403
+
+
+def test_cancel_is_refused_for_unpaid_orders(shop):
     unpaid = shop.order(status="PENDING_PAYMENT", payment="PENDING", paid=False)
-    res = _post(shop.manager, unpaid, "cancel", reason="never came", refund=False)
-    assert res.status_code == 409
-    assert "has not been paid" in res.json()["detail"]["message"]
+    for who in (shop.manager, shop.cook):
+        res = _post(who, unpaid, "cancel", reason="never came", refund=False)
+        assert res.status_code == 409
+        assert "has not been paid" in res.json()["detail"]["message"]
 
-    assert shop.row(paid).status == "READY_FOR_PICKUP"
     assert shop.row(unpaid).status == "PENDING_PAYMENT"
 
 

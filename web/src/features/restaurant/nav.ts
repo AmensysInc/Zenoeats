@@ -66,8 +66,10 @@ export function canManage(roleCode: string | null): boolean {
 }
 
 /** Whether this role may act on a live order or flip an item sold out, as
- *  opposed to only reading the board and the stock list. IT support reads
- *  both to work out what a customer is seeing and changes neither. */
+ *  opposed to only reading the board and the stock list. Acting includes
+ *  handing an order over without its PIN and cancelling a paid one. IT
+ *  support reads both to work out what a customer is seeing and changes
+ *  neither. */
 export function canActOnOrders(roleCode: string | null): boolean {
   return !!roleCode && ALL_STAFF_ROLES.includes(roleCode);
 }
