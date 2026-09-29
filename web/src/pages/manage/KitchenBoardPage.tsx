@@ -61,13 +61,14 @@ export function KitchenBoardPage() {
   const [assignDriver] = useAssignDriverMutation();
   const [unassignDriver] = useUnassignDriverMutation();
   const { roleCode } = useAppSelector(selectSession);
-  // Override and cancel are managers only. The server decides regardless;
-  // this only avoids offering a button that would 403.
+  // Drivers, refunds after the fact and "back to collection" are managers
+  // only. The server decides regardless; this only avoids offering a button
+  // that would 403.
   const canManage = roleCanManage(roleCode);
-  // IT support reads this board to see what the restaurant is working
-  // through, and moves nothing on it. Without this the role would be shown
-  // "Mark ready" and "Collect with PIN" on every ticket and be refused by the
-  // API on both -- the board's two buttons are the floor's, not support's.
+  // The floor: mark ready, collect with PIN, hand over without it, and
+  // cancel. IT support reads this board to see what the restaurant is working
+  // through, and moves nothing on it -- without this it would be shown every
+  // one of those and be refused by the API on each.
   const canAct = canActOnOrders(roleCode);
 
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +79,7 @@ export function KitchenBoardPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [pinFor, setPinFor] = useState<string | null>(null);
   const [pin, setPin] = useState("");
-  // One manager action open at a time, on one ticket, with the reason being
+  // One exception open at a time, on one ticket, with the reason being
   // typed for it. Opening one closes the PIN box, and the other way round.
   const [acting, setActing] = useState<Acting | null>(null);
   const [reason, setReason] = useState("");
@@ -125,11 +126,7 @@ export function KitchenBoardPage() {
         // The ticket turns into its locked state on the next poll; the PIN
         // box would only answer "locked" again.
         setPinFor(null);
-        setError(
-          canManage
-            ? "Five wrong PINs, so this order is locked. You can hand it over without the PIN."
-            : "Five wrong PINs, so this order is locked. Ask a manager to hand it over.",
-        );
+        setError("Five wrong PINs, so this order is locked. You can hand it over without the PIN.");
       } else {
         setError(errorMessage(e));
       }
@@ -164,7 +161,10 @@ export function KitchenBoardPage() {
             : !out.refund_needed
               ? { text: `#${order.order_number} cancelled and refunded in full.`, tone: "neutral" }
               : {
-                  text: `#${order.order_number} cancelled. The customer has not been refunded — use "refund" on the order, or your Stripe Dashboard.`,
+                  // Refunding later is a manager's, so the floor is told who.
+                  text: canManage
+                    ? `#${order.order_number} cancelled. The customer has not been refunded — use "refund" on the order, or your Stripe Dashboard.`
+                    : `#${order.order_number} cancelled. The customer has not been refunded — a manager can refund it under "Refunds to issue".`,
                   tone: "warning",
                 },
         );
@@ -200,7 +200,7 @@ export function KitchenBoardPage() {
   // delivery. One column, because to the kitchen they are all "done, gone soon".
   const waiting = orders.filter((o) => !cooking.includes(o.status));
 
-  /** The form for whichever manager action is open on this ticket. */
+  /** The form for whichever action is open on this ticket. */
   function actionFor(order: BoardOrder): ReactNode {
     if (acting?.orderId !== order.order_id) return null;
     const isBusy = busy === order.order_id;
@@ -274,7 +274,7 @@ export function KitchenBoardPage() {
   }
 
   const cancelLink = (order: BoardOrder) =>
-    canManage && (
+    canAct && (
       <button type="button" className="link-danger" onClick={() => openAction(order.order_id, "cancel")}>
         cancel order
       </button>
@@ -288,8 +288,10 @@ export function KitchenBoardPage() {
       </button>
     );
 
-  const managerLinks = (...links: ReactNode[]) =>
-    canManage && <div className="mt-[7px] flex flex-wrap gap-x-[18px] gap-y-0">{links}</div>;
+  // The quiet links under a ticket's main button. Each link decides for
+  // itself who sees it; the row is the floor's, since cancel is always in it.
+  const actionLinks = (...links: ReactNode[]) =>
+    canAct && <div className="mt-[7px] flex flex-wrap gap-x-[18px] gap-y-0">{links}</div>;
 
   const heading = (roleCode && HEADINGS[roleCode]) || {
     title: "Kitchen & counter",
@@ -331,7 +333,7 @@ export function KitchenBoardPage() {
               ) : (
                 <p className="py-3 text-[15px] font-semibold">In the kitchen.</p>
               )}
-              {managerLinks(
+              {actionLinks(
                 <span key="d">{driverLink(o)}</span>,
                 <span key="c">{cancelLink(o)}</span>,
               )}
@@ -364,12 +366,13 @@ export function KitchenBoardPage() {
                       ? `Waiting for ${o.driver} to pick it up.`
                       : "Ready, but no driver assigned yet."}
                 </p>
-                {managerLinks(
+                {actionLinks(
                   <span key="d">{driverLink(o)}</span>,
-                  // Not once it is on the road: the food has left. Nor when
-                  // the customer paid for delivery at checkout -- the API
-                  // refuses to keep a delivery fee on a collection.
-                  o.status !== "OUT_FOR_DELIVERY" && !o.delivery_fee_minor && (
+                  // Managers only, like choosing the driver. Not once it is
+                  // on the road: the food has left. Nor when the customer
+                  // paid for delivery at checkout -- the API refuses to keep
+                  // a delivery fee on a collection.
+                  canManage && o.status !== "OUT_FOR_DELIVERY" && !o.delivery_fee_minor && (
                     <button
                       key="b"
                       type="button"
@@ -387,9 +390,8 @@ export function KitchenBoardPage() {
               <div>
                 <p className="note-error" role="status">
                   Locked after five wrong PINs.
-                  {!canManage && " Ask a manager to hand it over."}
                 </p>
-                {canManage && (
+                {canAct && (
                   <button
                     type="button"
                     className="btn-primary btn-touch mt-3 w-full"
@@ -398,7 +400,7 @@ export function KitchenBoardPage() {
                     Hand over without PIN
                   </button>
                 )}
-                {managerLinks(<span key="c">{cancelLink(o)}</span>)}
+                {actionLinks(<span key="c">{cancelLink(o)}</span>)}
               </div>
             ) : pinFor === o.order_id ? (
               <form
@@ -455,7 +457,7 @@ export function KitchenBoardPage() {
                     Waiting at the counter to be collected.
                   </p>
                 )}
-                {managerLinks(
+                {actionLinks(
                   <span key="d">{driverLink(o)}</span>,
                   <button
                     key="o"
@@ -710,9 +712,10 @@ function AssignDriverForm({
 }
 
 /**
- * The two things only a manager can do to a ticket, each with the reason it is
- * kept under. Inline on the ticket rather than a dialog: the board is a
- * shared screen, and the ticket being acted on should stay in sight.
+ * The exceptions to a ticket's ordinary path -- hand over without the PIN,
+ * cancel, refund -- each with the reason it is kept under. Inline on the
+ * ticket rather than a dialog: the board is a shared screen, and the ticket
+ * being acted on should stay in sight.
  */
 function ReasonForm({
   kind,

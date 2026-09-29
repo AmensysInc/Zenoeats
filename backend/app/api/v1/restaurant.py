@@ -3081,7 +3081,7 @@ def _record(
 
 
 class OrderReasonIn(BaseModel):
-    """Why a manager is doing something the ordinary flow would not allow.
+    """Why staff are doing something the ordinary flow would not allow.
     Required: an override or a cancellation with no reason is one nobody can
     review afterwards."""
 
@@ -3113,7 +3113,9 @@ PIN_FAILURE_WINDOW_SECONDS = 600
 
 
 def _pin_locked() -> errors.ApiError:
-    return errors.ApiError(423, "PIN_LOCKED", "Too many attempts. A manager must override.")
+    return errors.ApiError(
+        423, "PIN_LOCKED", "Too many attempts. Hand it over without the PIN, with a reason."
+    )
 
 
 class CompleteOrderIn(BaseModel):
@@ -3186,14 +3188,16 @@ def override_complete(
     body: OrderReasonIn,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
-    membership: RestaurantUser = Depends(MANAGE),
+    membership: RestaurantUser = Depends(ANY_STAFF),
 ):
     """Hand an order over without the customer's PIN.
 
     For the customer whose phone died, and for the order five wrong PINs
-    locked -- which before this could never leave the board. Managers only,
-    with a reason, and recorded against the manager who did it: it is the one
-    way food leaves the counter without proof the right person took it.
+    locked -- which before this could never leave the board. The whole floor
+    may, because the cashier at the counter is who the customer is standing
+    in front of. Always with a reason, and recorded against whoever did it:
+    it is the one way food leaves the counter without proof the right person
+    took it.
 
     Still only from READY_FOR_PICKUP and only once paid, the same as the PIN
     route. It skips the PIN, not the rest of the order's rules.
@@ -3229,9 +3233,14 @@ def cancel_order(
     background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
-    membership: RestaurantUser = Depends(MANAGE),
+    membership: RestaurantUser = Depends(ANY_STAFF),
 ):
     """Take a paid order off the board: a no-show, a refund, a mistake.
+
+    The whole floor may, kitchen and cashier included, with the same refund
+    choice a manager has: a refund only ever goes back to the card that paid,
+    and the reason is kept against whoever did it. Refunding an order that is
+    already cancelled stays with managers (POST /orders/{id}/refund).
 
     With `refund` the customer's money goes back on the same card, whole,
     including Zenoeats' fee. Without it nothing moves and the order keeps a
@@ -3240,7 +3249,8 @@ def cancel_order(
     The refund is asked of Stripe after the cancellation is written, never
     inside the transaction (rule 6). A refund that fails therefore leaves the
     order cancelled and the money where it was, which is the safe way round:
-    the manager is told, and can try again from the board or from Stripe.
+    whoever cancelled is told, every admin and manager is emailed, and a
+    manager can try again from the board or from Stripe.
 
     An unpaid order is refused. It never reached the board, it expires by
     itself, and cancelling one while the customer is still on the card step
@@ -3267,7 +3277,7 @@ def cancel_order(
     # With the refund in it if one went through; without, if not.
     background.add_task(order_emails.queue, "order_cancelled", restaurant.id, order.id)
     if problem:
-        # The manager saw it here, and may be gone by the time anyone
+        # Whoever cancelled saw it here, and may be gone by the time anyone
         # thinks of it again. Every admin and manager hears.
         background.add_task(
             staff_emails.queue, "refund_failed", restaurant.id,
@@ -3469,8 +3479,8 @@ def assign_driver(
 
     For a phone order this is what turns a collection into a delivery. For a
     delivery the customer chose at checkout, the address arrives already
-    filled in and this only names the driver. Managers only, like the other
-    two exceptions to the counter's rules.
+    filled in and this only names the driver. Managers only: who takes an
+    order out is a staffing decision, not one the counter makes.
 
     Reassigning is the same call again -- a driver who called in sick has
     their orders handed on, and each assignment is recorded with who did it

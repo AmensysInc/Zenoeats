@@ -37,7 +37,7 @@ def extract_slug(host_header: str | None) -> str | None:
     """Pull the restaurant slug out of a Host header.
 
     spicehouse.zenoeats.com          -> "spicehouse"
-    spicehouse.zenoeats.local:8080   -> "spicehouse"
+    spicehouse.zenoeats.local:8443   -> "spicehouse"
     zenoeats.com                     -> None (platform root)
     """
     if not host_header:

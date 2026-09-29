@@ -1,11 +1,12 @@
 # The project virtualenv. Windows puts binaries in Scripts/, POSIX in bin/.
 PY := .venv/Scripts/python.exe
 
-.PHONY: help setup infra api web worker up-all down logs migrate seed test rls fresh key
+.PHONY: help setup certs infra api web worker up-all down logs migrate seed test rls fresh key
 
 help:
 	@echo "Development (app runs natively, infrastructure in Docker):"
 	@echo "  make setup    copy .env.example to .env and generate an encryption key"
+	@echo "  make certs    check the HTTPS certificate is there (bash scripts/local_https_cert.sh makes it)"
 	@echo "  make infra    start postgres, redis x2 and nginx -- builds nothing"
 	@echo "  make api      run the API natively (own terminal)"
 	@echo "  make web      run the frontend natively (own terminal)"
@@ -32,9 +33,9 @@ setup:
 # Infrastructure only. The app services sit behind the "app" profile, so this
 # starts postgres, redis and nginx and builds nothing. Image builds are what
 # repeatedly wedged the Docker engine; nothing here needs one to run the app.
-infra:
+infra: certs
 	docker compose up -d
-	@echo "postgres 127.0.0.1:5433  redis 6379/6380  nginx :8080"
+	@echo "postgres 127.0.0.1:5433  redis 6379/6380  nginx https :8443"
 	@echo "Now run 'make api' and 'make web' in their own terminals."
 
 # Each of these runs in the foreground in its own terminal.
@@ -66,10 +67,16 @@ worker:
 
 # Everything in Docker, images included. Slow. Use to rehearse production,
 # not for day-to-day work.
-up-all:
+up-all: certs
 	$(PY) scripts/dev_preflight.py docker
 	docker compose --profile app up -d --build
-	@echo "Portal:  http://spicehouse.zenoeats.local:8080"
+	@echo "Portal:  https://spicehouse.zenoeats.local:8443"
+
+# nginx serves HTTPS only and will not start without its certificate.
+certs:
+	@test -f infra/certs-local/fullchain.pem || { \
+		echo "No certificate in infra/certs-local/. Run once: bash scripts/local_https_cert.sh"; \
+		exit 1; }
 
 down:
 	docker compose down

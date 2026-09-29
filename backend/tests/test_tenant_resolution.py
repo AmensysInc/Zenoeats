@@ -5,13 +5,13 @@ from app.core.tenant import extract_slug
 
 def test_extracts_subdomain_slug():
     assert extract_slug("spicehouse.zenoeats.local") == "spicehouse"
-    assert extract_slug("spicehouse.zenoeats.local:8080") == "spicehouse"
+    assert extract_slug("spicehouse.zenoeats.local:8443") == "spicehouse"
     assert extract_slug("SpiceHouse.ZenoEats.Local") == "spicehouse"
 
 
 def test_root_domain_is_not_a_tenant():
     assert extract_slug("zenoeats.local") is None
-    assert extract_slug("zenoeats.local:8080") is None
+    assert extract_slug("zenoeats.local:8443") is None
 
 
 def test_reserved_labels_are_not_tenants():

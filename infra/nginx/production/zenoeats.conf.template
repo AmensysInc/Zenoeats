@@ -121,6 +121,13 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # The API and the web container send these three too, so each stands on
+    # its own without an edge. Behind this one their copies are dropped, and
+    # the lines above are the only ones: otherwise every response carried each
+    # header twice -- harmless to a browser, and a finding in every scan.
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Referrer-Policy;
 
     location /api/ {
         proxy_pass http://zenoeats_api;

@@ -32,6 +32,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -250,11 +251,21 @@ def send_order_confirmation(restaurant_id: UUID, order_id: UUID) -> bool:
         idempotency_key=f"order-confirmation/{order_id}",
     ))
     if sent:
-        with tenant_session(restaurant_id) as session:
-            row = session.get(Order, order_id)
-            if row is not None and row.confirmation_email_sent_at is None:
-                row.confirmation_email_sent_at = utcnow()
+        # The email has gone. The task retries a database that cannot be
+        # reached, and a retry from here would send it a second time, so a
+        # failure to write it down is logged rather than raised.
+        try:
+            _mark_confirmation_sent(restaurant_id, order_id)
+        except OperationalError:
+            log.warning("confirmation for %s sent but not recorded", order_id, exc_info=True)
     return sent
+
+
+def _mark_confirmation_sent(restaurant_id: UUID, order_id: UUID) -> None:
+    with tenant_session(restaurant_id) as session:
+        row = session.get(Order, order_id)
+        if row is not None and row.confirmation_email_sent_at is None:
+            row.confirmation_email_sent_at = utcnow()
 
 
 # ------------------------------------------------------- staff invitation ---
@@ -310,7 +321,11 @@ def send_staff_invitation(
         to=to, subject=subject, html=body_html, text=body_text,
         idempotency_key=f"staff-invitation/{membership_id}/{stamp}",
     ))
-    record_invitation_outcome(restaurant_id, membership_id, outcome, invited_at)
+    # As for the confirmation: sent is sent, and a retry would send it again.
+    try:
+        record_invitation_outcome(restaurant_id, membership_id, outcome, invited_at)
+    except OperationalError:
+        log.warning("invitation %s sent but not recorded", membership_id, exc_info=True)
     return outcome.sent
 
 

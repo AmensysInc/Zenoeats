@@ -7,6 +7,39 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+**Upgrading.** Run `bash scripts/local_https_cert.sh` once if
+`infra/certs-local/` is empty, change `STOREFRONT_URL_TEMPLATE` in `.env` to
+`https://{slug}.{root_domain}:8443`, then `docker compose --profile app up -d
+--force-recreate nginx api worker`. Add `https://*.zenoeats.local:8443/*` to
+the Google Maps browser key if it is not there already.
+
+### Changed
+- Development is HTTPS only, at `https://<slug>.zenoeats.local:8443`. The
+  `nginx` edge serves TLS itself; the plain-HTTP `:8080` port, the separate
+  `https` compose service and its `--profile https` are gone. `make infra`
+  and `make up-all` stop with a clear message when the certificate is
+  missing. Driver GPS now works in development, since browsers share
+  location only over HTTPS.
+- Email links, the seed script, `scripts/check_storefront.py`, the README
+  and `docs/development/URLS.txt` use the HTTPS address.
+- Kitchen and cashier staff can hand an order over without the PIN and
+  cancel a paid order, refunding it or not, from the kitchen board. Both
+  were managers only. Each still needs a reason, kept against whoever gave
+  it, and IT support and drivers still cannot do either. Refunding an order
+  that is already cancelled ("Refunds to issue") stays with managers.
+
+### Fixed
+- An email is no longer lost when the database is briefly unreachable. The
+  email tasks retried only the email provider's failures, so a moment
+  without the database dropped the message for good -- seen in an
+  end-to-end run, where one "ready to collect" email never went. Retrying
+  cannot send twice: order, staff and account emails are claimed before
+  they are sent, and the order confirmation and staff invitation no longer
+  raise if only the note that they went fails to save.
+- `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy` arrive
+  once, not twice. The API and the web container set them as well as the
+  edge; both edges, development and production, now drop the upstream copy.
+
 ## [1.2.1] - 2026-09-29
 
 The release to deploy. The same application as 1.2.0, on a supported nginx,

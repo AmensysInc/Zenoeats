@@ -69,11 +69,15 @@ EXPECTED = {
     ("PUT", "/restaurant/storefront/collections"): STOREFRONT,
     ("PUT", "/restaurant/storefront/shortcuts"): STOREFRONT,
     ("PATCH", "/restaurant/storefront/map"): STOREFRONT,
-    # The floor: the board, handing over with a PIN, and stock.
+    # The floor: the board, handing over with a PIN or without it, cancelling
+    # a paid order, and stock. The two exceptions need a reason, kept against
+    # whoever gave it.
     ("GET", "/restaurant/orders"): FLOOR_READ,
     ("GET", "/restaurant/orders/history"): FLOOR_READ,
     ("POST", "/restaurant/orders/{order_id}/ready"): ALL,
     ("POST", "/restaurant/orders/{order_id}/complete"): ALL,
+    ("POST", "/restaurant/orders/{order_id}/override-complete"): ALL,
+    ("POST", "/restaurant/orders/{order_id}/cancel"): ALL,
     ("GET", "/restaurant/stock"): FLOOR_READ,
     ("PATCH", "/restaurant/items/{item_id}/availability"): ALL,
     # Delivery: a driver's own orders, and the two steps of running one.
@@ -81,12 +85,10 @@ EXPECTED = {
     ("POST", "/restaurant/orders/{order_id}/picked-up"): DELIVERY,
     ("POST", "/restaurant/orders/{order_id}/delivered"): DELIVERY,
     ("POST", "/restaurant/driver/location"): DELIVERY,
-    # Managers: the exceptions to the counter's rules.
+    # Managers: who drives, and money owed on an order already cancelled.
     ("POST", "/restaurant/orders/{order_id}/assign-driver"): MANAGERS,
     ("POST", "/restaurant/orders/{order_id}/unassign-driver"): MANAGERS,
     ("GET", "/restaurant/drivers"): MANAGERS,
-    ("POST", "/restaurant/orders/{order_id}/override-complete"): MANAGERS,
-    ("POST", "/restaurant/orders/{order_id}/cancel"): MANAGERS,
     ("POST", "/restaurant/orders/{order_id}/refund"): MANAGERS,
     ("GET", "/restaurant/orders/refunds-due"): MANAGERS,
     # Reports are managers alone: takings are not a support question.

@@ -45,7 +45,7 @@ def no_rate_limits(monkeypatch):
     monkeypatch.setattr(ratelimit, "_consume", lambda *a, **k: None)
 
 
-def _token(sub: str, azp: str | None = "http://spicehouse.zenoeats.local:8080", **extra) -> str:
+def _token(sub: str, azp: str | None = "https://spicehouse.zenoeats.local:8443", **extra) -> str:
     now = int(time.time())
     claims = {"sub": sub, "iat": now, "exp": now + 60, "iss": "https://test.clerk.accounts.dev"}
     if azp is not None:
@@ -63,7 +63,7 @@ def _clerk_id() -> str:
 @pytest.mark.parametrize(
     "azp, ours",
     [
-        ("http://spicehouse.zenoeats.local:8080", True),
+        ("https://spicehouse.zenoeats.local:8443", True),
         ("http://spicehouse.zenoeats.local:3000", True),
         ("https://zenoeats.local", True),
         ("https://evil.example", False),

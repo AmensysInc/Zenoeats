@@ -243,6 +243,49 @@ def test_a_rejected_message_is_not_retried(sendgrid):
     assert email.send(_message()) is False
 
 
+def _db_unreachable(*args, **kwargs):
+    from sqlalchemy.exc import OperationalError
+
+    raise OperationalError("SELECT 1", {}, Exception("connection to server failed: timeout expired"))
+
+
+@pytest.mark.parametrize("task, target, args", [
+    ("send_order_confirmation", "app.services.notifications.send_order_confirmation",
+     (str(uuid.uuid4()), str(uuid.uuid4()))),
+    ("send_order_email", "app.services.order_emails.send",
+     ("order_ready", str(uuid.uuid4()), str(uuid.uuid4()))),
+    ("send_account_email", "app.services.account_emails.send", ("customer_welcome", {})),
+    ("send_staff_email", "app.services.staff_emails.send", ("refund_failed", str(uuid.uuid4()), {})),
+    ("send_staff_invitation", "app.services.notifications.send_staff_invitation",
+     (str(uuid.uuid4()), str(uuid.uuid4()))),
+])
+def test_a_database_that_cannot_be_reached_is_retried(monkeypatch, task, target, args):
+    """A moment without the database used to drop the email for good: only
+    the email provider's failures were retried. Every one of these reads the
+    database before it sends and claims the email before sending, so trying
+    again cannot send it twice."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.workers import tasks
+
+    module, _, name = target.rpartition(".")
+    monkeypatch.setattr(f"{module}.{name}", _db_unreachable)
+    retried = []
+
+    class Retried(Exception):
+        pass
+
+    def retry(exc=None, countdown=None, **kwargs):
+        retried.append(exc)
+        raise Retried()
+
+    t = getattr(tasks, task)
+    monkeypatch.setattr(t, "retry", retry)
+    with pytest.raises(Retried):
+        t.run(*args)
+    assert len(retried) == 1 and isinstance(retried[0], OperationalError)
+
+
 # ------------------------------------------------------ once per paid order ---
 
 integration = pytest.mark.integration
@@ -301,6 +344,15 @@ def test_a_failed_send_is_not_marked_as_sent(paid_order, sendgrid):
         notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id)
     sendgrid.answer["status"] = 202
     assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id)
+
+
+@integration
+def test_a_sent_confirmation_is_not_sent_again_when_recording_it_fails(paid_order, sendgrid, monkeypatch):
+    """Raising here would have the task retry, and the retry would email the
+    customer a second time. Sent is sent."""
+    monkeypatch.setattr(notifications, "_mark_confirmation_sent", _db_unreachable)
+    assert notifications.send_order_confirmation(paid_order.restaurant_id, paid_order.order_id) is True
+    assert len(sendgrid.calls) == 1
 
 
 @integration

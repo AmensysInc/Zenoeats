@@ -40,9 +40,9 @@ and the lawyer, not by engineering.
 #### Making it a website like any other
 
 Today the app runs only on the development laptop, at `*.zenoeats.local`,
-which exists nowhere else. The optional `https://…:8443` door (README §7) is
-for looking at it with a padlock on that one machine: it needs a
-certificate installed by hand, and no other device can reach it.
+which exists nowhere else. Development is served only at `https://…:8443`
+(README, "Running it", step 3), with a padlock on that one machine: it needs
+a certificate installed by hand, and no other device can reach it.
 
 To be opened by anyone, on any device, with the normal padlock, it needs
 three things. None of them is code, and the production setup already serves

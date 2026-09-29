@@ -114,14 +114,15 @@ on the URL.
 
 | URL | Who | What |
 |---|---|---|
-| `spicehouse.zenoeats.local:8080/` | Customers | Menu, cart, checkout, order tracking |
-| `spicehouse.zenoeats.local:8080/manage` | Restaurant staff | Kitchen board, deliveries, menu builder, staff, reports |
-| `admin.zenoeats.local:8080/admin` | Platform | Create and activate restaurants, platform reports |
+| `https://spicehouse.zenoeats.local:8443/` | Customers | Menu, cart, checkout, order tracking |
+| `https://spicehouse.zenoeats.local:8443/manage` | Restaurant staff | Kitchen board, deliveries, menu builder, staff, reports |
+| `https://admin.zenoeats.local:8443/admin` | Platform | Create and activate restaurants, platform reports |
 
 The restaurant screens must be opened **on that restaurant's subdomain**. The
 tenant is resolved from the `Host` header and nothing else, so
-`localhost:3000/manage` will not work. Always browse through nginx on `:8080`,
-or through the Vite dev server on a `*.zenoeats.local` subdomain.
+`localhost:3000/manage` will not work. Always browse through nginx at
+`https://<slug>.zenoeats.local:8443`. Development is HTTPS only: there is no
+plain-HTTP address.
 
 `admin` is a reserved slug, so it never resolves as a tenant. The super admin
 endpoints do not use tenant context at all; they run through the audited
@@ -135,12 +136,13 @@ system read surface.
   quantity, modifiers and notes, and time from payment, turning red past
   fifteen minutes. "Done today" lists today's handed-over and cancelled
   orders, searchable by number, with who did it and any reason given. "Collect with PIN" needs the customer's six digits;
-  five wrong attempts locks that order. A manager can hand an order over
-  without the PIN or cancel a paid one, each with a reason. **Cancel and
+  five wrong attempts locks that order. Anyone on the floor -- kitchen and
+  cashier included -- can hand an order over without the PIN or cancel a
+  paid one, each with a reason kept against their name. **Cancel and
   refund** sends the whole amount back to the customer's card, Zenoeats' fee
   included. Untick it for a no-show the restaurant is still charging for. A
   cancelled order not yet refunded waits under **Refunds to issue**, one
-  click from refunding. Partial refunds, and refunds after collection, are
+  click from refunding for a manager. Partial refunds, and refunds after collection, are
   made in the restaurant's own Stripe Dashboard, and a ticket refunded there
   is marked "refunded" too. The customer is told either way, by email and on
   their order page, with the amount and the 10 to 14 business days a refund
@@ -264,8 +266,9 @@ The actions split further:
 | Read the menu | ✓ | ✓ | | | | ✓ |
 | Mark ready, collect with PIN | ✓ | ✓ | ✓ | ✓ | | |
 | Mark items sold out or back in stock | ✓ | ✓ | ✓ | ✓ | | |
-| Hand over without the PIN | ✓ | ✓ | | | | |
-| Cancel a paid order | ✓ | ✓ | | | | |
+| Hand over without the PIN (with a reason) | ✓ | ✓ | ✓ | ✓ | | |
+| Cancel a paid order, refunding or not (with a reason) | ✓ | ✓ | ✓ | ✓ | | |
+| Refund an order already cancelled | ✓ | ✓ | | | | |
 | Edit storefront presentation (when enabled) | ✓ | ✓ | | | | ✓ |
 | Edit the menu | ✓ | ✓ | | | | |
 | Read reports | ✓ | ✓ | | | | |
@@ -423,7 +426,7 @@ the API server's fixed outbound IP. An HTTP-referrer restriction will break
 this key because calls originate from the backend.
 
 Configure the **browser key** with the **Websites** application restriction,
-allow `http://spicehouse.zenoeats.local:8080/*` for local development, and add
+allow `https://*.zenoeats.local:8443/*` for local development, and add
 each deployed storefront origin before release. Restrict this key to **Maps
 JavaScript API** and **Places API (Legacy)**. Do not reuse the server key as
 the browser key.
@@ -463,7 +466,48 @@ pointing at `/api/v1/webhooks/stripe/connect`, subscribed to
 endpoint's signing secret into `STRIPE_CONNECT_WEBHOOK_SECRET`. It is a
 different secret from the platform endpoint's.
 
-### 3. Start
+### 3. HTTPS certificate
+
+Development runs over HTTPS only, at **https://spicehouse.zenoeats.local:8443**.
+There is no plain-HTTP port, and nginx will not start without a certificate.
+Production HTTPS is `docker-compose.prod.yml` and `infra/nginx/production/`,
+not this.
+
+1. **Make the certificate** (once; run again yearly to renew):
+
+   ```powershell
+   bash scripts/local_https_cert.sh
+   ```
+
+   It creates a local certificate authority in
+   `%USERPROFILE%\zenoeats-secrets\local-ca\` (outside the repository). The
+   authority is name-constrained to `zenoeats.local` and can sign nothing
+   else. It then writes a certificate for `zenoeats.local` and
+   `*.zenoeats.local` to `infra/certs-local/` (git-ignored). `make infra` and
+   `make up-all` refuse to start without it.
+2. **Trust the local authority**, once, so browsers show the padlock.
+   Windows asks you to confirm:
+
+   ```powershell
+   Import-Certificate -FilePath "$env:USERPROFILE\zenoeats-secrets\local-ca\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root
+   ```
+
+   Chrome, Edge and Brave use this immediately; restart them if they were
+   open. Firefox keeps its own store: set `security.enterprise_roots.enabled`
+   to `true` in `about:config`. A phone used to test driver mode needs the
+   same `ca.crt` installed and trusted.
+
+   To remove the trust later:
+
+   ```powershell
+   Get-ChildItem Cert:\CurrentUser\Root | Where-Object Subject -eq "CN=Zenoeats local development CA" | Remove-Item
+   ```
+
+An address typed as `http://...:8443` is redirected to `https://`. There is
+no HSTS, on purpose: a browser that saw it would refuse plain HTTP to every
+`zenoeats.local` port for a year.
+
+### 4. Start
 
 Two ways, and only one at a time (`scripts/dev_preflight.py` refuses a
 second):
@@ -481,10 +525,10 @@ make web
 make worker                # only needed for payments and emails
 ```
 
-Open `http://spicehouse.zenoeats.local:8080`. `make fresh` wipes the
+Open `https://spicehouse.zenoeats.local:8443`. `make fresh` wipes the
 database and starts again from migrations and the seed.
 
-### 4. Connect a real test-mode restaurant account
+### 5. Connect a real test-mode restaurant account
 
 The seed inserts a placeholder account id. Replace it before paying:
 
@@ -494,7 +538,7 @@ docker compose exec postgres psql -U postgres -d zenoeats -c \
   "UPDATE restaurant_payment_accounts SET stripe_account_id = 'acct_YOUR_TEST_ID';"
 ```
 
-### 5. Forward webhooks to localhost
+### 6. Forward webhooks to localhost
 
 ```bash
 stripe listen --forward-connect-to localhost:8000/api/v1/webhooks/stripe/connect
@@ -516,7 +560,7 @@ is what marks the order paid. Without either, the order page still gets there
 by asking Stripe after about 10 seconds, but that is the fallback, so a slow
 confirmation locally usually means one of the two is not running.
 
-### 6. Pay
+### 7. Pay
 
 Add something to the cart, open the cart and **Go to checkout**. Sign in, or
 use **Continue as guest** with any email. Pay with card
@@ -533,52 +577,6 @@ Or **cancel order** → **Cancel and refund** to see a test-mode refund.
 With SendGrid set up and the worker running, the customer's emails arrive
 along the way: the confirmation, "ready to collect", and the cancellation
 with its refund.
-
-### 7. HTTPS on this laptop (optional)
-
-To see the app with a padlock before a real domain exists, run it at
-**https://spicehouse.zenoeats.local:8443**. This is an extra, optional
-door: `:8080` keeps working, and production HTTPS is
-`docker-compose.prod.yml` and `infra/nginx/production/`, not this.
-
-1. **Make the certificate** (once; run again yearly to renew):
-
-   ```powershell
-   bash scripts/local_https_cert.sh
-   ```
-
-   It creates a local certificate authority in
-   `%USERPROFILE%\zenoeats-secrets\local-ca\` (outside the repository). The
-   authority is name-constrained to `zenoeats.local` and can sign nothing
-   else. It then writes a certificate for `zenoeats.local` and
-   `*.zenoeats.local` to `infra/certs-local/` (git-ignored).
-2. **Start the HTTPS door:**
-
-   ```powershell
-   docker compose --profile app --profile https up -d
-   ```
-
-3. **Trust the local authority**, once, so browsers show the padlock.
-   Windows asks you to confirm:
-
-   ```powershell
-   Import-Certificate -FilePath "$env:USERPROFILE\zenoeats-secrets\local-ca\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root
-   ```
-
-   Chrome and Edge use this immediately; restart them if they were open.
-   Firefox keeps its own store: set `security.enterprise_roots.enabled` to
-   `true` in `about:config`.
-
-   To remove the trust later:
-
-   ```powershell
-   Get-ChildItem Cert:\CurrentUser\Root | Where-Object Subject -eq "CN=Zenoeats local development CA" | Remove-Item
-   ```
-
-There is no HSTS on this door, on purpose. A browser that saw HSTS would
-force HTTPS on `zenoeats.local` for a year, and `:8080` would stop working.
-Google Maps (delivery only) needs `https://*.zenoeats.local:8443/*` added to
-the browser key's allowed websites.
 
 ## Verifying tenant isolation
 
@@ -713,7 +711,7 @@ STOREFRONT_URL_TEMPLATE=https://{slug}.{root_domain}
 ```
 
 `STOREFRONT_URL_TEMPLATE` is where links inside emails point. Development is
-`http://{slug}.{root_domain}:8080`, through nginx; getting it wrong sends
+`https://{slug}.{root_domain}:8443`, through nginx; getting it wrong sends
 people a link that goes nowhere.
 
 **Checking it.** Each attempt is in the worker's log, sent or not:
@@ -893,7 +891,7 @@ scripts/
   make_prod_env.py  writes a production .env with fresh secrets; --check
   backup.sh         nightly encrypted backup of the database and images
   restore_drill.sh  restores a backup into a scratch database and proves it
-  local_https_cert.sh  the certificate for HTTPS on this laptop (:8443)
+  local_https_cert.sh  the development certificate; nginx needs it (:8443)
 docs/               everything written beyond the code; index in docs/README.md
   operations/       docs/operations/STEPS_BEFORE_PRODUCTION.md: go-live list, setup, deploy
   security/         the audit report, test matrix, deployment checklist
@@ -906,8 +904,8 @@ docs/               everything written beyond the code; index in docs/README.md
   CODEOWNERS        who reviews which paths
 .env.example             development settings, copied to .env
 .env.production.example  production settings, filled in by make_prod_env.py
-docker-compose.yml       development: infrastructure, plus the app behind
-                         --profile app (and --profile https for :8443)
+docker-compose.yml       development: infrastructure and the HTTPS edge on
+                         :8443, plus the app behind --profile app
 docker-compose.prod.yml  production override: GHCR images, passwords, no
                          internal ports, HTTPS edge
 CHANGELOG.md             what changed in each release
@@ -1272,9 +1270,8 @@ credentials → API key**, twice:
 | Application restriction | **IP addresses**: the server's public outbound IPv4 | **Websites**: `https://*.<domain>/*` and `https://<domain>/*` |
 | API restrictions | Geocoding API, Routes API | Maps JavaScript API, Places API (Legacy) |
 
-For development, add these to the browser key's websites too:
-- `http://spicehouse.zenoeats.local:8080/*`
-- `https://*.zenoeats.local:8443/*`, for the local HTTPS door
+For development, add this to the browser key's websites too:
+- `https://*.zenoeats.local:8443/*`
 
 A site missing from the list fails with `RefererNotAllowedMapError` in the
 browser console, and no suggestions appear. Key changes can take a few
@@ -1416,10 +1413,11 @@ ordinary markers rather than Advanced Markers. After editing `.env` in
 Docker, recreate the API with `docker compose --profile app up -d --no-deps
 --no-build --force-recreate api`; restarting an existing container does not
 load changed environment values. Pickup and unpaid orders have no delivery
-tracking map. Driver GPS requires HTTPS and browser location permission;
-the HTTP `spicehouse.zenoeats.local:8080` development origin cannot share
-GPS. Use a trusted HTTPS deployment for testing actual driver movement,
-and keep the driver's Deliveries page open after marking the order picked up.
+tracking map. Driver GPS requires HTTPS and browser location permission.
+The development edge at `https://<slug>.zenoeats.local:8443` provides it, on
+any device that trusts the local certificate authority (see
+[Running it](#3-https-certificate)). Keep the driver's Deliveries page open
+after marking the order picked up.
 
 Uploaded menu images under `/images/` are served by the API. Both development
 and production nginx configurations route that prefix to the API, including
