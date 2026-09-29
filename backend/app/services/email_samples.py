@@ -12,7 +12,9 @@ import uuid
 from collections.abc import Callable
 from types import SimpleNamespace
 
-from app.services import account_emails, notifications, order_emails, staff_emails
+from app.services import (
+    account_emails, email_templates, notifications, order_emails, staff_emails,
+)
 
 
 def _order(**overrides) -> SimpleNamespace:
@@ -60,6 +62,12 @@ def _staff(kind: str, **kw) -> tuple[str, str, str]:
     return staff_emails.compose(kind, **values)
 
 
+def _code(purpose: str) -> tuple[str, str, str]:
+    """A sign-in code from Clerk, as Zenoeats sends it."""
+    out = email_templates.render("customer_code", purpose=purpose, code="482915")
+    return out.subject, out.html, out.text
+
+
 def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
     """name/case -> a function returning (subject, html, text)."""
     delivery = _order(fulfillment_type="DELIVERY", discount_minor=0, delivery_fee_minor=399,
@@ -101,6 +109,8 @@ def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
         "account_closed/deleted_in_clerk": lambda: account_emails.compose(
             "account_closed", name=None, restaurant_name=None,
         ),
+        "customer_code/verify": lambda: _code("verify"),
+        "customer_code/reset": lambda: _code("reset"),
         "refund_failed/balance": lambda: _staff(
             "refund_failed", order_number=1042, amount="$21.92",
             problem="Stripe refused the refund: this restaurant's Stripe balance is too low. "

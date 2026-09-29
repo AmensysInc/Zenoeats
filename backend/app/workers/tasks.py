@@ -402,6 +402,25 @@ def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: 
 
 
 @celery_app.task(
+    bind=True, max_retries=5, default_retry_delay=5,
+    name="app.workers.tasks.send_clerk_email",
+)
+def send_clerk_email(self, sealed: str, event_id: str):
+    """Send one of Clerk's customer emails -- a sign-up or password-reset
+    code -- through SendGrid (services/clerk_emails.py).
+
+    Retried quickly, not on the minutes-long schedule of the other emails: a
+    customer is on a page waiting for this code, and it expires.
+    """
+    from app.services import clerk_emails, email
+
+    try:
+        return clerk_emails.send(sealed, event_id)
+    except email.RetryableEmailError as exc:
+        raise self.retry(exc=exc, countdown=5 * (2 ** self.request.retries))
+
+
+@celery_app.task(
     bind=True, max_retries=6, default_retry_delay=60,
     name="app.workers.tasks.send_account_email",
 )

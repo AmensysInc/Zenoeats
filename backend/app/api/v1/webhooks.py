@@ -16,8 +16,8 @@ from app.config import settings
 from app.db.base import utcnow
 from app.db.session import system_session
 from app.models import ClerkEvent, StripeEvent, StripeEventStatus
-from app.services import stripe_service
-from app.workers.tasks import process_clerk_event, process_stripe_event
+from app.services import clerk_emails, stripe_service
+from app.workers.tasks import process_clerk_event, process_stripe_event, send_clerk_email
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
@@ -93,7 +93,8 @@ async def stripe_connect_webhook(
 
 @router.post("/webhooks/clerk")
 async def clerk_webhook(request: Request):
-    """Mirror Clerk identity changes into PostgreSQL.
+    """Mirror Clerk identity changes into PostgreSQL, and send the customer
+    emails Clerk has handed to us (email.created; services/clerk_emails.py).
 
     Same durability contract as the Stripe inbox: persist first, process
     asynchronously, tolerate redelivery.
@@ -126,11 +127,15 @@ async def clerk_webhook(request: Request):
 
     event_id = headers.get("svix-id")
     row_id = None
+    event_type = verified.get("type", "unknown")
+
+    if event_type == "email.created":
+        return _clerk_email(event_id, verified)
 
     with system_session() as session:
         row = ClerkEvent(
             clerk_event_id=event_id,
-            type=verified.get("type", "unknown"),
+            type=event_type,
             payload=verified,
             received_at=utcnow(),
         )
@@ -144,4 +149,56 @@ async def clerk_webhook(request: Request):
 
     if row_id:
         process_clerk_event.delay(row_id)
+    return {"received": True}
+
+
+def _clerk_email(event_id: str | None, event: dict):
+    """An email Clerk would have sent, now ours to send.
+
+    Stored like every other event, so a redelivery is recognised, but
+    redacted: a sign-in code has no business in a table kept for a year. The
+    contents go to the worker sealed instead. Stored as processed, because
+    there is nothing for process_clerk_event to do with it.
+
+    A queue that cannot take the task answers 503 so Clerk delivers the
+    event again; a 200 would have lost a code the customer is waiting for.
+    The row stays, marked FAILED, under a changed id, so the redelivery is
+    not mistaken for a duplicate. (This role may not delete from the inbox.)
+    """
+    data = event.get("data") or {}
+    wanted = clerk_emails.wanted(data)
+
+    with system_session() as session:
+        row = ClerkEvent(
+            clerk_event_id=event_id,
+            type="email.created",
+            payload=clerk_emails.redacted(event),
+            status="PROCESSED" if wanted else "IGNORED",
+            received_at=utcnow(),
+            processed_at=utcnow(),
+        )
+        session.add(row)
+        try:
+            session.flush()
+            row_id = row.id
+        except IntegrityError:
+            session.rollback()
+            return {"received": True, "duplicate": True}
+
+    if not wanted:
+        # Clerk sent this one itself.
+        return {"received": True}
+
+    try:
+        send_clerk_email.delay(clerk_emails.seal(data), event_id)
+    except Exception:
+        log.exception("could not queue a clerk email; asking Clerk to deliver it again")
+        with system_session() as session:
+            failed = session.get(ClerkEvent, row_id)
+            if failed is not None:
+                failed.clerk_event_id = f"{event_id}:unqueued:{row_id}"
+                failed.status = "FAILED"
+                failed.error = "could not be queued; left for Clerk to deliver again"
+        return Response(status_code=503, content='{"code":"QUEUE_UNAVAILABLE"}',
+                        media_type="application/json")
     return {"received": True}

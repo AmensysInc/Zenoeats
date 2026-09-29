@@ -1,0 +1,26 @@
+{#-
+  A customer's one-time code, from Clerk: to verify an email address (at
+  sign-up, or a new address) or to reset a forgotten password. Sent only
+  once "Delivered by Clerk" is switched off for that email in Clerk's
+  dashboard; until then Clerk sends its own.
+
+  purpose is "verify" or "reset". code is the digits to type.
+
+  Never put the code in the subject: subjects appear in inbox previews,
+  lock screens and logs.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}{% if purpose == "reset" %}Reset your password{% else %}Your verification code{% endif %}{% endblock %}
+
+{% block body %}
+{% if purpose == "reset" %}
+<p>Use this code to choose a new password for your Zenoeats account:</p>
+{% else %}
+<p>Use this code to verify your email address on Zenoeats:</p>
+{% endif %}
+<p style="margin:16px 0 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:32px;letter-spacing:6px;font-weight:600">{{ code }}</p>
+<p style="margin-top:16px">Type it on the page that asked for it. It works once and expires soon.</p>
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">If you didn't ask for this, you can ignore this email; nothing changes without the code. Never share it: Zenoeats and the restaurants will never ask you for it.</p>
+{% endblock %}

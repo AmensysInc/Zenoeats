@@ -8,6 +8,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Clerk's customer emails can go through SendGrid: with "Delivered by Clerk"
+  off for an email, the `email.created` webhook sends it, the verification
+  and reset codes in Zenoeats' own template. The code is never stored or
+  logged, and a queue that is down asks Clerk to deliver it again (#58).
 - Customer account emails: a welcome from the restaurant whose storefront a
   brand-new account first opens, and a confirmation when an account is
   closed, whether from a storefront or in Clerk (#55).

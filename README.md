@@ -657,7 +657,7 @@ Two senders, for two different kinds of email:
 
 | Email | Sent by | Set up in |
 |---|---|---|
-| Customer verification and password-reset codes | Clerk | Clerk's dashboard (templates, branding) |
+| Customer verification and password-reset codes | Clerk, or Zenoeats through SendGrid once switched over (below) | Clerk's dashboard |
 | Everything else, listed below | Zenoeats, through SendGrid | `.env`; the words are templates in the repository |
 
 Clerk cannot send Zenoeats' own: staff are not Clerk users (they sign in with
@@ -719,6 +719,28 @@ people a link that goes nowhere.
 ```
 docker compose --profile app logs worker | Select-String "sent|rejected|SENDGRID"
 ```
+
+**Clerk's emails through SendGrid (optional).** Clerk can hand its own
+customer emails (sign-up verification codes, password-reset codes and the
+rest) to Zenoeats instead of sending them itself, so every email a customer
+gets comes from the same sender. The verification and reset codes then use
+Zenoeats' own template (`customer_code/`); any other kind is sent in Clerk's
+words. The code is never stored or logged.
+
+**Do this only where Clerk's webhook reaches the app**, which means
+production, or a laptop behind a public tunnel. Once Clerk stops sending an
+email itself, the webhook is the only way it arrives. If Clerk can't reach
+the app, nobody can sign up or reset a password until you switch it back.
+
+1. Clerk › **Webhooks** › your endpoint (`https://<domain>/api/v1/webhooks/clerk`)
+   › subscribe it to **`email.created`** as well as the `user.*` events.
+2. SendGrid set up as above, and the worker running.
+3. Clerk › **Customization › Emails**. For **Verification code** and
+   **Reset password code**, turn off **Delivered by Clerk**. Do one, test it,
+   then the other.
+4. Sign up with a new address and check the code arrives from `EMAIL_FROM`.
+
+To undo it, turn **Delivered by Clerk** back on; nothing else changes.
 
 **Editing an email.** The words and layout of every email are templates in
 [`backend/app/templates/email/`](backend/app/templates/email/), one folder per
@@ -1205,7 +1227,9 @@ lawyer-reviewed versions on the root domain (see
 `https://<domain>/api/v1/webhooks/clerk`, events `user.created`,
 `user.updated` and `user.deleted`. Copy its signing secret into
 `CLERK_WEBHOOK_SECRET`. This keeps customer records in step with Clerk, and
-is how a deletion made in the Clerk dashboard reaches the app.
+is how a deletion made in the Clerk dashboard reaches the app. Add
+`email.created` too if Clerk's own emails are to go through SendGrid (see
+[Email](#email)); it does nothing until an email's Clerk delivery is off.
 
 **3.8 Polish.** Brand the **email templates** (verification and reset codes)
 with the Zenoeats name and sender. Choose the **session lifetime** and
