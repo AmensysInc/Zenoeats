@@ -210,10 +210,31 @@ def active_restaurant_with_order():
 # statuses -- and loses the person: a closed account must not live on in a
 # year-old copy of Clerk's user object or Stripe's billing details.
 
+@pytest.fixture(autouse=True)
+def _remove_what_these_tests_insert():
+    """Delete the webhook rows this module inserted, whatever their state.
+
+    Rows left RECEIVED or FAILED are exactly what /health/operations reports
+    as webhooks_stuck and webhooks_failed, so a test run against a
+    development database would otherwise leave it reporting a fault.
+    """
+    yield
+    with retention._platform_transaction() as session:
+        for table, ids in _INSERTED.items():
+            if ids:
+                session.execute(text(f"DELETE FROM {table} WHERE id = ANY(:ids)"),
+                                {"ids": list(ids)})
+            ids.clear()
+
+
+_INSERTED: dict[str, set] = {"stripe_events": set(), "clerk_events": set()}
+
+
 def _event_with(table: str, status: str, payload: dict) -> uuid.UUID:
     import json
 
     row_id = uuid.uuid4()
+    _INSERTED[table].add(row_id)
     id_column = "stripe_event_id" if table == "stripe_events" else "clerk_event_id"
     with retention._platform_transaction() as session:
         session.execute(
