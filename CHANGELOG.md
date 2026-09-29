@@ -7,9 +7,55 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-29
+
+The release to deploy. The same application as 1.3.0, with a customer no
+longer able to be charged for an order that had expired, and checkout
+asking the database less.
+
+**Upgrading from 1.3.0.** No migration, no `.env` change and no edge
+change. Pull the new `api` and `web` images and restart:
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app pull`,
+then the same with `up -d` in place of `pull`.
+
+### Fixed
+- **A customer could be charged for an expired order.** The 30-minute sweep
+  marked an unpaid order `EXPIRED` but left its Stripe PaymentIntent open,
+  so a customer whose payment page was still up could pay afterwards: the
+  money was taken, the order never reached the kitchen, and no email went.
+  The sweep now cancels the intent at Stripe before expiring the order.
+  Stripe settles a payment and a cancellation of one intent one at a time,
+  so exactly one wins: a customer who paid first gets their order, and
+  once the cancel wins the page can no longer charge. A payment Stripe is
+  still settling is left for the next sweep rather than guessed at.
+- **The sweep and a payment arriving at the same moment could overwrite
+  each other.** The sweep read the order unlocked, so it could expire an
+  order in the instant its payment was being recorded. Both now lock the
+  payment and then the order, in that order, and check again under the
+  locks.
+- **Money that still lands on an expired order is refunded**, in full and
+  automatically, and the customer is emailed ("Your refund is on its way").
+  Stripe refusing the refund retries it; redelivery never refunds twice,
+  sends no order confirmation, and records no tax for the sale that did not
+  happen. The order page says the payment is being refunded rather than
+  "Nothing was charged", and an expired order's payment reads "failed"
+  instead of "processing".
+
+### Performance
+- **Combos are read once per cart**, not once per combo. Pricing loaded each
+  combo, its slots and their choices separately -- about three queries a
+  combo, on the quote and again at checkout. All of a cart's combos now come
+  in one read, like its items already did.
+- **An order is written in one go.** Creating an order flushed once per line
+  only to learn each line's id for its modifiers: a ten-line order was ten
+  round trips, made while the restaurant's order-number counter is locked
+  and every other checkout there waits. The modifiers now hang off their
+  line through the relationship, and lines and modifiers go in as one
+  batched insert each.
+
 ## [1.3.0] - 2026-09-29
 
-The release to deploy. Kitchen and cashier staff can deal with a stuck or
+Kitchen and cashier staff can deal with a stuck or
 cancelled order themselves, emails survive a moment without the database,
 and development runs over HTTPS only. Passed the whole suite (1,002 backend
 tests plus the new ones, 35 web tests) and an end-to-end run against the
@@ -251,7 +297,8 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.1.0...v1.2.0

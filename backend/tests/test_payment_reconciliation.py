@@ -68,9 +68,11 @@ def pending(monkeypatch):
         session.flush()
         oid, pid = order.id, payment.id
 
-    # What Stripe will say about the intent, set per test, and every read.
+    # What Stripe will say about the intent, set per test, and every read,
+    # cancellation and refund asked of it.
     stripe_side = SimpleNamespace(intent={"id": intent_id, "status": "succeeded"},
-                                  error=None, reads=[])
+                                  error=None, reads=[], cancels=[], refunds=[],
+                                  pay_before_cancel=False)
 
     def retrieve(id, stripe_account=None, **kwargs):
         stripe_side.reads.append((id, stripe_account))
@@ -78,7 +80,28 @@ def pending(monkeypatch):
             raise stripe_side.error
         return stripe.PaymentIntent.construct_from(dict(stripe_side.intent), "sk_test")
 
+    def cancel(id, cancellation_reason=None, stripe_account=None, **kwargs):
+        # Stripe's own rule: an intent that is paid, cancelled or settling
+        # cannot be cancelled, and says so with this code.
+        stripe_side.cancels.append((id, cancellation_reason, stripe_account))
+        if stripe_side.pay_before_cancel:
+            # The customer's confirm reached Stripe a moment before ours.
+            stripe_side.intent["status"] = "succeeded"
+        if stripe_side.intent["status"] in ("succeeded", "canceled", "processing"):
+            raise stripe.InvalidRequestError(
+                "You cannot cancel this PaymentIntent", "intent",
+                code="payment_intent_unexpected_state",
+            )
+        stripe_side.intent.update(status="canceled", cancellation_reason=cancellation_reason)
+        return stripe.PaymentIntent.construct_from(dict(stripe_side.intent), "sk_test")
+
+    def refund(payment_intent=None, stripe_account=None, idempotency_key=None, **kwargs):
+        stripe_side.refunds.append((payment_intent, stripe_account, idempotency_key))
+        return {"id": "re_test", "status": "succeeded", "amount": 1080}
+
     monkeypatch.setattr(stripe.PaymentIntent, "retrieve", retrieve)
+    monkeypatch.setattr(stripe.PaymentIntent, "cancel", cancel)
+    monkeypatch.setattr(stripe.Refund, "create", refund)
 
     yield SimpleNamespace(restaurant_id=rid, order_id=oid, payment_id=pid, slug=slug,
                           account_id=account_id, intent_id=intent_id, stripe=stripe_side)
@@ -340,3 +363,178 @@ def test_the_sweep_expires_an_order_that_was_never_paid(pending):
 
     assert _expire(pending) is True
     assert _state(pending).order == "EXPIRED"
+
+
+# ----------------------------------------------- expiry against payment ---
+#
+# Expiring an order used to leave its PaymentIntent open. A customer whose
+# payment page was still up could pay after the order had expired, and was
+# charged for an order the kitchen never saw.
+
+
+@integration
+def test_the_sweep_closes_the_payment_before_expiring_the_order(pending):
+    pending.stripe.intent["status"] = "requires_payment_method"
+
+    assert _expire(pending) is True
+    assert pending.stripe.cancels == [(pending.intent_id, "abandoned", pending.account_id)]
+    # The page left open can no longer charge: Stripe has the intent cancelled.
+    assert pending.stripe.intent["status"] == "canceled"
+    state = _state(pending)
+    assert state.order == "EXPIRED"
+    assert state.payment == "FAILED"  # closed, not "processing"
+
+
+@integration
+def test_a_customer_who_pays_just_before_the_cancel_gets_their_order(pending, queued_emails):
+    """Stripe settles the confirm and the cancel one at a time. The customer's
+    confirm won, so the cancel is refused and the order goes to the kitchen."""
+    pending.stripe.intent["status"] = "requires_payment_method"
+    pending.stripe.pay_before_cancel = True
+
+    assert _expire(pending) is False
+    state = _state(pending)
+    assert (state.order, state.payment) == ("PREPARING", "PAID")
+    assert ("send_order_confirmation", (str(pending.restaurant_id), str(pending.order_id))) in queued_emails
+
+
+@integration
+def test_an_order_whose_payment_is_still_settling_is_not_expired(pending):
+    pending.stripe.intent["status"] = "processing"
+
+    assert _expire(pending) is False
+    assert _state(pending).order == "PENDING_PAYMENT"
+
+
+@integration
+def test_an_order_is_not_expired_when_its_payment_cannot_be_closed(pending, monkeypatch):
+    pending.stripe.intent["status"] = "requires_payment_method"
+
+    def unreachable(*args, **kwargs):
+        raise stripe.APIConnectionError("connection reset")
+
+    monkeypatch.setattr(stripe.PaymentIntent, "cancel", unreachable)
+    assert _expire(pending) is False
+    assert _state(pending).order == "PENDING_PAYMENT"
+
+
+@integration
+def test_the_sweeps_own_cancellation_reported_back_reads_as_expired(pending):
+    """If Stripe's canceled event is handled before the sweep writes the
+    expiry, the order still ends EXPIRED, not CANCELLED."""
+    from app.workers.tasks import _handle_intent_canceled
+
+    _handle_intent_canceled(
+        {"data": {"object": {"id": pending.intent_id, "status": "canceled",
+                             "cancellation_reason": "abandoned"}}},
+        pending.account_id,
+    )
+    assert _state(pending).order == "EXPIRED"
+
+
+@integration
+def test_the_sweep_waits_for_a_payment_being_recorded_and_then_leaves_it(pending):
+    """The race: the payment is being recorded in one transaction while the
+    sweep runs in another. The sweep read the order unlocked, saw it unpaid,
+    and its EXPIRED overwrote PREPARING once the payment committed. Now it
+    waits on the payment's lock and reads the outcome."""
+    import threading
+
+    from app.db.session import tenant_session
+    from app.models import Order, Payment
+    from app.services.orders import transition
+    from app.workers.tasks import _expire_order
+
+    result = {}
+
+    def sweep():
+        # No intent: this is the locked half of the sweep, on its own.
+        result["expired"] = _expire_order(pending.restaurant_id, pending.order_id, None, None, None)
+
+    with tenant_session(pending.restaurant_id) as session:
+        payment = session.get(Payment, pending.payment_id, with_for_update=True)
+        order = session.get(Order, pending.order_id, with_for_update=True)
+        payment.status, payment.succeeded_at = "PAID", utcnow()
+        transition(order, "AUTO_ACCEPTED")
+        transition(order, "PREPARING")
+        session.flush()
+
+        racer = threading.Thread(target=sweep)
+        racer.start()
+        racer.join(timeout=2)
+        assert racer.is_alive(), "the sweep did not wait for the payment being recorded"
+
+    racer.join(timeout=15)
+    assert result == {"expired": False}
+    assert _state(pending).order == "PREPARING"
+
+
+def _expire_directly(path):
+    """Expire the order the way the sweep did before this fix: the intent
+    left open behind it."""
+    from app.db.session import tenant_session
+    from app.models import Order
+    from app.services.orders import transition
+
+    with tenant_session(path.restaurant_id) as session:
+        transition(session.get(Order, path.order_id), "EXPIRED")
+
+
+@integration
+def test_a_payment_that_lands_on_an_expired_order_is_refunded(pending, queued_emails):
+    from app.workers.tasks import _handle_intent_succeeded
+
+    _expire_directly(pending)
+    _handle_intent_succeeded({"data": {"object": {"id": pending.intent_id}}}, pending.account_id)
+
+    state = _state(pending)
+    assert state.order == "EXPIRED"  # final: the kitchen never gets it 30 minutes late
+    assert state.payment == "REFUNDED"
+    assert [r[0] for r in pending.stripe.refunds] == [pending.intent_id]
+    names = [name for name, _ in queued_emails]
+    assert "send_order_confirmation" not in names
+    assert names == ["send_order_email"]
+    kind = queued_emails[0][1][0]
+    assert kind == "refund_issued"
+
+    # The event redelivered: nothing more is refunded or sent.
+    _handle_intent_succeeded({"data": {"object": {"id": pending.intent_id}}}, pending.account_id)
+    assert len(pending.stripe.refunds) == 1
+    assert len(queued_emails) == 1
+
+
+@integration
+def test_a_refund_stripe_refuses_is_tried_again_on_the_retried_event(pending, monkeypatch, queued_emails):
+    from app.workers.tasks import _handle_intent_succeeded
+
+    _expire_directly(pending)
+
+    def refused(**kwargs):
+        raise stripe.InvalidRequestError("balance too low", "amount", code="balance_insufficient")
+
+    monkeypatch.setattr(stripe.Refund, "create", refused)
+    with pytest.raises(errors.ApiError):
+        _handle_intent_succeeded({"data": {"object": {"id": pending.intent_id}}}, pending.account_id)
+    assert _state(pending).payment == "PAID"  # the money is still owed back
+
+    monkeypatch.setattr(stripe.Refund, "create",
+                        lambda **kw: {"id": "re_2", "status": "succeeded", "amount": 1080})
+    _handle_intent_succeeded({"data": {"object": {"id": pending.intent_id}}}, pending.account_id)
+    assert _state(pending).payment == "REFUNDED"
+
+
+@integration
+def test_the_customer_is_told_about_the_refund(pending, monkeypatch):
+    """The refund email goes even though the order was never marked paid."""
+    from app.services import email, order_emails
+    from app.workers.tasks import _handle_intent_succeeded
+
+    _expire_directly(pending)
+    _handle_intent_succeeded({"data": {"object": {"id": pending.intent_id}}}, pending.account_id)
+
+    sent = []
+    monkeypatch.setattr(email, "deliver",
+                        lambda message: sent.append(message) or email.Outcome("SENT", None))
+    assert order_emails.send("refund_issued", pending.restaurant_id, pending.order_id,
+                             {"refunded_before": 0, "refunded_after": 1080})
+    assert "$10.80" in sent[0].text

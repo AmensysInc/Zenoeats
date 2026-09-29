@@ -102,11 +102,19 @@ def send(kind: str, restaurant_id: UUID, order_id: UUID, extra: dict | None = No
             .options(selectinload(Order.items).selectinload(OrderItem.modifiers))
         ).scalar_one_or_none()
         restaurant = session.get(Restaurant, restaurant_id)
-        if order is None or restaurant is None or order.paid_at is None:
+        if order is None or restaurant is None:
             return False
         payment = session.execute(
             select(Payment).where(Payment.order_id == order.id)
         ).scalar_one_or_none()
+        # An order the kitchen never saw has no paid_at -- except that one
+        # whose payment arrived after it expired was still charged, and is
+        # refunded (tasks._refund_late_payment). That refund is news to tell.
+        charged_late = (
+            kind == "refund_issued" and payment is not None and payment.succeeded_at is not None
+        )
+        if order.paid_at is None and not charged_late:
+            return False
         refunded = refund_minor(payment)
         charged = payment.amount_minor if payment else order.total_minor
         restaurant_name, slug, phone = restaurant.name, restaurant.slug, restaurant.phone

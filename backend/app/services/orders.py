@@ -123,8 +123,14 @@ def create_pending_order(
     session.add(order)
     session.flush()
 
-    for line in cart.lines:
-        order_item = OrderItem(
+    # Every line and its modifiers, written together by the one flush below.
+    # The modifiers hang off their line through the relationship, which fills
+    # in order_item_id when the rows go in, so nothing needs a line's id in
+    # advance. This used to flush once per line to get that id: a ten-line
+    # order was ten round trips, all made while the order counter above is
+    # locked and every other checkout at this restaurant waits for it.
+    session.add_all([
+        OrderItem(
             restaurant_id=restaurant.id,
             order_id=order.id,
             menu_item_id=line.menu_item_id,
@@ -139,22 +145,20 @@ def create_pending_order(
             combo_id=line.combo_id,
             combo_name_snapshot=line.combo_name,
             combo_group=line.combo_group,
-        )
-        session.add(order_item)
-        session.flush()
-
-        for mod in line.modifiers:
-            session.add(
+            modifiers=[
                 OrderItemModifier(
                     restaurant_id=restaurant.id,
-                    order_item_id=order_item.id,
                     modifier_option_id=mod.option_id,
                     group_name_snapshot=mod.group_name,
                     option_name_snapshot=mod.option_name,
                     unit_price_delta_minor=mod.unit_price_delta_minor,
                     quantity=mod.quantity,
                 )
-            )
+                for mod in line.modifiers
+            ],
+        )
+        for line in cart.lines
+    ])
 
     session.add(
         Payment(

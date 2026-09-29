@@ -184,10 +184,13 @@ def price_cart(
         )
 
     # Combos, after the loose items, so a cart reads in the order it was
-    # built. Each returns its lines and what it took off.
+    # built. Each returns its lines and what it took off. All of them are
+    # read in one query first, as the items were: a cart of five meal deals
+    # used to ask the database five times, on the quote and again at checkout.
+    combos_by_id = _load_combos(session, restaurant, raw_combos)
     for group_number, raw in enumerate(raw_combos, start=1):
         combo_lines, combo_discount = _price_combo(
-            session, restaurant, raw, items_by_id, group_number
+            combos_by_id, restaurant, raw, items_by_id, group_number
         )
         priced_lines.extend(combo_lines)
         subtotal += sum(line.line_total_minor for line in combo_lines)
@@ -340,29 +343,19 @@ def combo_discount_minor(kind: str, value: int, items_subtotal_minor: int) -> in
     return 0
 
 
-def _price_combo(
-    session: Session,
-    restaurant: Restaurant,
-    raw: dict,
-    items_by_id: dict[UUID, Item],
-    group_number: int,
-) -> tuple[list[PricedLine], int]:
-    """One combo: validate the choices, price each slot, take the saving off.
-
-    Every rule here is a rule the customer's browser also knows, and none of
-    them is trusted from it. The slots that exist, which items may fill them,
-    and what any of it costs are read from the database on every quote and
-    again on every order.
-    """
-    combo_id = UUID(str(raw["combo_id"]))
-    quantity = int(raw.get("quantity", 0))
-    if quantity < 1:
-        raise errors.validation_error("Combo quantity must be at least 1.")
-
-    combo = session.execute(
+def _load_combos(
+    session: Session, restaurant: Restaurant, raw_combos: list[dict]
+) -> dict[UUID, Combo]:
+    """Every combo the cart names, with its slots and their choices, in one
+    query however many combos there are. A combo that is gone or deleted is
+    simply absent; _price_combo says so."""
+    combo_ids = {UUID(str(raw["combo_id"])) for raw in raw_combos}
+    if not combo_ids:
+        return {}
+    combos = session.execute(
         select(Combo)
         .where(
-            Combo.id == combo_id,
+            Combo.id.in_(combo_ids),
             Combo.restaurant_id == restaurant.id,
             Combo.deleted_at.is_(None),
         )
@@ -373,8 +366,30 @@ def _price_combo(
             # no message at all.
             selectinload(Combo.slots).joinedload(ComboSlot.item_type),
         )
-    ).scalars().first()
+    ).scalars().all()
+    return {combo.id: combo for combo in combos}
 
+
+def _price_combo(
+    combos_by_id: dict[UUID, Combo],
+    restaurant: Restaurant,
+    raw: dict,
+    items_by_id: dict[UUID, Item],
+    group_number: int,
+) -> tuple[list[PricedLine], int]:
+    """One combo: validate the choices, price each slot, take the saving off.
+
+    Every rule here is a rule the customer's browser also knows, and none of
+    them is trusted from it. The slots that exist, which items may fill them,
+    and what any of it costs are read from the database on every quote and
+    again on every order (_load_combos, once for the whole cart).
+    """
+    combo_id = UUID(str(raw["combo_id"]))
+    quantity = int(raw.get("quantity", 0))
+    if quantity < 1:
+        raise errors.validation_error("Combo quantity must be at least 1.")
+
+    combo = combos_by_id.get(combo_id)
     if combo is None:
         raise errors.item_unavailable("That combo is no longer on the menu.")
     if not combo.is_available:

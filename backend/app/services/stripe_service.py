@@ -240,6 +240,45 @@ def retrieve_payment_intent(intent_id: str, stripe_account_id: str) -> dict | No
     return intent.to_dict() if hasattr(intent, "to_dict") else dict(intent)
 
 
+def cancel_payment_intent(intent_id: str, stripe_account_id: str) -> str | None:
+    """Close an abandoned checkout's PaymentIntent, so it can no longer be paid.
+
+    Expiring the order alone left the intent open: a customer whose payment
+    page was still up could pay after the order had expired, and was charged
+    for an order the kitchen never saw. Once cancelled, Stripe refuses to
+    confirm it.
+
+    Stripe decides a confirm and a cancel of the same intent one after the
+    other, so exactly one wins. Returns the intent's status afterwards:
+    "canceled" when this closed it (or it already was), "succeeded" when the
+    customer paid first, "processing" for a payment Stripe is still settling
+    and will not let go of, or None when Stripe has no such intent. Raises
+    when Stripe could not be asked. Calls Stripe, so never inside a
+    transaction (rule 6).
+    """
+    try:
+        intent = stripe.PaymentIntent.cancel(
+            intent_id,
+            # What the intent's own canceled event carries back, and how the
+            # handler tells this apart from a cancellation for any other
+            # reason (tasks._handle_intent_canceled).
+            cancellation_reason="abandoned",
+            stripe_account=stripe_account_id,
+        )
+    except stripe.StripeError as exc:
+        code = getattr(exc, "code", None)
+        if code in _INTENT_GONE_CODES:
+            log.warning("stripe has no intent %s on %s to cancel: %s", intent_id, stripe_account_id, code)
+            return None
+        if code == "payment_intent_unexpected_state":
+            # Already paid, already cancelled, or mid-payment: what it is now
+            # is the answer, read back rather than guessed from the message.
+            current = retrieve_payment_intent(intent_id, stripe_account_id)
+            return current.get("status") if current else None
+        raise errors.payment_provider_unavailable() from exc
+    return _value(intent, "status")
+
+
 def create_account_link(stripe_account_id: str, refresh_url: str, return_url: str) -> str:
     """Stripe-hosted onboarding. Zenoeats never collects KYC data itself."""
     try:

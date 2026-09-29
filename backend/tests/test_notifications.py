@@ -377,8 +377,10 @@ def test_the_payment_webhook_queues_the_confirmation(queued_emails, monkeypatch)
 
     class FakeTenantSession:
         def __enter__(self):
+            # One stand-in for both rows the handler reads: an already-paid
+            # payment, and its order, in the kitchen.
             return SimpleNamespace(get=lambda model, _id, **kw: SimpleNamespace(
-                order_id=order_id, succeeded_at=utcnow()))
+                order_id=order_id, succeeded_at=utcnow(), status="PREPARING"))
 
         def __exit__(self, *exc):
             return False

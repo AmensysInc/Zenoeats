@@ -9,7 +9,7 @@ on the restaurant's kitchen board. There it is handed over with a pickup
 PIN, or cancelled and refunded from the same screen.
 
 **Status (29 September 2026):** the application is feature-complete for
-launch, and **`v1.3.0` is the release to deploy** (see
+launch, and **`v1.3.1` is the release to deploy** (see
 [`CHANGELOG.md`](CHANGELOG.md)). It includes the customer, staff and account
 emails, sent through SendGrid from editable templates (see [Email](#email)).
 End-to-end passes against the running stack have found no bugs in the
@@ -981,7 +981,7 @@ generated from [`.env.production.example`](.env.production.example), which
 explains every setting:
 
 ```bash
-python3 scripts/make_prod_env.py --domain <domain> --release v1.3.0   # once
+python3 scripts/make_prod_env.py --domain <domain> --release v1.3.1   # once
 python3 scripts/make_prod_env.py --check .env                         # until clean
 export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 docker compose --profile app pull && docker compose --profile app up -d
@@ -1037,7 +1037,7 @@ development ones; never reuse development keys.
 | 9 | Platform administrators | The super admin portal | `ADMIN_USERS` |
 
 Generate the `.env` first, on the server, and fill it in as you go:
-`python3 scripts/make_prod_env.py --domain <domain> --release v1.3.0`. It
+`python3 scripts/make_prod_env.py --domain <domain> --release v1.3.1`. It
 creates every secret and password itself, and marks each value that has to
 come from one of the accounts below with `# FILL IN:`. Run
 `python3 scripts/make_prod_env.py --check .env` at any point to see what is
@@ -1351,7 +1351,7 @@ Each operator of the super admin portal (`https://admin.<domain>/admin`) has
 a named entry in `ADMIN_USERS`, which the audit log records. On the server:
 
 ```bash
-docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.3.0 \
+docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.3.1 \
   python scripts/hash_password.py you@example.com
 ```
 
