@@ -964,7 +964,10 @@ until the review below happens.**
       (country, and state in the US); and the deletion response windows
       (suggested: confirm within **7 days**, complete within **30**). Every
       `PLACEHOLDER` in `web/legal/*.html` is one of these.
-- [ ] **[BLOCKER]** **Legal review** of all four pages. Each one ends with the
+- [ ] **[BLOCKER]** **Legal review** of all four pages. **Send the pack in
+      [`docs/legal/`](../legal/)**: the brief (how the service works, the data
+      it holds, the gaps found and 21 questions) and the four pages as PDFs.
+      Each page also ends with the
       specific questions for its own text; the common ones are the legal
       entity name, trading address and contact address (`PLACEHOLDER` in the
       files today), the governing law, and which privacy regime applies —

@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- A legal review pack in `docs/legal/`: a brief for the lawyer describing how
+  the service works, the personal information it holds and who receives it,
+  retention as it actually is, every email, the gaps found and the questions
+  to answer, with the four policy pages as PDFs (#60).
+
+### Fixed
+- The policies say what the software does: Stripe gets the customer's email
+  for fraud screening and sends no receipt; SendGrid sends every kind of
+  email; Google receives the visitor's IP address and typed address for the
+  suggestions and map; driver positions are discarded within 10 minutes. The
+  refunds page no longer promises a restaurant phone number the software
+  does not hold (#60).
+
 ## [1.1.0] - 2026-09-28
 
 Email. Everything Zenoeats sends now goes through SendGrid from templates in

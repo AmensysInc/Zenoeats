@@ -97,7 +97,8 @@
         <dt>A driver’s location, during a delivery</dt>
         <dd>
           While your delivery is on the road, the driver’s position is shown on
-          your order page. It is held only while the delivery is in progress.
+          your order page. It is held only while the delivery is in progress,
+          and each position is discarded within 10 minutes of being reported.
         </dd>
 
         <dt>Technical records</dt>
@@ -147,8 +148,10 @@
         <dd>
           Your card details are entered directly into Stripe and never reach
           Zenoeats’ servers. Stripe receives the amount, the order reference and
-          your email address for the receipt. Because the restaurant is the
-          merchant of record, the payment is on the restaurant’s Stripe account.
+          your email address, which it uses to screen the payment for fraud.
+          Stripe does not email you a receipt; the emails about your order come
+          from Zenoeats. Because the restaurant is the merchant of record, the
+          payment is on the restaurant’s Stripe account.
         </dd>
 
         <dt>Clerk — accounts and sign-in</dt>
@@ -159,8 +162,11 @@
 
         <dt>SendGrid (Twilio) — email</dt>
         <dd>
-          Sends the emails about your orders, such as your order confirmation.
-          They never contain your pickup code.
+          Sends the emails about your orders and your account: the order
+          confirmation and each update after it, refunds, account notices, and,
+          where it is set up, the codes you are sent to sign up or reset a
+          password. It receives your email address and the content of each
+          email. They never contain your pickup code.
         </dd>
 
         <dt>Google — addresses and delivery</dt>
@@ -168,7 +174,10 @@
           An address you enter for delivery is sent to Google to turn it into a
           location, so the distance and fee can be worked out. The resulting
           coordinates are cached for up to 30 days; what is kept on the order is
-          the distance and the fee, not the coordinates.
+          the distance and the fee, not the coordinates. The address suggestions
+          at checkout, and the map on your order page, are provided by Google
+          Maps and load from Google, which receives your IP address and, for
+          suggestions, what you type into the address field.
         </dd>
 
         <dt>Sentry — error reporting</dt>
@@ -194,7 +203,7 @@
         </li>
         <li>
           <strong>Delivery coordinates</strong> are cached for up to 30 days. A
-          driver’s position is not kept after the delivery finishes.
+          driver’s position is discarded within 10 minutes of being reported.
         </li>
       </ul>
 
