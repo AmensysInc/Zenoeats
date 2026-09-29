@@ -14,7 +14,7 @@ import logging
 from datetime import timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, Response
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -37,9 +37,10 @@ from app.schemas.api import (
     GuestSessionOut, MapPointOut, OrderItemOut, OrderModifierOut, OrderOut, PaymentIntentOut,
     QuoteIn, QuoteOut, TrackingOut, TrackingStepOut,
 )
+from app.core.tenant import extract_slug
 from app.services import (
-    clerk_customers, customer_profile, delivery, guest_customers, stripe_service, terms,
-    tracking,
+    account_emails, clerk_customers, customer_profile, delivery, guest_customers,
+    stripe_service, terms, tracking,
 )
 from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
 from app.services.pricing import price_cart
@@ -165,14 +166,22 @@ def _amounts(cart) -> AmountsOut:
 
 
 @router.get("/orders/session", response_model=CustomerSessionOut)
-def current_customer(user: User = Depends(get_current_user)):
+def current_customer(
+    request: Request, background: BackgroundTasks, user: User = Depends(get_current_user),
+):
     """Who is ordering. 401 when nobody is.
 
     The customer counterpart of /restaurant/me and /admin/me. The storefront
     header and the checkout guard both read it, and it is the only way the
     browser can learn it holds a live guest session at all -- that cookie is
     httpOnly, so no script can see it.
+
+    Also where a brand-new account is welcomed, by the restaurant whose
+    storefront it first opens (services/account_emails.py).
     """
+    slug = extract_slug(request.headers.get("host"))
+    if slug and account_emails.is_new(user):
+        background.add_task(account_emails.queue_welcome, slug, user.id)
     return CustomerSessionOut(
         email=user.email,
         full_name=user.full_name,

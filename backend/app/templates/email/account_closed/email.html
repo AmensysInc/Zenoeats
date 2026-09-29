@@ -1,0 +1,22 @@
+{#-
+  Sent once when a customer account is closed: by the customer from a
+  storefront's profile page, or by deleting the account in Clerk.
+
+  restaurant_name is the storefront it was closed from, or None when it was
+  deleted in Clerk. name is their first name, or None.
+
+  What it says was removed must match legal/data-deletion.html. No link:
+  there is no account left to sign in to.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Account closed{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>Your Zenoeats account{% if restaurant_name %}, which you used at {{ restaurant_name }},{% endif %} has been closed. You can no longer sign in with it.</p>
+<p>We've removed your name, phone number, address, email and saved favourites. Orders you placed are kept, with the details they were placed with, because they are the restaurant's record of the sale.</p>
+<p>This is the last email you'll get about this account. You can create a new one at any time.</p>
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">If you didn't close your account, reply to this email.</p>
+{% endblock %}

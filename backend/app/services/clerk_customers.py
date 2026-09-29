@@ -182,13 +182,30 @@ def upsert_customer(
     return user
 
 
-def deactivate(session, clerk_user_id: str) -> None:
-    """A user deleted in Clerk, by them or by us. Closes the account here."""
+def deactivate(session, clerk_user_id: str) -> tuple[str, str | None] | None:
+    """A user deleted in Clerk, by them or by us. Closes the account here.
+
+    Returns (address, first name) to tell them at, when this is what closed
+    it and there is a real address; None when it was closed already -- by
+    the customer on a storefront, which told them itself -- or there is no
+    one to tell.
+    """
     user = session.execute(
         select(User).where(User.clerk_user_id == clerk_user_id)
     ).scalar_one_or_none()
-    if user is not None and user.kind == UserKind.CUSTOMER.value:
-        close_account(session, user)
+    if user is None or user.kind != UserKind.CUSTOMER.value:
+        return None
+    tell = contact_before_closing(user)
+    close_account(session, user)
+    return tell
+
+
+def contact_before_closing(user: User) -> tuple[str, str | None] | None:
+    """Where to tell someone their account closed, read before closing erases
+    it. None if it is already closed, or its address was never real."""
+    if user.deleted_at is not None or has_placeholder_email(user):
+        return None
+    return user.email, (user.full_name or "").split(" ")[0] or None
 
 
 def close_account(session, user: User) -> None:

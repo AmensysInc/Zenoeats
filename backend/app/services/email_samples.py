@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Callable
 from types import SimpleNamespace
 
-from app.services import notifications, order_emails, staff_emails
+from app.services import account_emails, notifications, order_emails, staff_emails
 
 
 def _order(**overrides) -> SimpleNamespace:
@@ -90,6 +90,16 @@ def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
         ),
         "staff_password_reset/admin_has_it": lambda: _staff(
             "staff_password_reset", temporary_password=None,
+        ),
+        "customer_welcome/new_account": lambda: account_emails.compose(
+            "customer_welcome", restaurant_name="Spice House", name="Sam",
+            email="sam@example.com", menu_url=notifications.storefront_url("spicehouse", "/"),
+        ),
+        "account_closed/from_a_storefront": lambda: account_emails.compose(
+            "account_closed", name="Sam", restaurant_name="Spice House",
+        ),
+        "account_closed/deleted_in_clerk": lambda: account_emails.compose(
+            "account_closed", name=None, restaurant_name=None,
         ),
         "refund_failed/balance": lambda: _staff(
             "refund_failed", order_number=1042, amount="$21.92",

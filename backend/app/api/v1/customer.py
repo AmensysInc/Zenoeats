@@ -15,7 +15,7 @@ vanished with it would be worse than none, so saving one asks for an account.
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -28,7 +28,7 @@ from app.models import (
     CustomerFavourite, Item, Order, OrderStatus, Restaurant, User, UserKind,
 )
 from app.schemas.api import CustomerSessionOut, ProfileContactIn
-from app.services import clerk_customers, customer_profile, terms
+from app.services import account_emails, clerk_customers, customer_profile, terms
 
 router = APIRouter(prefix="/customer", tags=["customer"])
 
@@ -136,8 +136,9 @@ def sync_verified_email(
     dependencies=[Depends(per_user("customer_close_account", limit=5))],
 )
 def close_account(
+    background: BackgroundTasks,
     user: User = Depends(get_current_user),
-    _restaurant: Restaurant = Depends(current_restaurant),
+    restaurant: Restaurant = Depends(current_restaurant),
 ):
     """Close the caller's account and take their details off it.
 
@@ -162,10 +163,16 @@ def close_account(
 
     from app.db.session import system_session
 
+    tell = None
     with system_session() as db:
         current = db.get(User, user.id)
         if current is not None:
+            # Read before closing erases it; None if the webhook for the
+            # Clerk deletion above got here first and has told them already.
+            tell = clerk_customers.contact_before_closing(current)
             clerk_customers.close_account(db, current)
+    if tell:
+        background.add_task(account_emails.queue_closed, tell[0], tell[1], restaurant.id)
     return Response(status_code=204)
 
 

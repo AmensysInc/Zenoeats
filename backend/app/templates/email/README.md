@@ -17,11 +17,14 @@ Every email Zenoeats sends is a folder here:
 | `staff_removed/` | An admin takes a team member off the team |
 | `staff_password_reset/` | An admin, or Zenoeats support, resets a team member's password |
 | `refund_failed/` | A cancellation went through but Stripe refused its refund (to every admin and manager) |
+| `customer_welcome/` | A new customer account (under a day old) first opens a restaurant's storefront |
+| `account_closed/` | A customer closes their account, or it is deleted in Clerk |
 
 Each email is sent at most once for what it's about. Order emails go to the
 address the customer gave at checkout, or their account's address. Order
 emails are sent from `app/services/order_emails.py`, team emails from
-`app/services/staff_emails.py`.
+`app/services/staff_emails.py`, and account emails from
+`app/services/account_emails.py`.
 
 Each folder holds three files:
 
