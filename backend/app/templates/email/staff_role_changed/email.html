@@ -1,0 +1,18 @@
+{#-
+  Sent to a team member when an admin gives them a different role. Not to
+  someone whose invitation is still pending: they see the new role when they
+  accept.
+
+  role and old_role are in words ("a manager", "kitchen staff").
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Your role has changed{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>An admin at {{ restaurant_name }} changed your role from {{ old_role }} to {{ role }}. What you can see and do in the portal changes from your next visit.</p>
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:16px">If you weren't expecting this, speak to an admin at {{ restaurant_name }}.</p>
+{{ ui.button(portal_url, "Open the portal") }}
+{% endblock %}

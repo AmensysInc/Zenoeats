@@ -1,0 +1,8 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+An admin at {{ restaurant_name }} changed your role from {{ old_role }} to {{ role }}. What you can see and do in the portal changes from your next visit.
+
+If you weren't expecting this, speak to an admin at {{ restaurant_name }}.
+
+Open the portal: {{ portal_url }}

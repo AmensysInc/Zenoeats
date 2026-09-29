@@ -8,6 +8,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Team emails: a welcome to someone who accepts an invitation and word to
+  whoever invited them, a notice when a role changes or someone is removed,
+  a reset password emailed to its owner (from the portal or the super admin),
+  and a "refund didn't go through" email to every admin and manager when a
+  cancellation's refund is refused (#54).
 - Order emails after the confirmation: ready to collect, on its way,
   delivered, cancelled (with the refund and its 10 to 14 business days when
   one was issued) and refund issued, for refunds made later from the board or

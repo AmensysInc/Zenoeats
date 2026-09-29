@@ -1,0 +1,6 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+An admin at {{ restaurant_name }} has removed you from its team on Zenoeats. You can no longer sign in to the {{ restaurant_name }} portal.
+
+If you think this is a mistake, speak to an admin at {{ restaurant_name }}.

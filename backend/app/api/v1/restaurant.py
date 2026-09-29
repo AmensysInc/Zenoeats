@@ -41,7 +41,7 @@ from app.schemas.api import (
 )
 from app.services import geocoding, images, restaurant_profile, stripe_service, tracking, storefront
 from app.services import email as email_service
-from app.services import order_emails
+from app.services import order_emails, staff_emails
 from app.schemas.storefront import ThemePatch, CategoryPatch, BannersIn, CollectionsIn, MapPatch, ShortcutsIn
 from app.services.images import ImageKind
 from app.services.menu import load_item_types, load_menu
@@ -3263,6 +3263,13 @@ def cancel_order(
 
     # With the refund in it if one went through; without, if not.
     background.add_task(order_emails.queue, "order_cancelled", restaurant.id, order.id)
+    if problem:
+        # The manager saw it here, and may be gone by the time anyone
+        # thinks of it again. Every admin and manager hears.
+        background.add_task(
+            staff_emails.queue, "refund_failed", restaurant.id,
+            order_id=order.id, problem=problem, at=utcnow().isoformat(),
+        )
     return {
         "order_id": str(order.id),
         "status": order.status,
@@ -3916,6 +3923,7 @@ def _queue_staff_invitation(restaurant_id, membership_id, temporary_password=Non
 
 @router.post("/staff/accept")
 def accept_invitation(
+    background: BackgroundTasks,
     user: User = Depends(current_staff_user_ready),
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
@@ -3937,12 +3945,16 @@ def accept_invitation(
 
     invite.status = StaffStatus.ACTIVE.value
     invite.accepted_at = utcnow()
+    # A welcome to them, and word to whoever invited them.
+    background.add_task(staff_emails.queue, "staff_welcome", restaurant.id, membership_id=invite.id)
+    background.add_task(staff_emails.queue, "staff_joined", restaurant.id, membership_id=invite.id)
     return {"id": str(invite.id), "role_code": invite.role_code, "status": invite.status}
 
 
 @router.delete("/staff/{membership_id}")
 def revoke_staff(
     membership_id: UUID,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(STAFF_ADMIN),
@@ -3973,8 +3985,15 @@ def revoke_staff(
     if target in active_admins and len(active_admins) == 1:
         raise _last_admin()
 
+    was_on_team = target.status == StaffStatus.ACTIVE.value
     target.status = StaffStatus.REVOKED.value
     target.revoked_at = utcnow()
+    # Told only if they had joined. A withdrawn invitation was never theirs.
+    if was_on_team:
+        background.add_task(
+            staff_emails.queue, "staff_removed", restaurant.id,
+            membership_id=target.id, at=target.revoked_at.isoformat(),
+        )
     return {"id": str(target.id), "status": target.status}
 
 
@@ -4019,6 +4038,7 @@ class StaffRoleIn(BaseModel):
 def change_staff_role(
     membership_id: UUID,
     body: StaffRoleIn,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(STAFF_ADMIN),
@@ -4050,7 +4070,13 @@ def change_staff_role(
     ):
         raise _last_admin()
 
-    target.role_code = new_role
+    old_role, target.role_code = target.role_code, new_role
+    if old_role != new_role and target.status == StaffStatus.ACTIVE.value:
+        background.add_task(
+            staff_emails.queue, "staff_role_changed", restaurant.id,
+            membership_id=target.id, old_role=old_role, new_role=new_role,
+            at=utcnow().isoformat(),
+        )
     return {"id": str(target.id), "role_code": target.role_code, "status": target.status}
 
 
@@ -4173,6 +4199,7 @@ def resend_staff_invitation(
 )
 def reset_staff_password(
     membership_id: UUID,
+    background: BackgroundTasks,
     restaurant: Restaurant = Depends(current_restaurant_staff),
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(STAFF_ADMIN),
@@ -4232,7 +4259,16 @@ def reset_staff_password(
     log.info(
         "staff password reset for %s at %s", email_for_log(email), restaurant.slug
     )
-    return StaffPasswordResetOut(id=target.id, email=email, temporary_password=temp_password)
+    # To them as well as on the admin's screen: a reset they did not ask for
+    # is one they need to hear about.
+    background.add_task(
+        staff_emails.queue, "staff_password_reset", restaurant.id,
+        user_id=target.user_id, temporary_password=temp_password, at=utcnow().isoformat(),
+    )
+    return StaffPasswordResetOut(
+        id=target.id, email=email, temporary_password=temp_password,
+        email_configured=email_service.configured(),
+    )
 
 
 # --------------------------------------------------------------- reports ---

@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Callable
 from types import SimpleNamespace
 
-from app.services import notifications, order_emails
+from app.services import notifications, order_emails, staff_emails
 
 
 def _order(**overrides) -> SimpleNamespace:
@@ -48,6 +48,18 @@ def _update(kind: str, *, order=None, **kw) -> tuple[str, str, str]:
     return order_emails.compose(kind, **values)
 
 
+def _staff(kind: str, **kw) -> tuple[str, str, str]:
+    """One of the team's emails, at Spice House."""
+    values = dict(
+        restaurant_name="Spice House",
+        portal_url=notifications.storefront_url("spicehouse", "/manage"),
+        sign_in_url=notifications.storefront_url("spicehouse", "/manage/login"),
+        name="Priya",
+    )
+    values.update(kw)
+    return staff_emails.compose(kind, **values)
+
+
 def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
     """name/case -> a function returning (subject, html, text)."""
     delivery = _order(fulfillment_type="DELIVERY", discount_minor=0, delivery_fee_minor=399,
@@ -65,6 +77,25 @@ def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
         "order_cancelled/refunded": lambda: _update("order_cancelled", refund=2192),
         "order_cancelled/no_refund": lambda: _update("order_cancelled"),
         "refund_issued/part": lambda: _update("refund_issued", refund=450),
+        "staff_welcome/cook": lambda: _staff("staff_welcome", role="kitchen staff"),
+        "staff_joined/to_manager": lambda: _staff(
+            "staff_joined", member="Dana", role="a driver",
+        ),
+        "staff_role_changed/promoted": lambda: _staff(
+            "staff_role_changed", role="a manager", old_role="kitchen staff",
+        ),
+        "staff_removed/member": lambda: _staff("staff_removed", name=None),
+        "staff_password_reset/with_password": lambda: _staff(
+            "staff_password_reset", temporary_password="K7QM-4XWP-9DRT",
+        ),
+        "staff_password_reset/admin_has_it": lambda: _staff(
+            "staff_password_reset", temporary_password=None,
+        ),
+        "refund_failed/balance": lambda: _staff(
+            "refund_failed", order_number=1042, amount="$21.92",
+            problem="Stripe refused the refund: this restaurant's Stripe balance is too low. "
+                    "Add funds in Stripe, or refund it there once the next payout clears.",
+        ),
         "order_confirmation/pickup": lambda: notifications.compose_order_confirmation(
             restaurant_name="Spice House", slug="spicehouse", order=_order(),
             customer_name="Sam",

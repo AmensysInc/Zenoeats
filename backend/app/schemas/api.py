@@ -563,6 +563,8 @@ class StaffPasswordResetOut(BaseModel):
     email: str
     # Shown once to the restaurant admin to pass on; only its hash is kept.
     temporary_password: str
+    # Whether it is also on its way to them by email.
+    email_configured: bool = False
 
 
 class StaffInviteOut(BaseModel):

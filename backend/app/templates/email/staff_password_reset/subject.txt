@@ -1,0 +1,1 @@
+Your password for {{ restaurant_name }} on Zenoeats was reset

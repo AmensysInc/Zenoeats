@@ -1,0 +1,16 @@
+{#-
+  Sent to a team member an admin takes off the team. Not to someone whose
+  invitation was withdrawn before they accepted it.
+
+  No link: there is nothing left for them to open.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}You've been removed{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>An admin at {{ restaurant_name }} has removed you from its team on Zenoeats. You can no longer sign in to the {{ restaurant_name }} portal.</p>
+<p>If you think this is a mistake, speak to an admin at {{ restaurant_name }}.</p>
+{% endblock %}

@@ -1,0 +1,29 @@
+{#-
+  Sent when an admin, or Zenoeats support, gives a team member a new
+  temporary password. The old password has stopped working and every
+  session they held has ended.
+
+  temporary_password is the new one, or None if it could not be sent (the
+  admin was shown it and passes it on). Like the invitation's, it must be
+  replaced at the next sign-in and stops working then. It is sent even to
+  someone who did not ask, because a reset they did not expect is exactly
+  what they need to hear about.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Your password was reset{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>Your password for {{ restaurant_name }} on Zenoeats was reset, and you've been signed out everywhere.</p>
+{% if temporary_password %}
+<p>Sign in with the temporary password below. You'll choose your own when you do, and this one stops working then.</p>
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">Temporary password</p>
+<p style="margin:4px 0 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:20px;letter-spacing:1px">{{ temporary_password }}</p>
+{% else %}
+<p>An admin at {{ restaurant_name }} has your temporary password. You'll choose your own when you sign in with it.</p>
+{% endif %}
+{{ ui.button(sign_in_url, "Sign in") }}
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">If you didn't ask for this, tell an admin at {{ restaurant_name }} straight away.</p>
+{% endblock %}

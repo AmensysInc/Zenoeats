@@ -226,6 +226,8 @@ export type StaffPasswordReset = {
   id: string;
   email: string;
   temporary_password: string;
+  /** Whether it was also emailed to them. */
+  email_configured: boolean;
 };
 
 export type StaffMember = {

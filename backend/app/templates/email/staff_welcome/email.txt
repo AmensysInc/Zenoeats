@@ -1,0 +1,9 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+You've joined {{ restaurant_name }} on Zenoeats as {{ role }}. Your account is ready.
+
+Sign in to the portal with your email and the password you chose. Keep this link for next time:
+{{ portal_url }}
+
+Forgot your password? Ask an admin at {{ restaurant_name }} to reset it.

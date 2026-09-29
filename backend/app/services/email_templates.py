@@ -45,15 +45,19 @@ class Rendered:
     text: str
 
 
-def render(name: str, **context) -> Rendered:
-    """One email, from its folder under app/templates/email/."""
-    subject = _env.get_template(f"{name}/subject.txt").render(context)
+def render(email: str, /, **context) -> Rendered:
+    """One email, from its folder under app/templates/email/.
+
+    The folder's name is positional-only, so a template is free to use any
+    placeholder name -- `name` included -- without colliding with it.
+    """
+    subject = _env.get_template(f"{email}/subject.txt").render(context)
     return Rendered(
         # One line whatever the template's line breaks: a newline in a
         # subject header is not allowed.
         subject=" ".join(subject.split()),
-        html=_env.get_template(f"{name}/email.html").render(context).strip() + "\n",
-        text=_env.get_template(f"{name}/email.txt").render(context).strip() + "\n",
+        html=_env.get_template(f"{email}/email.html").render(context).strip() + "\n",
+        text=_env.get_template(f"{email}/email.txt").render(context).strip() + "\n",
     )
 
 

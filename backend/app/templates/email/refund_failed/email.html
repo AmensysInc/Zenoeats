@@ -1,0 +1,24 @@
+{#-
+  Sent to every admin and manager of a restaurant when an order was
+  cancelled but Stripe refused its refund. The cancellation stands; the
+  customer's money has not moved.
+
+  amount is the order's charge, formatted. problem is Stripe's refusal in
+  plain words ("this restaurant's Stripe balance is too low..."), or None.
+  The order also appears in the portal's refunds-due list for 14 days.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}A refund didn't go through{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>Order #{{ order_number }} at {{ restaurant_name }} was cancelled, but its refund of {{ amount }} didn't go through. The customer hasn't been paid back yet.</p>
+{% if problem %}
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">What Stripe said</p>
+<p style="margin:4px 0 0">{{ problem }}</p>
+{% endif %}
+<p style="margin-top:16px">Once that's sorted, refund it from the portal: it's in the refunds due list.</p>
+{{ ui.button(portal_url, "Open the portal") }}
+{% endblock %}
