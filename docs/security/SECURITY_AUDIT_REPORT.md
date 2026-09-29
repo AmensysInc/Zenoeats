@@ -218,7 +218,7 @@ Severity is a triage priority, not proof of exploitability.
 
 ### F-07 — `main` has no branch protection (Medium, REMEDIATED)
 
-- **Evidence.** `GET repos/haswanth13901/zenoeats-mvp/branches/main/protection`
+- **Evidence.** `GET repos/haswanth13901/Zenoeats/branches/main/protection`
   returns 404 "Branch not protected", and there are no rulesets.
 - **Impact.** Code can reach `main`, and therefore the published images,
   without CI passing and without review. This includes AI-generated changes,

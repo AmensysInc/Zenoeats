@@ -1353,7 +1353,7 @@ Each operator of the super admin portal (`https://admin.<domain>/admin`) has
 a named entry in `ADMIN_USERS`, which the audit log records. On the server:
 
 ```bash
-docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.2.0 \
+docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.0 \
   python scripts/hash_password.py you@example.com
 ```
 

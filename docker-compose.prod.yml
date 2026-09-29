@@ -12,7 +12,7 @@
 #
 #   ROOT_DOMAIN                  e.g. zenoeats.com
 #   API_IMAGE, WEB_IMAGE         the images CI published for the release, e.g.
-#                                ghcr.io/<owner>/zenoeats-mvp/api:v1.0.0 --
+#                                ghcr.io/<owner>/zenoeats/api:v1.0.0 --
 #                                never built on the server (rule 12)
 #   POSTGRES_PASSWORD            the postgres superuser
 #   ZENOEATS_MIGRATE_PASSWORD    \

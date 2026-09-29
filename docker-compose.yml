@@ -1,5 +1,9 @@
+# Named here rather than taken from the folder, so containers and volumes are
+# zenoeats-* wherever the checkout lives (e.g. /opt/zenoeats on the server).
+name: zenoeats
+
 x-backend-image: &backend-image
-  image: zenoeats-mvp-backend:local
+  image: zenoeats-backend:local
 
 services:
   postgres:

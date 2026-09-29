@@ -99,7 +99,7 @@ def generated() -> dict[str, str]:
 
 
 def production_values(domain: str, release: str, staging: bool) -> dict[str, str]:
-    image = f"ghcr.io/{OWNER}/zenoeats-mvp"
+    image = f"ghcr.io/{OWNER}/zenoeats"
     return {
         "ENV": "production",
         "ROOT_DOMAIN": domain,

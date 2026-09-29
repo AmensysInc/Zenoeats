@@ -1,5 +1,5 @@
 ================================================================================
- ZENOEATS MVP - URL REFERENCE
+ ZENOEATS - URL REFERENCE
 ================================================================================
 
  Local development. Replace "spicehouse" with any restaurant slug.

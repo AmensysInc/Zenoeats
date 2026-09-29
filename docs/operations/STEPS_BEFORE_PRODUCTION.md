@@ -24,7 +24,7 @@ the restaurant phone number and legal fixes of `v1.2.0` (`CHANGELOG.md`).
 On 29 September it passed an end-to-end check against the running stack: a
 guest order paid by Stripe test card, the kitchen board, ready, cancel and
 refund, and the emails for each. CI publishes it as
-`ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.2.0`. `main` is protected:
+`ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.0`. `main` is protected:
 every change needs a pull request and green CI.
 
 **Nothing below needs code.** It is accounts, the domain, the server and the
@@ -173,7 +173,7 @@ account and the rest of this list is ticked.
       security audit, PR #21), `v1.1.0` (28 September, the emails), then
       **`v1.2.0`** (29 September, the restaurant phone number and legal
       fixes). **Deploy `v1.2.0`.** CI publishes
-      `ghcr.io/haswanth13901/zenoeats-mvp/api:v1.2.0` and `…/web:v1.2.0`,
+      `ghcr.io/haswanth13901/zenoeats/api:v1.2.0` and `…/web:v1.2.0`,
       which are what `API_IMAGE` and `WEB_IMAGE` name (§11). The repository and
       both images are public, so the server pulls them without logging in.
       Neither image contains a secret: every key arrives at runtime from
@@ -904,7 +904,7 @@ what is still missing.
 | `ENV` | `production` | **[BLOCKER]** Secure cookies, no `/docs`, no error details, and the startup safety checks (§2.1). |
 | `ROOT_DOMAIN` | e.g. `zenoeats.com` | Tenant resolution, CORS, the Clerk token origin check, the nginx template. |
 | `ALLOW_TEST_KEYS` | `false` | `true` on staging only. Production refuses test keys without it (§2.7). |
-| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.2.0` | The release to run. Never built on the server. |
+| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.0` | The release to run. Never built on the server. |
 | `POSTGRES_PASSWORD` | generated | The Postgres superuser. |
 | `ZENOEATS_MIGRATE_PASSWORD`, `_APP_`, `_SYSTEM_` | generated, hex | The three roles. Applied when the volume is first created; later changes are an `ALTER ROLE`. |
 | `REDIS_BROKER_PASSWORD`, `REDIS_RUNTIME_PASSWORD` | generated, hex | |
@@ -1105,7 +1105,7 @@ that. Everything below runs on it, as a user with `sudo`.
 3. **The repository**, at the path the backup timer expects:
 
    ```bash
-   sudo git clone https://github.com/haswanth13901/zenoeats-mvp.git /opt/zenoeats
+   sudo git clone https://github.com/haswanth13901/Zenoeats.git /opt/zenoeats
    sudo chown -R $USER: /opt/zenoeats
    cd /opt/zenoeats && git checkout v1.2.0
    ```
@@ -1120,7 +1120,7 @@ that. Everything below runs on it, as a user with `sudo`.
    Sentry). For `ADMIN_USERS`:
 
    ```bash
-   docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.2.0 \
+   docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.0 \
      python scripts/hash_password.py you@example.com
    ```
 

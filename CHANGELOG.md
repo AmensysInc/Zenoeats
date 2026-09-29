@@ -1,11 +1,18 @@
 # Changelog
 
 Notable changes to Zenoeats, newest first. Each release is a git tag, and CI
-publishes `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:<tag>` from it. The
+publishes `ghcr.io/haswanth13901/zenoeats/{api,web}:<tag>` from it. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+### Changed
+- The project is renamed from `zenoeats-mvp` to Zenoeats: the repository is
+  `haswanth13901/Zenoeats`, and CI publishes to
+  `ghcr.io/haswanth13901/zenoeats/{api,web}`. The compose project is pinned
+  to `zenoeats`, so local containers are `zenoeats-*` whatever the checkout's
+  folder is called.
 
 ## [1.2.0] - 2026-09-29
 
@@ -176,8 +183,8 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.1...v1.1.0
-[1.0.1]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/haswanth13901/zenoeats-mvp/releases/tag/v1.0.0
+[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/haswanth13901/Zenoeats/releases/tag/v1.0.0
