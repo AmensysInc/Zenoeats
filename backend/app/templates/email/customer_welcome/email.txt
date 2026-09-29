@@ -1,0 +1,8 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+Your account is ready. Next time, sign in with {{ email }} to order faster: your details are filled in at checkout, and your orders and favourites are on your profile.
+
+Start an order: {{ menu_url }}
+
+You can change your details or close your account from your profile at any time.

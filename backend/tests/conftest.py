@@ -37,6 +37,7 @@ def queued_emails(monkeypatch):
     queued = []
     for name in (
         "send_order_confirmation", "send_staff_invitation", "send_order_email", "send_staff_email",
+        "send_account_email",
     ):
         task = getattr(tasks, name)
         monkeypatch.setattr(

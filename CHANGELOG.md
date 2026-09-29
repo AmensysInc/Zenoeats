@@ -8,6 +8,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Customer account emails: a welcome from the restaurant whose storefront a
+  brand-new account first opens, and a confirmation when an account is
+  closed, whether from a storefront or in Clerk (#55).
 - Team emails: a welcome to someone who accepts an invitation and word to
   whoever invited them, a notice when a role changes or someone is removed,
   a reset password emailed to its owner (from the portal or the super admin),

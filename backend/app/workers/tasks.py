@@ -330,6 +330,7 @@ def process_clerk_event(self, event_row_id: str):
         etype = event.type
         data = (event.payload or {}).get("data", {})
 
+    tell = None
     try:
         with system_session() as session:
             clerk_id = str(data.get("id") or "")
@@ -344,13 +345,20 @@ def process_clerk_event(self, event_row_id: str):
                         session, clerk_id, clerk_customers.profile_from_payload(data)
                     )
             elif etype == "user.deleted" and clerk_id:
-                clerk_customers.deactivate(session, clerk_id)
+                # Told once the event is marked done, below: queued inside
+                # this transaction, a retry of the event could tell them twice.
+                tell = clerk_customers.deactivate(session, clerk_id)
 
         with system_session() as session:
             row = session.get(ClerkEvent, UUID(event_row_id))
             if row:
                 row.status = "PROCESSED"
                 row.processed_at = utcnow()
+
+        if tell:
+            from app.services import account_emails
+
+            account_emails.queue_closed(tell[0], tell[1], None)
 
     except Exception as exc:
         log.exception("clerk event %s failed", event_row_id)
@@ -389,6 +397,22 @@ def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: 
 
     try:
         return order_emails.send(kind, UUID(restaurant_id), UUID(order_id), extra)
+    except email.RetryableEmailError as exc:
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@celery_app.task(
+    bind=True, max_retries=6, default_retry_delay=60,
+    name="app.workers.tasks.send_account_email",
+)
+def send_account_email(self, kind: str, args: dict):
+    """Email a customer about their account: welcome, or closed
+    (services/account_emails.py). Retries while the email provider is rate
+    limiting or down."""
+    from app.services import account_emails, email
+
+    try:
+        return account_emails.send(kind, args)
     except email.RetryableEmailError as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 

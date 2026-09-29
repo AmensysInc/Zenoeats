@@ -1,0 +1,22 @@
+{#-
+  Sent to a brand-new customer account the first time it opens a
+  restaurant's storefront, from that restaurant. Only for accounts made in
+  the last day: nobody who already orders here is greeted as new.
+
+  name is their first name, or None. email is the address they sign in
+  with. menu_url is the restaurant's storefront.
+
+  A welcome, not a promotion: no offers or discounts in here, or it stops
+  being a transactional email and needs an unsubscribe link.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Welcome to {{ restaurant_name }}{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>Your account is ready. Next time, sign in with {{ email }} to order faster: your details are filled in at checkout, and your orders and favourites are on your profile.</p>
+{{ ui.button(menu_url, "Start an order") }}
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">You can change your details or close your account from your profile at any time.</p>
+{% endblock %}
