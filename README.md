@@ -8,11 +8,12 @@ Stripe Connect direct charge, confirmed by webhook, and the paid order lands
 on the restaurant's kitchen board. There it is handed over with a pickup
 PIN, or cancelled and refunded from the same screen.
 
-**Status (28 September 2026):** the application is feature-complete for
-launch, and an end-to-end pass against the running stack found no bugs in
-the ordering path. Since then it has gained the customer, staff and account
+**Status (29 September 2026):** the application is feature-complete for
+launch, and **`v1.2.1` is the release to deploy** (see
+[`CHANGELOG.md`](CHANGELOG.md)). It includes the customer, staff and account
 emails, sent through SendGrid from editable templates (see [Email](#email)).
-The pass covered:
+End-to-end passes against the running stack have found no bugs in the
+ordering path. They covered:
 
 - guest checkout with a Stripe test-card payment
 - the kitchen board, the PIN handover, and cancel and refund
@@ -982,7 +983,7 @@ generated from [`.env.production.example`](.env.production.example), which
 explains every setting:
 
 ```bash
-python3 scripts/make_prod_env.py --domain <domain> --release v1.2.0   # once
+python3 scripts/make_prod_env.py --domain <domain> --release v1.2.1   # once
 python3 scripts/make_prod_env.py --check .env                         # until clean
 export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 docker compose --profile app pull && docker compose --profile app up -d
@@ -1038,7 +1039,7 @@ development ones; never reuse development keys.
 | 9 | Platform administrators | The super admin portal | `ADMIN_USERS` |
 
 Generate the `.env` first, on the server, and fill it in as you go:
-`python3 scripts/make_prod_env.py --domain <domain> --release v1.2.0`. It
+`python3 scripts/make_prod_env.py --domain <domain> --release v1.2.1`. It
 creates every secret and password itself, and marks each value that has to
 come from one of the accounts below with `# FILL IN:`. Run
 `python3 scripts/make_prod_env.py --check .env` at any point to see what is
@@ -1353,7 +1354,7 @@ Each operator of the super admin portal (`https://admin.<domain>/admin`) has
 a named entry in `ADMIN_USERS`, which the audit log records. On the server:
 
 ```bash
-docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.0 \
+docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.1 \
   python scripts/hash_password.py you@example.com
 ```
 
@@ -1443,7 +1444,7 @@ profile is running. Docker DNS refreshes their addresses after recreation;
 native development uses the host gateway backup. This avoids intermittent
 timeouts caused by routing container traffic through Windows port forwarding.
 The configuration requires nginx 1.27.3 or newer (the Compose image supplies
-1.27.5). After editing it, run `docker compose exec nginx nginx -t` and
+1.30, the stable line). After editing it, run `docker compose exec nginx nginx -t` and
 `docker compose exec nginx nginx -s reload`. A temporary menu failure also
 offers **Try again**, which only refetches the public menu and restaurant details.
 Check the real edge after startup or upgrades with

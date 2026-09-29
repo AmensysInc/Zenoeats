@@ -17,14 +17,16 @@ says what changed and where, so it can be checked.
 
 ### Go-live: what is left (updated 29 September 2026)
 
-**The code is done.** Release **`v1.2.0`** is the one to deploy: `v1.0.1`
+**The code is done.** Release **`v1.2.1`** is the one to deploy: `v1.0.1`
 (security-audited, all twelve findings fixed, see
-`docs/security/SECURITY_AUDIT_REPORT.md`), the email work of `v1.1.0`, and
-the restaurant phone number and legal fixes of `v1.2.0` (`CHANGELOG.md`).
-On 29 September it passed an end-to-end check against the running stack: a
-guest order paid by Stripe test card, the kitchen board, ready, cancel and
-refund, and the emails for each. CI publishes it as
-`ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.0`. `main` is protected:
+`docs/security/SECURITY_AUDIT_REPORT.md`), the email work of `v1.1.0`, the
+restaurant phone number and legal fixes of `v1.2.0`, and the supported nginx
+1.30 of `v1.2.1` (`CHANGELOG.md`). On 29 September `v1.2.0` passed an
+end-to-end check against the running stack: a guest order paid by Stripe
+test card, the kitchen board, ready, cancel and refund, and the emails for
+each. `v1.2.1` changes no application code; the whole suite and a smoke test
+of the stack on the new edge passed again. CI publishes it as
+`ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.1`. `main` is protected:
 every change needs a pull request and green CI.
 
 **Nothing below needs code.** It is accounts, the domain, the server and the
@@ -57,7 +59,7 @@ Two ways to get the third:
 
 | | **A. A real server (recommended)** | **B. A tunnel from the laptop** |
 |---|---|---|
-| What | A small Linux VM runs the published `v1.2.0` images (§11) | Cloudflare Tunnel (`cloudflared`) publishes the app running on the laptop at the domain |
+| What | A small Linux VM runs the published `v1.2.1` images (§11) | Cloudflare Tunnel (`cloudflared`) publishes the app running on the laptop at the domain |
 | Cost | Domain about $10/year, plus a 2 vCPU / 4 GB VM (about $8–24/month, depending on provider) | Domain about $10/year only |
 | Always on | Yes | Only while the laptop is on and awake |
 | Fit for real users | Yes, once this list is done | **No**: a demo only. The 8 GB laptop stalls under load, and it is not the deployment target |
@@ -118,8 +120,9 @@ account and the rest of this list is ticked.
       from Cloudflare's ranges only, 22 from your IP only. 30 minutes.
       → §4.1, §11
 - [x] **Tag a release** that includes the email work and the legal fixes.
-      *Done:* `v1.2.0` (29 September); CI publishes its images.
-- [ ] **Deploy `v1.2.0`**: Docker, clone and check out the tag,
+      *Done:* `v1.2.0` (29 September), then `v1.2.1` the same day with a
+      supported nginx; CI publishes its images.
+- [ ] **Deploy `v1.2.1`**: Docker, clone and check out the tag,
       `make_prod_env.py`, fill in the keys, `--check` until clean, the
       certificate, `up -d`. 1–2 hours. → §11
 - [ ] **Backups on**: the timer enabled, the first backup lands in R2, and a
@@ -170,10 +173,11 @@ account and the rest of this list is ticked.
       `v1.0.1` tag itself. Branch protection now requires it for every change.
 - [x] **[LAUNCH]** Tag the release and deploy images built from that tag
       only. *Done:* `v1.0.0` (25 September), `v1.0.1` (26 September, with the
-      security audit, PR #21), `v1.1.0` (28 September, the emails), then
-      **`v1.2.0`** (29 September, the restaurant phone number and legal
-      fixes). **Deploy `v1.2.0`.** CI publishes
-      `ghcr.io/haswanth13901/zenoeats/api:v1.2.0` and `…/web:v1.2.0`,
+      security audit, PR #21), `v1.1.0` (28 September, the emails),
+      `v1.2.0` (29 September, the restaurant phone number and legal fixes),
+      then **`v1.2.1`** (29 September, nginx 1.30). **Deploy `v1.2.1`.** CI
+      publishes `ghcr.io/haswanth13901/zenoeats/api:v1.2.1` and
+      `…/web:v1.2.1`,
       which are what `API_IMAGE` and `WEB_IMAGE` name (§11). The repository and
       both images are public, so the server pulls them without logging in.
       Neither image contains a secret: every key arrives at runtime from
@@ -892,7 +896,7 @@ root domain and every subdomain.
 ## 7. Production configuration
 
 Every setting the backend reads, with what it must be in production.
-**`python3 scripts/make_prod_env.py --domain <domain> --release v1.2.0`
+**`python3 scripts/make_prod_env.py --domain <domain> --release v1.2.1`
 writes the whole file** (§11) from
 [`.env.production.example`](../../.env.production.example), which explains
 each setting: it generates every secret, sets every value below that does not
@@ -904,7 +908,7 @@ what is still missing.
 | `ENV` | `production` | **[BLOCKER]** Secure cookies, no `/docs`, no error details, and the startup safety checks (§2.1). |
 | `ROOT_DOMAIN` | e.g. `zenoeats.com` | Tenant resolution, CORS, the Clerk token origin check, the nginx template. |
 | `ALLOW_TEST_KEYS` | `false` | `true` on staging only. Production refuses test keys without it (§2.7). |
-| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.0` | The release to run. Never built on the server. |
+| `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats/{api,web}:v1.2.1` | The release to run. Never built on the server. |
 | `POSTGRES_PASSWORD` | generated | The Postgres superuser. |
 | `ZENOEATS_MIGRATE_PASSWORD`, `_APP_`, `_SYSTEM_` | generated, hex | The three roles. Applied when the volume is first created; later changes are an `ALTER ROLE`. |
 | `REDIS_BROKER_PASSWORD`, `REDIS_RUNTIME_PASSWORD` | generated, hex | |
@@ -1107,20 +1111,20 @@ that. Everything below runs on it, as a user with `sudo`.
    ```bash
    sudo git clone https://github.com/haswanth13901/Zenoeats.git /opt/zenoeats
    sudo chown -R $USER: /opt/zenoeats
-   cd /opt/zenoeats && git checkout v1.2.0
+   cd /opt/zenoeats && git checkout v1.2.1
    ```
 
 4. **The production `.env`** (§7):
 
    ```bash
-   python3 scripts/make_prod_env.py --domain <domain> --release v1.2.0
+   python3 scripts/make_prod_env.py --domain <domain> --release v1.2.1
    ```
 
    Fill in each value marked `# FILL IN:` from §3 (Clerk, Stripe, SendGrid,
    Sentry). For `ADMIN_USERS`:
 
    ```bash
-   docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.0 \
+   docker run --rm -it ghcr.io/haswanth13901/zenoeats/api:v1.2.1 \
      python scripts/hash_password.py you@example.com
    ```
 

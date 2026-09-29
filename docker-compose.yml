@@ -236,7 +236,7 @@ services:
       - "127.0.0.1:3000:3000"
 
   nginx:
-    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    image: nginx:1.30-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
     # Pin the host gateway into /etc/hosts so nginx resolves it at startup
     # instead of per-request through Docker's embedded DNS, which answers
     # inconsistently and produced intermittent 502s.
@@ -262,7 +262,7 @@ services:
   # Needs infra/certs-local/ (git-ignored); see README, "HTTPS on this
   # laptop". Production HTTPS is docker-compose.prod.yml, not this.
   https:
-    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    image: nginx:1.30-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
     profiles: ["https"]
     volumes:
       - ./infra/nginx/local-https.conf:/etc/nginx/conf.d/default.conf:ro
