@@ -8,9 +8,11 @@ Stripe Connect direct charge, confirmed by webhook, and the paid order lands
 on the restaurant's kitchen board. There it is handed over with a pickup
 PIN, or cancelled and refunded from the same screen.
 
-**Status (25 September 2026):** the application is feature-complete for
+**Status (28 September 2026):** the application is feature-complete for
 launch, and an end-to-end pass against the running stack found no bugs in
-the ordering path. It covered:
+the ordering path. Since then it has gained the customer, staff and account
+emails, sent through SendGrid from editable templates (see [Email](#email)).
+The pass covered:
 
 - guest checkout with a Stripe test-card payment
 - the kitchen board, the PIN handover, and cancel and refund
@@ -36,6 +38,7 @@ Maps and every other account step by step.
 | Delivery map | Each restaurant chooses how its tracking map is coloured -- Google standard, light, dark, or built from its own palette -- and whether the pins take its colours |
 | Storefront | Each restaurant sets its own palette, font pairing, rotating banners with their own framing, category shortcuts and collections — behind a platform switch |
 | Cart and checkout | A **cart page** (`/cart`) before anything is asked. Then checkout: pickup or delivery, contact details, server-authoritative repricing, TaxService (flat rate or Stripe Tax), idempotent order creation |
+| Email | 15 emails through SendGrid: the order confirmation and every step after it (ready, on the way, delivered, cancelled with its refund, refunded), staff invitations and notices, and a customer's welcome and account closure. Each is a template file, and each is sent once |
 | Payments | Stripe Connect direct charges, a durable webhook inbox, an account-match guard, a Stripe read-back fallback when a webhook is late, and **Apple Pay / Google Pay** domains registered per restaurant |
 | Ops | Kitchen board, pickup PIN, **cancel and refund**, menu builder, stock, staff invitations, reports, deliveries the restaurant runs itself with live driver tracking, self-service settings, storefront editor |
 | Admin | Super admin portal: onboarding, activation, Stripe refresh, platform reports, CSV |
@@ -138,7 +141,9 @@ system read surface.
   cancelled order not yet refunded waits under **Refunds to issue**, one
   click from refunding. Partial refunds, and refunds after collection, are
   made in the restaurant's own Stripe Dashboard, and a ticket refunded there
-  is marked "refunded" too.
+  is marked "refunded" too. The customer is told either way, by email and on
+  their order page, with the amount and the 10 to 14 business days a refund
+  takes. If Stripe refuses a refund, every admin and manager is emailed.
 - **Deliveries** is for the orders a restaurant runs out itself. A delivery
   starts one of two ways. A customer chooses Delivery at checkout, which a
   restaurant offers once it has set its delivery rings. Or a manager sends a
@@ -166,7 +171,9 @@ system read surface.
   and has no access until they sign in to this restaurant and accept. An admin
   can change a member's role, which applies on their next click, and reset a
   forgotten password: the person is signed out everywhere and gets a
-  temporary password, shown once. You cannot remove yourself, change your own
+  temporary password, shown once and emailed to them. Joining, a role change
+  and being removed are emailed to the person too, and whoever sent an
+  invitation hears when it is accepted. You cannot remove yourself, change your own
   role, or leave the restaurant without an active admin. Resets are refused
   for another admin, and for a login that also works at another Zenoeats
   restaurant; Zenoeats support resets those.
@@ -361,17 +368,27 @@ instead of listing each slug.
 ### 2. Configure
 
 ```bash
-make setup          # copies .env.example to .env
-make key            # prints a Fernet key -> FIELD_ENCRYPTION_KEY
+make setup                     # copies .env.example to .env
+make key                       # prints a Fernet key -> FIELD_ENCRYPTION_KEY
+cp web/.env.example web/.env   # the frontend's own small file
 ```
 
-Then fill in `.env`. What follows is the **development** setup, with test
-keys. Production accounts (Stripe live, a Clerk production instance, Google
-keys for the real domain) are in the
-[Production setup guide](#production-setup-guide).
+Then fill in `.env`. Only `FIELD_ENCRYPTION_KEY` and `SESSION_SECRET` are
+required; every other setting is optional, and the file says what you lose
+without it. What follows is the **development** setup, with test keys.
+
+`.env.example` is the development template only. Production has its own,
+[`.env.production.example`](.env.production.example), which
+`scripts/make_prod_env.py` fills in on the server (see [Production](#production)).
+Production accounts (Stripe live, a Clerk production instance, Google keys for
+the real domain) are in the [Production setup guide](#production-setup-guide).
 
 **Sessions.** Set `SESSION_SECRET` (`openssl rand -base64 32`). It signs the
-admin and staff session cookies.
+admin, staff and guest session cookies.
+
+**Email (optional).** Without a SendGrid key nothing is emailed and the app
+works otherwise. To see emails arrive, follow [Email](#email): a key, one
+verified sender address in `EMAIL_FROM`, and `make worker` running.
 
 **Clerk (customers).** Create one application. Enable *Email address* +
 *Password*, and *Google* under social connections if you want the button
@@ -482,7 +499,8 @@ stripe listen --forward-connect-to localhost:8000/api/v1/webhooks/stripe/connect
 ```
 
 Copy the `whsec_` it prints into `STRIPE_CONNECT_WEBHOOK_SECRET` and restart
-the api container.
+the API (`make api`, or `docker compose --profile app up -d --force-recreate api`
+for the container).
 
 The CLI listens on whichever Stripe account it is logged in to, which is not
 necessarily the one `STRIPE_SECRET_KEY` belongs to. If they differ, nothing is
@@ -509,6 +527,10 @@ the page gets there anyway after about 10 seconds by asking Stripe itself.
 Then, signed in as staff at `/manage`: the order is on the board. **Mark
 ready for pickup**, then **Collect with PIN** with the customer's six digits.
 Or **cancel order** → **Cancel and refund** to see a test-mode refund.
+
+With SendGrid set up and the worker running, the customer's emails arrive
+along the way: the confirmation, "ready to collect", and the cancellation
+with its refund.
 
 ### 7. HTTPS on this laptop (optional)
 
@@ -636,36 +658,48 @@ Two senders, for two different kinds of email:
 | Email | Sent by | Set up in |
 |---|---|---|
 | Customer verification and password-reset codes | Clerk | Clerk's dashboard (templates, branding) |
-| Staff and owner invitations | Zenoeats, through SendGrid | `.env` |
-| Order confirmations | Zenoeats, through SendGrid | `.env` |
+| Everything else, listed below | Zenoeats, through SendGrid | `.env`; the words are templates in the repository |
 
-Clerk cannot send the last two: staff are not Clerk users — they sign in
-with passwords the platform issues — and Clerk sends no business email.
+Clerk cannot send Zenoeats' own: staff are not Clerk users (they sign in with
+passwords the platform issues), and Clerk sends no business email.
 
-SendGrid is optional. With `SENDGRID_API_KEY` empty nothing is sent: the worker
-logs each skipped email, and the portal says no invitation went out so the
-admin passes the sign-in link on by hand. What is lost without it is a
-branded order confirmation and, for a guest, the private link in it that
-reopens their order and pickup PIN on another device. Stripe can still email
-a payment receipt — the app already gives it the customer's address — once
-"email customers for successful payments" is on in each restaurant's Stripe
-settings.
+Zenoeats sends 15 emails:
+
+| To | When |
+|---|---|
+| Customer | **Order confirmed** when the payment succeeds; **ready to collect** when the kitchen marks a pick-up order ready; **on its way** when the driver picks a delivery up; **delivered**; **cancelled**, with the refund and its 10 to 14 business days when one was issued; **refund on its way** for a refund made later, from the board or Stripe's dashboard |
+| Customer account | **Welcome**, from the restaurant whose storefront a brand-new account first opens; **account closed**, once, however it was closed |
+| Restaurant staff | **Invitation**; **welcome** on accepting it, and **has joined** to whoever invited them; **role changed**; **removed**; **password reset**, with the temporary password |
+| Admins and managers | **A refund didn't go through**, when a cancellation went through but Stripe refused its refund |
+
+The worker sends them all, so `make worker` (or the worker container) must be
+running. Each is recorded in the `sent_emails` table before it goes, so none
+is sent twice, however often a task or webhook repeats. A pickup PIN is never
+in an email; the order page shows it.
+
+SendGrid is optional. With `SENDGRID_API_KEY` empty nothing is sent: the
+worker logs each skipped email, and the portal says when an invitation or a
+reset password did not go, so the admin passes it on by hand. Order pages
+still show everything the emails would have said. Stripe can also email its
+own payment and refund receipts, once "email customers" is on in a
+restaurant's Stripe settings; with both on, a customer gets Stripe's receipt
+as well as Zenoeats' email.
 
 **Turning it on.** Put a key from SendGrid › Settings › API Keys (with *Mail
-Send* access; it starts `SG.`) in `.env` as `SENDGRID_API_KEY`, then recreate
-the two containers that read it — a running container keeps the environment
-it started with:
+Send* access; it starts `SG.`) in `.env` as `SENDGRID_API_KEY`. SendGrid only
+sends from an address it has verified; anything else is refused, and the
+worker logs the refusal. For development, verify one address under Settings ›
+Sender Authentication › *Single Sender Verification* and put it in
+`EMAIL_FROM`. Then restart what reads it. A running process keeps the settings
+it started with: restart `make api` and `make worker`, or recreate the
+containers:
 
 ```
 docker compose --profile app up -d --force-recreate api worker
 ```
 
-SendGrid only sends from an address it has verified; anything else is
-refused, and the worker logs the refusal. To see an invitation arrive in your
-own inbox, verify one address under Settings › Sender Authentication ›
-*Single Sender Verification* and put it in `EMAIL_FROM`. For real staff and
-customers, authenticate your whole domain there instead (step 5 of the
-production guide below) and set:
+For real staff and customers, authenticate your whole domain instead (step 5
+of the production guide below) and set:
 
 ```
 EMAIL_FROM=Zenoeats <orders@yourdomain.com>
@@ -675,19 +709,19 @@ STOREFRONT_URL_TEMPLATE=https://{slug}.{root_domain}
 
 `STOREFRONT_URL_TEMPLATE` is where links inside emails point. Development is
 `http://{slug}.{root_domain}:8080`, through nginx; getting it wrong sends
-people a sign-in link that goes nowhere.
+people a link that goes nowhere.
 
 **Checking it.** Each attempt is in the worker's log, sent or not:
 
 ```
-docker compose --profile app logs worker | Select-String "invitation|confirmation|SENDGRID"
+docker compose --profile app logs worker | Select-String "sent|rejected|SENDGRID"
 ```
 
-**Editing an email.** The words and layout of every email Zenoeats sends are
-templates in [`backend/app/templates/email/`](backend/app/templates/email/),
-one folder per email. Its README says how to edit them. To see a change without
-sending anything, run `python scripts/preview_emails.py` from `backend/` and
-open the `index.html` it prints.
+**Editing an email.** The words and layout of every email are templates in
+[`backend/app/templates/email/`](backend/app/templates/email/), one folder per
+email, with a README saying how to edit them. To see a change without sending
+anything, run `python scripts/preview_emails.py` from `backend/` and open the
+`index.html` it prints.
 
 ## Development without Clerk
 
@@ -798,12 +832,15 @@ backend/
   app/db/           engines and the SET LOCAL tenant session; every wait bounded
   app/models/       SQLAlchemy models, frozen enums, transition matrix
   app/services/     pricing, orders, tax, Stripe, storefront, images, terms,
-                    ops_health (what /health/operations checks)
+                    ops_health (what /health/operations checks), and the
+                    emails: order_emails, staff_emails, account_emails
+  app/templates/email/  every email's words and layout, one folder each
   app/api/v1/       portal, orders, customer, restaurant, admin, webhooks
   app/workers/      Celery app and tasks
   alembic/          schema, RLS policies, role grants
   tests/            unit and integration tests plus the RLS gates
-  scripts/          seed.py (demo data), hash_password.py (ADMIN_USERS entries)
+  scripts/          seed.py (demo data), hash_password.py (ADMIN_USERS entries),
+                    preview_emails.py (every email rendered, nothing sent)
 web/
   src/routes/             the route table, and one lazy area per portal
   src/pages/storefront/   customer: menu, checkout, order tracking
@@ -840,6 +877,8 @@ docs/               everything written beyond the code; index in docs/README.md
   CONTRIBUTING.md   how to set up, change, test and release
   SECURITY.md       how to report a vulnerability
   CODEOWNERS        who reviews which paths
+.env.example             development settings, copied to .env
+.env.production.example  production settings, filled in by make_prod_env.py
 docker-compose.yml       development: infrastructure, plus the app behind
                          --profile app (and --profile https for :8443)
 docker-compose.prod.yml  production override: GHCR images, passwords, no
@@ -874,9 +913,9 @@ other trace.
 
 | Suite | Run | What |
 |---|---|---|
-| Backend | `make test` (native), or in a container, below | 861 tests: pricing, orders, payments and webhooks, refunds, tax, roles, the seven RLS gates, health, startup checks |
+| Backend | `make test` (native), or in a container, below | 972 tests: pricing, orders, payments and webhooks, refunds, tax, roles, every email and its send-once record, the seven RLS gates, health, startup checks |
 | Tenant isolation | `make rls` | The RLS gates alone (see above) |
-| Web | `node --test tests/*.test.mjs` in `web/` | Storefront presentation, calories, maps, profile |
+| Web | `node --test tests/*.test.mjs` in `web/` | 35 tests: storefront presentation, calories, maps, profile |
 | Web checks | `npm run lint`, `npx tsc --noEmit`, `npm run build` in `web/` | |
 
 With the app running in Docker, the backend suite runs in a one-off
@@ -912,7 +951,9 @@ never counts, because it is public. All three paths answer on every host.
 ## Production
 
 The target is a single Linux VM (2 vCPU / 4 GB is a sensible floor) running
-the images CI publishes. Nothing is built on the server:
+the images CI publishes. Nothing is built on the server. Its `.env` is
+generated from [`.env.production.example`](.env.production.example), which
+explains every setting:
 
 ```bash
 python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1   # once
@@ -1083,7 +1124,9 @@ Tax* (the save checks Stripe), and activate. The product tax code is
 calculation.
 
 **2.8 Before real money.**
-- Confirm **email receipts** are enabled for connected accounts.
+- Decide on Stripe's own **email receipts** for connected accounts. Zenoeats
+  already emails the confirmation and every refund; with Stripe's on as well,
+  a customer gets both.
 - Tell restaurants they receive payouts directly and handle disputes.
 - Complete Stripe's annual **PCI** self-assessment (SAQ A: card data never
   touches the servers).

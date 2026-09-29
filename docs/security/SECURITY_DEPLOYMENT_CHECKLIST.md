@@ -21,7 +21,8 @@ before real money.
 ## 2. Environment configuration
 
 - [ ] `.env` generated on the server with `python3 scripts/make_prod_env.py
-      --domain <domain> --release <tag>`, never copied from development
+      --domain <domain> --release <tag>` (from `.env.production.example`),
+      never copied from development
 - [ ] `python3 scripts/make_prod_env.py --check .env` lists nothing under
       "Before this can run"
 - [ ] `ENV=production`, `ALLOW_TEST_KEYS=false`, live `sk_live_`/`pk_live_`
@@ -89,7 +90,9 @@ before real money.
   - [ ] forged `X-Forwarded-For` through the real edge is still rate-limited
   - [ ] a cross-origin request with a guest cookie is refused (F-11)
   - [ ] an email link opens its order on a second device, and the token is
-        absent from the edge log (F-01)
+        absent from the edge log (F-01). The link in the email is the
+        storefront's own, not a SendGrid tracking redirect (click tracking is
+        off on every message)
   - [ ] `/docs` returns 404
   - [ ] no CSP violations in the console during sign-in, 3-D Secure and wallet payments
 - [ ] A human penetration test of staging (or an agreed, scoped self-test by a second person)
@@ -104,7 +107,7 @@ that performed this audit did not and cannot perform them.
 | Security-audit changes reviewed and approved for merge | | |
 | Branch protection enabled on `main` (F-07) | Owner (approved in session) | 2026-09-26 |
 | F-04 threshold (50 / 15 min / account) accepted | | |
-| Accepted risks re-confirmed: limiter fails open without Redis; temporary staff passwords emailed | | |
+| Accepted risks re-confirmed: limiter fails open without Redis; temporary staff passwords emailed, at invitation and at a reset | | |
 | Container limits chosen (F-12) | Defaults for 2 vCPU / 4 GB; confirm against the chosen VM | |
 | Production configuration checked (§2–§4) | | |
 | Restore drill passed on production backups (§6) | | |
