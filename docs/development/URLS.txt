@@ -211,5 +211,9 @@
  Stripe webhook target  https://<yourdomain>/api/v1/webhooks/stripe/connect
                         (events from *Connected accounts*, not your own account)
  Stripe CLI forwarding  stripe listen --forward-connect-to localhost:8000/api/v1/webhooks/stripe/connect
+ SendGrid               https://app.sendgrid.com  (API key, sender verification,
+                        activity feed: find a message by its idempotency_key)
+ Email previews         cd backend && python scripts/preview_emails.py
+                        -> backend/email-previews/index.html (nothing is sent)
 
 ================================================================================

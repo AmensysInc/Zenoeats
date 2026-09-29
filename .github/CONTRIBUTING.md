@@ -5,11 +5,20 @@ what the system is; this is how to work on it.
 
 ## Setting up
 
-Follow the README's **Running it**: hosts entries, `.env` from `.env.example`,
-then either everything in Docker (`make up-all`) or the infrastructure in
-Docker and the app native (`make infra`, `make api`, `make web`). Use test
-keys only; production accounts are in the README's **Production setup
-guide**.
+Follow the README's **Running it**: hosts entries, `.env` from `.env.example`
+and `web/.env` from `web/.env.example`, then either everything in Docker
+(`make up-all`) or the infrastructure in Docker and the app native
+(`make infra`, `make api`, `make web`, and `make worker` for payments and
+emails). Use test keys only; production accounts are in the README's
+**Production setup guide**.
+
+A new setting goes in `backend/app/config.py` and in both templates:
+`.env.example` (development) and `.env.production.example` (production),
+with what it does and what is lost without it.
+
+Changing an email's wording is a template edit under
+`backend/app/templates/email/`; `python scripts/preview_emails.py` from
+`backend/` shows the result without sending anything.
 
 ## Making a change
 

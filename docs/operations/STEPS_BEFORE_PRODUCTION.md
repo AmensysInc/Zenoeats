@@ -15,12 +15,18 @@ Items marked *(code)* need a change in this repository. Everything else is
 configuration, accounts or process on your side. Ticked items are done; each
 says what changed and where, so it can be checked.
 
-### Go-live: what is left (updated 27 September 2026)
+### Go-live: what is left (updated 28 September 2026)
 
 **The code is done.** Release `v1.0.1` is tested end to end, security-audited
 (all twelve findings fixed, see `docs/security/SECURITY_AUDIT_REPORT.md`), and published as
 `ghcr.io/haswanth13901/zenoeats-mvp/{api,web}:v1.0.1`. `main` is protected:
 every change needs a pull request and green CI.
+
+Since `v1.0.1`, `main` has gained the email work (PRs #47–#55 in
+`CHANGELOG.md`): SendGrid instead of Resend, editable templates, and the order,
+staff and account emails, with a new migration (0042). **Tag a new release
+from `main` before deploying** (for example `v1.1.0`) and deploy that, not
+`v1.0.1`; the steps below say `v1.0.1` only as the example.
 
 **Nothing below needs code.** It is accounts, the domain, the server and the
 lawyer. Work through it in this order: each step needs the ones before it.
@@ -104,15 +110,17 @@ account and the rest of this list is ticked.
       on the root domain. Hours to days. → §3.2
 - [ ] **Stripe**: live keys, and the **Connect webhook** at
       `https://<domain>/api/v1/webhooks/stripe/connect`. 20 minutes. → §3.4
-- [ ] **Resend**: verify the sending domain (SPF/DKIM), set the key and
-      sender. 30 minutes. → §3.6
+- [ ] **SendGrid**: authenticate the sending domain (its CNAME records),
+      set the key and sender. 30 minutes. → §3.6
 
 #### Step 4 — The server
 
 - [ ] **Rent the VM**: Ubuntu 24.04, 2 vCPU / 4 GB. Provider firewall: 80/443
       from Cloudflare's ranges only, 22 from your IP only. 30 minutes.
       → §4.1, §11
-- [ ] **Deploy `v1.0.1`**: Docker, clone and check out `v1.0.1`,
+- [ ] **Tag a release** from `main` that includes the email work (for
+      example `v1.1.0`); CI publishes its images. → the note at the top
+- [ ] **Deploy that release**: Docker, clone and check out the tag,
       `make_prod_env.py`, fill in the keys, `--check` until clean, the
       certificate, `up -d`. 1–2 hours. → §11
 - [ ] **Backups on**: the timer enabled, the first backup lands in R2, and a
@@ -131,7 +139,8 @@ account and the rest of this list is ticked.
   - a card payment with 3-D Secure
   - Apple Pay and Google Pay on real phones
   - order → kitchen → PIN, and a refund
-  - the emails arrive
+  - the emails arrive: the confirmation, ready or on the way and delivered,
+    a cancellation with its refund, a staff invitation and a password reset
   - no CSP errors in the console
 - [ ] **Penetration test** by a second person or a professional. →
       `docs/security/SECURITY_DEPLOYMENT_CHECKLIST.md` §7
@@ -291,12 +300,21 @@ Stripe Dashboard).
       where disputes also live. Either way the `charge.refunded` webhook
       reconciles the payment and, for Stripe Tax restaurants, reverses the tax
       (PR #17). **On your side:** tell restaurants (§9).
-- [x] **[SOON] Receipts from Zenoeats.** *(code)* *Fixed — Resend:* the worker
+- [x] **[SOON] Receipts from Zenoeats.** *(code)* *Fixed:* the worker
       emails an order confirmation once the payment webhook marks the order
       paid — exactly once per order, retried on rate limits and outages. It
       never contains the pickup PIN; it links to the order page where the
-      signed-in customer sees it. `app/services/notifications.py`,
-      `tests/test_notifications.py`. **On your side:** §3.6.
+      signed-in customer sees it. Sent through SendGrid since PR #52.
+      `app/services/notifications.py`, `tests/test_notifications.py`.
+      **On your side:** §3.6.
+- [x] **[SOON] Emails after the confirmation.** *(code)* *Fixed (PR #53):*
+      ready to collect, on its way, delivered, cancelled (with the refund and
+      its 10 to 14 business days when one was issued) and refund issued, for
+      refunds made later from the board or Stripe's dashboard. Each is claimed
+      in the `sent_emails` table before it goes, because SendGrid has no
+      idempotency key, so none is sent twice and a board refund Stripe reports
+      back is not announced again. `app/services/order_emails.py`,
+      `tests/test_order_emails.py`.
 
 ### 2.4 Customer sign-in (Clerk)
 
@@ -339,8 +357,11 @@ Stripe Dashboard).
       sign-in and stops working then, it is only included while that is still
       pending, and it is sealed with `FIELD_ENCRYPTION_KEY` while it sits in
       the Celery queue so the broker's on-disk log never holds it in plain
-      text. Password resets and super-admin-created owners are still not
-      emailed.
+      text. Since PR #54 a password reset is emailed the same way, as are a
+      welcome on accepting, "has joined" to the inviter, a role change, a
+      removal, and "a refund didn't go through" to admins and managers
+      (`app/services/staff_emails.py`). A new owner created by the super
+      admin is still given the password on screen only.
 
 ### 2.6 Admin portal (found by an end-to-end pass over the live portal)
 
@@ -549,8 +570,9 @@ provider page in Clerk shows the **redirect URI** to paste into the provider.
       Google Pay active". No domain association file needs hosting; Stripe
       does Apple's merchant validation.
 - [ ] **[LAUNCH]** Decide **statement descriptors** (what shows on the
-      customer's card statement) and confirm **email receipts** are enabled for
-      connected accounts.
+      customer's card statement), and decide on Stripe's own **email
+      receipts** for connected accounts: Zenoeats already emails the
+      confirmation and every refund, so with Stripe's on a customer gets both.
 - [ ] **[LAUNCH]** Confirm restaurants understand they handle **disputes** and
       receive **payouts** directly (merchant of record).
 
@@ -862,9 +884,11 @@ root domain and every subdomain.
 
 Every setting the backend reads, with what it must be in production.
 **`python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1`
-writes the whole file** (§11): it generates every secret, sets every value
-below that does not come from an account, and leaves those that do empty.
-`--check .env` lists what is still missing.
+writes the whole file** (§11) from
+[`.env.production.example`](../../.env.production.example), which explains
+each setting: it generates every secret, sets every value below that does not
+come from an account, and leaves those that do empty. `--check .env` lists
+what is still missing.
 
 | Variable | Production value | Notes |
 |---|---|---|
@@ -890,6 +914,13 @@ below that does not come from an account, and leaves those that do empty.
 | `PLATFORM_FEE_BPS`, `PLATFORM_FEE_FIXED_MINOR` | your fee | 0 = no fee. |
 | `SENDGRID_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` | SendGrid key (Mail Send); sender on an authenticated domain | Empty key = no emails. |
 | `STOREFRONT_URL_TEMPLATE` | `https://{slug}.{root_domain}` | Links in emails. |
+| `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_BROWSER_KEY` | two separate keys | Server key restricted to the server's IP; browser key to `https://*.<domain>/*`. Empty = no delivery (server key) or no map and suggestions (browser key). |
+| `GEOCODING_PROVIDER`, `GEOCODE_CACHE_TTL_SECONDS`, `GEOCODE_TIMEOUT_SECONDS` | `google`, 30 days, 4 | |
+| `DRIVER_LOCATION_STALE_SECONDS`, `DELIVERY_ETA_REFRESH_SECONDS`, `ROUTES_TIMEOUT_SECONDS` | defaults | Live tracking. Each arrival-time refresh is billed. |
+| `GUEST_SESSION_TTL_MINUTES`, `GUEST_RETENTION_DAYS` | 30 days, 45 | |
+| `DB_POOL_SIZE`, `DB_MAX_OVERFLOW` | 10, 10 | Per API process; size with `API_WORKERS` under `max_connections`. |
+| `API_MEM_LIMIT`, `API_CPUS`, `WORKER_MEM_LIMIT`, `WORKER_CPUS`, `BEAT_MEM_LIMIT`, `WEB_MEM_LIMIT`, `NGINX_MEM_LIMIT`, `REDIS_RUNTIME_MEM_LIMIT`, `MIGRATE_MEM_LIMIT` | defaults for 2 vCPU / 4 GB | `docker-compose.prod.yml`. Raise on a bigger VM. |
+| `LOG_LEVEL` | `INFO` | |
 | `FIELD_ENCRYPTION_KEY` | generated | Required at startup. Never reuse the dev key, never regenerate a live one; escrow it (§5). |
 | `IMAGES_DIR`, `IMAGES_PUBLIC_BASE` | persistent path or bucket URL | |
 | `PENDING_PAYMENT_TTL_MINUTES`, `IDEMPOTENCY_TTL_HOURS`, `MAX_ITEMS_PER_ORDER` | defaults are reasonable | |
@@ -1022,8 +1053,11 @@ Cloudflare, Clerk and webhooks from Stripe.
 - [ ] A **Stripe Tax** restaurant: the quote shows local tax for the pickup
       address, the paid order appears under the restaurant's Tax →
       Transactions, and the amounts match.
-- [ ] Order **confirmation email** arrives once (without the PIN), and a
-      **staff invitation email** arrives with the sign-in link.
+- [ ] Order **confirmation email** arrives once (without the PIN), then
+      "ready to collect" (pick-up) or "on its way" and "delivered" (delivery),
+      and a cancellation email with the refund amount. A **staff invitation
+      email** arrives with the sign-in link, and a password reset from the
+      portal is emailed. Links in every email open the right storefront.
 - [ ] **Staff invite** → temporary password → change password → accept →
       board access by role.
 - [ ] **Super admin**: create restaurant, create owner, Stripe onboarding,

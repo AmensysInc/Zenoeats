@@ -38,6 +38,11 @@ versions follow [Semantic Versioning](https://semver.org/).
   `CONTRIBUTING.md`, `SECURITY.md`, `CODEOWNERS` and a pull request template.
 
 ### Changed
+- `.env.example` is the development template only, and now correct for a
+  native run (127.0.0.1 ports) with every setting the code reads. Production
+  has its own template, `.env.production.example`, which
+  `scripts/make_prod_env.py` fills. The README, the production steps and the
+  security checklist describe the emails and the two templates (#56).
 - Email is sent through SendGrid instead of Resend. `RESEND_API_KEY` is
   replaced by `SENDGRID_API_KEY`, and `EMAIL_FROM` must be a sender SendGrid
   has verified (#52).
