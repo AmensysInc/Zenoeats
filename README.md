@@ -940,7 +940,7 @@ other trace.
 
 | Suite | Run | What |
 |---|---|---|
-| Backend | `make test` (native), or in a container, below | 972 tests: pricing, orders, payments and webhooks, refunds, tax, roles, every email and its send-once record, the seven RLS gates, health, startup checks |
+| Backend | `make test` (native), or in a container, below | 1,000 tests: pricing, orders, payments and webhooks, refunds, tax, roles, every email and its send-once record, the seven RLS gates, health, startup checks |
 | Tenant isolation | `make rls` | The RLS gates alone (see above) |
 | Web | `node --test tests/*.test.mjs` in `web/` | 35 tests: storefront presentation, calories, maps, profile |
 | Web checks | `npm run lint`, `npx tsc --noEmit`, `npm run build` in `web/` | |
