@@ -1,0 +1,12 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+{% if purpose == "reset" %}
+Use this code to choose a new password for your Zenoeats account:
+{% else %}
+Use this code to verify your email address on Zenoeats:
+{% endif %}
+
+    {{ code }}
+
+Type it on the page that asked for it. It works once and expires soon.
+
+If you didn't ask for this, you can ignore this email; nothing changes without the code. Never share it: Zenoeats and the restaurants will never ask you for it.

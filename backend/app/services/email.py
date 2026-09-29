@@ -86,6 +86,13 @@ class Email:
     html: str
     text: str
     idempotency_key: str
+    # A subject that may carry a secret -- a sign-in code in Clerk's own
+    # wording -- is left out of every log line.
+    sensitive: bool = False
+
+    @property
+    def log_subject(self) -> str:
+        return "(subject withheld)" if self.sensitive else repr(self.subject)
 
 
 def configured() -> bool:
@@ -140,8 +147,8 @@ def deliver(email: Email) -> Outcome:
     """
     if not configured():
         log.info(
-            "SENDGRID_API_KEY is not set; not sending %r to %s",
-            email.subject, email_for_log(email.to),
+            "SENDGRID_API_KEY is not set; not sending %s to %s",
+            email.log_subject, email_for_log(email.to),
         )
         return Outcome("NOT_CONFIGURED", "Not sent: email is not set up on this server.")
 
@@ -158,8 +165,8 @@ def deliver(email: Email) -> Outcome:
         # The message went out and no answer came back. SendGrid may well
         # have taken it; retrying could deliver it twice.
         log.warning(
-            "email %r to %s: no answer from the provider (%s); not retrying",
-            email.subject, email_for_log(email.to), type(exc).__name__,
+            "email %s to %s: no answer from the provider (%s); not retrying",
+            email.log_subject, email_for_log(email.to), type(exc).__name__,
         )
         return Outcome(
             "FAILED",
@@ -172,13 +179,13 @@ def deliver(email: Email) -> Outcome:
         # The body names the problem (an unverified sender, say) and carries
         # no secret, so it is worth the log line. The recipient is masked.
         log.error(
-            "email %r to %s rejected (%s): %s",
-            email.subject, email_for_log(email.to), res.status_code, res.text[:300],
+            "email %s to %s rejected (%s): %s",
+            email.log_subject, email_for_log(email.to), res.status_code, res.text[:300],
         )
         return Outcome("FAILED", _problem(res.status_code, res.text))
 
     log.info(
-        "sent %r to %s (%s)",
-        email.subject, email_for_log(email.to), res.headers.get("x-message-id", "no id"),
+        "sent %s to %s (%s)",
+        email.log_subject, email_for_log(email.to), res.headers.get("x-message-id", "no id"),
     )
     return Outcome("SENT")

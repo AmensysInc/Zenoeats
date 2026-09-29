@@ -1,0 +1,1 @@
+{% if purpose == "reset" %}Reset your Zenoeats password{% else %}Your Zenoeats verification code{% endif %}

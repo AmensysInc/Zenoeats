@@ -516,6 +516,11 @@ that must be filled in before go-live.
       `CLERK_WEBHOOK_SECRET`. Requires the Celery worker to be running.
 - [ ] **[LAUNCH]** Keep **bot protection** on (the sign-up page includes the
       `clerk-captcha` element it needs).
+- [ ] **[SOON]** *Optional:* send Clerk's customer emails through SendGrid
+      (*code done*). Subscribe the webhook to `email.created`, then turn off
+      **Delivered by Clerk** for the verification and reset codes, one at a
+      time, testing each. Only once the webhook reaches production: after
+      that, it is the only way those codes arrive. README, "Email".
 - [ ] **[LAUNCH]** Brand Clerk's **email templates** (verification and reset
       codes) with the Zenoeats name and sender.
 - [ ] **[LAUNCH]** Decide **session lifetime** and inactivity timeout in Clerk.
