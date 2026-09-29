@@ -981,7 +981,7 @@ generated from [`.env.production.example`](.env.production.example), which
 explains every setting:
 
 ```bash
-python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1   # once
+python3 scripts/make_prod_env.py --domain <domain> --release v1.1.0   # once
 python3 scripts/make_prod_env.py --check .env                         # until clean
 export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 docker compose --profile app pull && docker compose --profile app up -d
@@ -1037,7 +1037,7 @@ development ones; never reuse development keys.
 | 9 | Platform administrators | The super admin portal | `ADMIN_USERS` |
 
 Generate the `.env` first, on the server, and fill it in as you go:
-`python3 scripts/make_prod_env.py --domain <domain> --release v1.0.1`. It
+`python3 scripts/make_prod_env.py --domain <domain> --release v1.1.0`. It
 creates every secret and password itself, and marks each value that has to
 come from one of the accounts below with `# FILL IN:`. Run
 `python3 scripts/make_prod_env.py --check .env` at any point to see what is
@@ -1352,7 +1352,7 @@ Each operator of the super admin portal (`https://admin.<domain>/admin`) has
 a named entry in `ADMIN_USERS`, which the audit log records. On the server:
 
 ```bash
-docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.0.1 \
+docker run --rm -it ghcr.io/haswanth13901/zenoeats-mvp/api:v1.1.0 \
   python scripts/hash_password.py you@example.com
 ```
 
