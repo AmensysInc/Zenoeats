@@ -7,12 +7,30 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-29
+
+The release to deploy. The same application as 1.2.0, on a supported nginx,
+under the project's new name.
+
+**Upgrading from 1.2.0.** No migration and no `.env` change. Pull the new
+`api` and `web` images, and the nginx edge image with them:
+`docker compose --profile app pull && docker compose --profile app up -d`.
+
+### Security
+- nginx moves from 1.27 to the 1.30 stable line (1.30.5) in the web image
+  and at the edge, including the optional HTTPS door. 1.27 was a mainline
+  branch that no longer receives fixes, and the pinned image was 17 months
+  old. All three edge configurations were checked with `nginx -t` on the new
+  image, the production template with a throwaway certificate.
+
 ### Changed
 - The project is renamed from `zenoeats-mvp` to Zenoeats: the repository is
   `haswanth13901/Zenoeats`, and CI publishes to
   `ghcr.io/haswanth13901/zenoeats/{api,web}`. The compose project is pinned
   to `zenoeats`, so local containers are `zenoeats-*` whatever the checkout's
-  folder is called.
+  folder is called (#64).
+- The README and the steps before production name `v1.2.1` as the release
+  to deploy. Nothing in it changes what the legal review pack describes.
 
 ## [1.2.0] - 2026-09-29
 
@@ -183,7 +201,8 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.0.0...v1.0.1
