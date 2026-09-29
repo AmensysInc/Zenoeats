@@ -1,0 +1,1 @@
+{{ member }} has joined {{ restaurant_name }}

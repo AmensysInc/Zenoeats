@@ -46,6 +46,8 @@ export function AdminRestaurantsPage() {
     password: string | null;
     status: "ACTIVE" | "INVITED";
     emailConfigured: boolean;
+    /** A reset, emailed to them as well; a new owner's first password is not. */
+    emailed?: boolean;
     restaurant: Restaurant;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +161,7 @@ export function AdminRestaurantsPage() {
             password={issued.password}
             status={issued.status}
             emailConfigured={issued.emailConfigured}
+            emailed={issued.emailed}
             restaurant={issued.restaurant}
             onDismiss={() => setIssued(null)}
           />
@@ -205,6 +208,7 @@ export function AdminRestaurantsPage() {
                   password: res.temporary_password,
                   status: res.status,
                   emailConfigured: res.email_configured,
+                  emailed: true,
                   restaurant: ownerFor,
                 });
                 setOwnerFor(null);

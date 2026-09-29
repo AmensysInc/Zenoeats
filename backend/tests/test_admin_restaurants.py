@@ -9,6 +9,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import text
 
 from app.core import errors
@@ -261,7 +262,9 @@ def test_an_invited_owner_can_have_their_password_reset(admin_user, cleanup):
     _set_own_password(email, "my own password 123")
     _owner(admin_user, second.id, email)
 
-    out = reset_owner_password(second.id, CreateOwnerIn(email=email), admin=admin_user)
+    out = reset_owner_password(
+        second.id, CreateOwnerIn(email=email), BackgroundTasks(), admin=admin_user
+    )
     assert out.temporary_password
     assert out.status == "INVITED"
 

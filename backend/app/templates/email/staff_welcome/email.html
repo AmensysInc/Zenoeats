@@ -1,0 +1,19 @@
+{#-
+  Sent to someone the moment they accept an invitation to a restaurant's
+  team. They have just signed in and chosen their own password, so there is
+  no password in here -- only where to find the portal next time.
+
+  name is their first name, or None. role is in words ("kitchen staff").
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}You're on the team{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>You've joined {{ restaurant_name }} on Zenoeats as {{ role }}. Your account is ready.</p>
+<p>Sign in to the portal with your email and the password you chose. Keep this link for next time.</p>
+{{ ui.button(portal_url, "Open the " ~ restaurant_name ~ " portal") }}
+<p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">Forgot your password? Ask an admin at {{ restaurant_name }} to reset it.</p>
+{% endblock %}

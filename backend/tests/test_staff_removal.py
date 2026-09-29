@@ -125,6 +125,8 @@ def test_the_last_admin_cannot_be_removed(team):
     """Unreachable through the API while self-removal is refused, except by a
     race -- so the guard is called directly, as a manager's membership would
     reach it if the role check ever widened."""
+    from fastapi import BackgroundTasks
+
     from app.api.v1.restaurant import revoke_staff
     from app.core import errors
     from app.db.session import tenant_session
@@ -135,6 +137,7 @@ def test_the_last_admin_cannot_be_removed(team):
         with tenant_session(team.id) as session:
             revoke_staff(
                 team.owner_membership,
+                BackgroundTasks(),
                 restaurant=session.get(Restaurant, team.id),
                 db=session,
                 membership=session.get(RestaurantUser, manager),

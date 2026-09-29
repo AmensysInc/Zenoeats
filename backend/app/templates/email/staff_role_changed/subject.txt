@@ -1,0 +1,1 @@
+Your role at {{ restaurant_name }} has changed

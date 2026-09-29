@@ -8,6 +8,7 @@ password, and sign in to that restaurant as its ADMIN.
 """
 
 import pytest
+from fastapi import BackgroundTasks
 from sqlalchemy import text
 
 from app.core import staff_auth
@@ -144,7 +145,9 @@ def test_the_super_admin_can_give_a_passwordless_invitee_a_login(admin_user, cle
     assert invite.status_code == 201
     assert invite.json()["temporary_password"] is None
 
-    out = reset_owner_password(restaurant.id, CreateOwnerIn(email=placeholder), admin=admin_user)
+    out = reset_owner_password(
+        restaurant.id, CreateOwnerIn(email=placeholder), BackgroundTasks(), admin=admin_user
+    )
     assert out.temporary_password
     login = _staff_client(restaurant.slug).post(
         "/api/v1/restaurant/login", json={"email": placeholder, "password": out.temporary_password}

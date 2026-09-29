@@ -1,0 +1,6 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+{{ member }} accepted your invitation and has joined {{ restaurant_name }} as {{ role }}. They can sign in to the portal now.
+
+See your team: {{ portal_url }}

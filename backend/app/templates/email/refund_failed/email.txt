@@ -1,0 +1,11 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+Order #{{ order_number }} at {{ restaurant_name }} was cancelled, but its refund of {{ amount }} didn't go through. The customer hasn't been paid back yet.
+{% if problem %}
+
+What Stripe said: {{ problem }}
+{% endif %}
+
+Once that's sorted, refund it from the portal: it's in the refunds due list.
+{{ portal_url }}

@@ -195,6 +195,7 @@ export function IssuedCredentialPanel({
   password,
   status,
   emailConfigured,
+  emailed = false,
   restaurant,
   onDismiss,
 }: {
@@ -202,6 +203,8 @@ export function IssuedCredentialPanel({
   password: string | null;
   status: "ACTIVE" | "INVITED";
   emailConfigured: boolean;
+  /** A reset password, which is also emailed to them when email is set up. */
+  emailed?: boolean;
   restaurant: Restaurant;
   onDismiss: () => void;
 }) {
@@ -239,9 +242,11 @@ export function IssuedCredentialPanel({
       }
     >
       <p>
-        Give these to the owner now. The password is not stored and cannot be shown
-        again — only reissued. They must replace it at first sign-in before the
-        portal will do anything else.
+        {emailed && emailConfigured
+          ? "We're emailing the new password to them too. It's also shown here in case the email doesn't arrive: it"
+          : "Give these to the owner now. The password"}{" "}
+        is not stored and cannot be shown again — only reissued. They must replace it at
+        first sign-in before the portal will do anything else.
       </p>
       <dl className="mt-3 grid gap-1">
         <div className="flex gap-2">

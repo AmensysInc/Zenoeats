@@ -276,8 +276,10 @@ export function StaffPage() {
             }
           >
             <p>
-              Give it to them yourself; it is shown once and cannot be looked up again. They choose
-              their own the next time they sign in.
+              {reset.email_configured
+                ? "We're emailing it to them too. It's also shown here once, in case the email doesn't arrive, and can't be looked up again."
+                : "Give it to them yourself; it is shown once and cannot be looked up again."}{" "}
+              They choose their own the next time they sign in.
             </p>
           </OneTimeSecret>
         )}
@@ -315,7 +317,7 @@ export function StaffPage() {
                         <div className="inline-confirm">
                           <p>
                             {!removing
-                              ? `Reset ${name}'s password? Their current password stops working and they are signed out on every device. You'll get a temporary password to pass on.`
+                              ? `Reset ${name}'s password? Their current password stops working and they are signed out on every device. You'll see a new temporary password here, and it's emailed to them too if email is set up.`
                               : invited
                                 ? `Cancel ${name}'s invitation? The invitation stops working.`
                                 : `Remove ${name} from the team? They lose access to this restaurant straight away.`}

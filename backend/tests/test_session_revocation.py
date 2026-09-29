@@ -11,6 +11,7 @@ are rate limited per address and would trip after a few runs.
 import uuid
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
 from app.core import platform_auth, staff_auth
@@ -126,7 +127,9 @@ def test_a_super_admin_reset_ends_the_owners_sessions(admin_user, cleanup):
 
     from app.schemas.api import CreateOwnerIn
 
-    reset_owner_password(restaurant.id, CreateOwnerIn(email=email), admin=admin_user)
+    reset_owner_password(
+        restaurant.id, CreateOwnerIn(email=email), BackgroundTasks(), admin=admin_user
+    )
 
     assert _staff(restaurant.slug, before).get("/api/v1/restaurant/me").status_code == 401
 

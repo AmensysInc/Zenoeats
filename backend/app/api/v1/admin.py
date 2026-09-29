@@ -735,6 +735,7 @@ def _queue_owner_invitation(restaurant_id, membership_id) -> None:
 def reset_owner_password(
     restaurant_id: UUID,
     body: CreateOwnerIn,
+    background: BackgroundTasks,
     admin: User = Depends(require_platform_admin),
 ):
     """Reissue a temporary password for an existing staff account.
@@ -785,6 +786,12 @@ def reset_owner_password(
             {"restaurant_id": str(restaurant_id), "user_email": email},
         )
 
+    from app.services import staff_emails
+
+    background.add_task(
+        staff_emails.queue, "staff_password_reset", restaurant_id,
+        user_id=user_id, temporary_password=temp_password, at=utcnow().isoformat(),
+    )
     return CreateOwnerOut(
         user_id=user_id, email=email, temporary_password=temp_password,
         status=membership_status, email_configured=email_service.configured(),

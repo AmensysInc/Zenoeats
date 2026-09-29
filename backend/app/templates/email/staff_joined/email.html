@@ -1,0 +1,19 @@
+{#-
+  Sent to the team member who invited someone, when that person accepts.
+  Not to a platform admin who set up an owner, nor to anyone no longer on
+  the team.
+
+  name is the inviter's first name, or None. member is the new member's
+  first name, or their email if they have not given a name. role is in
+  words.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}{{ member }} has joined{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>{{ member }} accepted your invitation and has joined {{ restaurant_name }} as {{ role }}. They can sign in to the portal now.</p>
+{{ ui.button(portal_url, "See your team") }}
+{% endblock %}

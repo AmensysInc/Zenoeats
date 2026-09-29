@@ -395,6 +395,23 @@ def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: 
 
 @celery_app.task(
     bind=True, max_retries=6, default_retry_delay=60,
+    name="app.workers.tasks.send_staff_email",
+)
+def send_staff_email(self, kind: str, restaurant_id: str, args: dict):
+    """Email a restaurant's team about a change: someone joined, a role
+    changed, someone was removed, a password was reset, a refund failed
+    (services/staff_emails.py). Retries while the email provider is rate
+    limiting or down; each email is sent at most once."""
+    from app.services import email, staff_emails
+
+    try:
+        return staff_emails.send(kind, UUID(restaurant_id), args)
+    except email.RetryableEmailError as exc:
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@celery_app.task(
+    bind=True, max_retries=6, default_retry_delay=60,
     name="app.workers.tasks.send_staff_invitation",
 )
 def send_staff_invitation(
