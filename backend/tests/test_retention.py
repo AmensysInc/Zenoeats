@@ -202,3 +202,81 @@ def active_restaurant_with_order():
     # which is why the sweep itself splits the work across both.
     with retention._platform_transaction() as session:
         session.execute(text("DELETE FROM users WHERE id = :id"), {"id": guest_id})
+
+
+# --------------------------------------------------- personal details ---
+#
+# A settled delivery's payload keeps what an audit needs -- ids, amounts,
+# statuses -- and loses the person: a closed account must not live on in a
+# year-old copy of Clerk's user object or Stripe's billing details.
+
+def _event_with(table: str, status: str, payload: dict) -> uuid.UUID:
+    import json
+
+    row_id = uuid.uuid4()
+    id_column = "stripe_event_id" if table == "stripe_events" else "clerk_event_id"
+    with retention._platform_transaction() as session:
+        session.execute(
+            text(
+                f"INSERT INTO {table} (id, {id_column}, type, payload, status, received_at, "
+                "attempts) VALUES (:id, :eid, :type, CAST(:p AS jsonb), :status, now(), 1)"
+            ),
+            {"id": row_id, "eid": f"evt_{uuid.uuid4().hex}", "type": payload["type"],
+             "p": json.dumps(payload), "status": status},
+        )
+    return row_id
+
+
+def _payload(table: str, row_id):
+    with retention._platform_transaction() as session:
+        return session.execute(
+            text(f"SELECT payload FROM {table} WHERE id = :id"), {"id": row_id}
+        ).scalar_one()
+
+
+STRIPE_PAYMENT = {
+    "type": "charge.refunded",
+    "data": {"object": {
+        "id": "ch_1", "amount": 2192, "amount_refunded": 2192, "payment_intent": "pi_1",
+        "receipt_email": "sam@example.com",
+        "billing_details": {"email": "sam@example.com", "name": "Sam Customer",
+                            "phone": "+12145550100", "address": {"postal_code": "75201"}},
+        "metadata": {"order_id": "o-1"},
+    }},
+}
+
+CLERK_USER = {
+    "type": "user.updated",
+    "data": {"id": "user_abc", "object": "user", "first_name": "Sam",
+             "email_addresses": [{"email_address": "sam@example.com"}],
+             "phone_numbers": [{"phone_number": "+12145550100"}]},
+}
+
+
+def test_a_settled_payment_event_keeps_its_ids_and_amounts_and_loses_the_person():
+    settled = _event_with("stripe_events", "PROCESSED", STRIPE_PAYMENT)
+    retention.sweep()
+
+    charge = _payload("stripe_events", settled)["data"]["object"]
+    assert "sam@example.com" not in str(charge) and "Sam Customer" not in str(charge)
+    assert "billing_details" not in charge and "receipt_email" not in charge
+    assert (charge["id"], charge["amount"], charge["payment_intent"]) == ("ch_1", 2192, "pi_1")
+    assert charge["metadata"] == {"order_id": "o-1"}
+
+
+def test_a_settled_clerk_event_keeps_only_whose_it_was():
+    settled = _event_with("clerk_events", "PROCESSED", CLERK_USER)
+    retention.sweep()
+    assert _payload("clerk_events", settled) == {
+        "type": "user.updated", "data": {"id": "user_abc", "object": "user"}, "redacted": True,
+    }
+
+
+@pytest.mark.parametrize("status", ["RECEIVED", "FAILED"])
+def test_an_event_still_to_be_processed_keeps_everything(status):
+    """Its handler still has to read it."""
+    stripe_row = _event_with("stripe_events", status, STRIPE_PAYMENT)
+    clerk_row = _event_with("clerk_events", status, CLERK_USER)
+    retention.sweep()
+    assert _payload("stripe_events", stripe_row) == STRIPE_PAYMENT
+    assert _payload("clerk_events", clerk_row) == CLERK_USER

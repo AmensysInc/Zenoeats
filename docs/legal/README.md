@@ -6,11 +6,11 @@ launch, and the record of each review.
 | File | What it is |
 |---|---|
 | [`LEGAL_REVIEW_BRIEF.md`](LEGAL_REVIEW_BRIEF.md) | The brief: how Zenoeats works, what personal information it holds and who receives it, how long it is kept, every email it sends, the gaps found, and the questions to answer. **Start here** |
-| [`review-2026-09-28/`](review-2026-09-28/) | The four pages as sent for this review, printed to PDF: Privacy Policy, Terms of Service, Refunds & Cancellations, Deleting your data |
+| [`review-2026-09-29/`](review-2026-09-29/) | The four pages as sent for this review, printed to PDF: Privacy Policy, Terms of Service, Refunds & Cancellations, Deleting your data |
 
 ## Sending it for review
 
-Send the lawyer the brief and the four PDFs in `review-2026-09-28/`.
+Send the lawyer the brief and the four PDFs in `review-2026-09-29/`.
 Before sending, fill in what only the business can supply (the brief's
 section 2): the legal entity name, the address, the contact mailbox, where
 the business operates, and the deletion response windows. The review

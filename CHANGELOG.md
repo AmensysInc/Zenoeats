@@ -8,12 +8,20 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Each restaurant has a phone number customers can reach it on, shown on the
+  order page and in every order email; a restaurant cannot be activated
+  without one (migration 0043) (#61).
 - A legal review pack in `docs/legal/`: a brief for the lawyer describing how
   the service works, the personal information it holds and who receives it,
   retention as it actually is, every email, the gaps found and the questions
   to answer, with the four policy pages as PDFs (#60).
 
 ### Fixed
+- A closed account no longer lives on in stored webhook messages: the hourly
+  sweep strips names, emails, phones and addresses from every settled Stripe
+  and Clerk delivery, keeping ids, amounts and statuses. The deletion page and
+  the Privacy Policy say so, and that encrypted backups hold details for up to
+  90 days (#61).
 - The policies say what the software does: Stripe gets the customer's email
   for fraud screening and sends no receipt; SendGrid sends every kind of
   email; Google receives the visitor's IP address and typed address for the
