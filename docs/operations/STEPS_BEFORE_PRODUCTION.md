@@ -570,9 +570,11 @@ provider page in Clerk shows the **redirect URI** to paste into the provider.
       Google Pay active". No domain association file needs hosting; Stripe
       does Apple's merchant validation.
 - [ ] **[LAUNCH]** Decide **statement descriptors** (what shows on the
-      customer's card statement), and decide on Stripe's own **email
-      receipts** for connected accounts: Zenoeats already emails the
-      confirmation and every refund, so with Stripe's on a customer gets both.
+      customer's card statement). Stripe's own **email receipts** are not
+      used (decided 2026-09-28): Zenoeats emails the confirmation and every
+      refund, and no longer gives Stripe a `receipt_email`, which in live mode
+      would make it send a second copy of each. Leave "email customers" off
+      in the connected accounts' settings.
 - [ ] **[LAUNCH]** Confirm restaurants understand they handle **disputes** and
       receive **payouts** directly (merchant of record).
 

@@ -38,6 +38,11 @@ versions follow [Semantic Versioning](https://semver.org/).
   `CONTRIBUTING.md`, `SECURITY.md`, `CODEOWNERS` and a pull request template.
 
 ### Changed
+- Stripe no longer emails its own receipts. The PaymentIntent carries no
+  `receipt_email`, which in live mode sends a receipt and one per refund
+  whatever the account's settings; Zenoeats' own emails cover both. The
+  customer's address goes to Stripe as the payment's billing email instead,
+  for fraud screening (#57).
 - `.env.example` is the development template only, and now correct for a
   native run (127.0.0.1 ports) with every setting the code reads. Production
   has its own template, `.env.production.example`, which

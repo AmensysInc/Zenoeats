@@ -86,7 +86,13 @@ export const storefrontApi = api.injectEndpoints({
     }),
 
     createPaymentIntent: build.mutation<
-      { client_secret: string; stripe_account_id: string; publishable_key: string },
+      {
+        client_secret: string;
+        stripe_account_id: string;
+        publishable_key: string;
+        /** For the payment's billing details; Stripe sends no receipt to it. */
+        customer_email?: string | null;
+      },
       { orderId: string; idempotencyKey: string }
     >({
       query: ({ orderId, idempotencyKey }) => ({

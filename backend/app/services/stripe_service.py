@@ -159,7 +159,7 @@ def _refund_problem(code: str | None, exc: Exception) -> str:
 
 
 def create_payment_intent(
-    order: Order, account: RestaurantPaymentAccount, receipt_email: str | None
+    order: Order, account: RestaurantPaymentAccount
 ) -> stripe.PaymentIntent:
     """Create a PaymentIntent on the connected account.
 
@@ -167,6 +167,13 @@ def create_payment_intent(
     is a different concern from our API idempotency key, which is scoped to
     actor plus endpoint. Retrying this call for the same order will always
     return the same intent rather than creating a second one.
+
+    No receipt_email. In live mode Stripe emails a receipt to that address
+    whatever the account's settings say, and another for every refund -- on
+    top of Zenoeats' own confirmation and refund emails, which carry the
+    order and the restaurant's name. One email per event is enough. The
+    customer's address still reaches Stripe, for fraud screening, as the
+    payment's billing email: the payment page sends it with the card.
     """
     if not account.charges_enabled:
         raise errors.payment_provider_unavailable(
@@ -191,7 +198,6 @@ def create_payment_intent(
                 **({"tax_calculation": order.tax_calculation_id}
                    if getattr(order, "tax_calculation_id", None) else {}),
             },
-            receipt_email=receipt_email,
             stripe_account=account.stripe_account_id,
             # The fee is part of the key. Stripe refuses to replay an
             # idempotency key with different parameters, so without it a fee

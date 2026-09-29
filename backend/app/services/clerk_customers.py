@@ -2,7 +2,7 @@
 
 Clerk owns who a customer is. This module keeps the one row per Clerk user
 that the rest of the platform needs -- orders carry a foreign key to it, and
-Stripe sends the receipt to its email -- and fills that row from Clerk's
+the order emails go to its email -- and fills that row from Clerk's
 Backend API the first time a customer shows up, rather than waiting for a
 webhook. In local development the webhook never arrives at all, and in
 production it can land seconds after the customer has already reached
@@ -89,7 +89,8 @@ def has_placeholder_email(user: User) -> bool:
 
 
 def receipt_address(user: User) -> str | None:
-    """Where a payment receipt may be sent, or None for nowhere.
+    """Where this customer's order emails may be sent, and the email given
+    to Stripe with their payment, or None for nowhere.
 
     Also asked of guests, who have no Clerk profile at all: they typed their
     address at checkout, so it is real by construction and comes straight
@@ -97,10 +98,10 @@ def receipt_address(user: User) -> str | None:
 
     A customer whose profile Clerk could not supply yet carries a
     user_...@pending.local placeholder. That is not an address anyone reads,
-    and handing it to Stripe as receipt_email would send a receipt into the
-    void on every such order. No receipt is better than a bounced one -- and
-    far better than refusing the payment over it: the order page still shows
-    the pickup PIN, which is what the customer actually needs.
+    and emailing it would send every order email into the void. No email is
+    better than a bounced one -- and far better than refusing the payment
+    over it: the order page still shows the pickup PIN, which is what the
+    customer actually needs.
     """
     if has_placeholder_email(user):
         log.warning("no receipt email for user %s: Clerk profile still unavailable", user.id)

@@ -65,12 +65,26 @@ def test_a_fee_is_sent_to_stripe_only_when_there_is_one(fee, monkeypatch):
     )
 
     fee(0, 0)
-    stripe_service.create_payment_intent(_order(2000), _account(), receipt_email=None)
+    stripe_service.create_payment_intent(_order(2000), _account())
     assert "application_fee_amount" not in calls[-1]
 
     fee(250, 30)
-    stripe_service.create_payment_intent(_order(2000), _account(), receipt_email=None)
+    stripe_service.create_payment_intent(_order(2000), _account())
     assert calls[-1]["application_fee_amount"] == 80
     assert calls[-1]["metadata"]["platform_fee_minor"] == "80"
     # A changed fee must not replay the old idempotency key.
     assert calls[-1]["idempotency_key"] != calls[-2]["idempotency_key"]
+
+
+def test_stripe_is_never_asked_to_send_its_own_receipt(fee, monkeypatch):
+    """In live mode a receipt_email makes Stripe email a receipt whatever the
+    account's settings say, and another for each refund -- a second copy of
+    what Zenoeats' own confirmation and refund emails already say."""
+    calls = []
+    monkeypatch.setattr(
+        stripe_service.stripe.PaymentIntent, "create",
+        lambda **kwargs: calls.append(kwargs) or SimpleNamespace(id="pi_1"),
+    )
+    fee(0, 0)
+    stripe_service.create_payment_intent(_order(2000), _account())
+    assert "receipt_email" not in calls[-1]
