@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-29
+
+Ready for the legal review, and passed a full end-to-end check against the
+running stack: a guest order paid by Stripe test card, the kitchen board,
+ready, cancel and refund, and the three emails that go with them.
+
+**Upgrading from 1.1.0.** Migration 0043 (`restaurants.phone`) runs as usual
+before the api starts. Give each restaurant its phone number in Settings:
+customers see it on their order page and in every order email, and a
+restaurant without one cannot be activated (one already active stays
+active). The first hourly retention sweep after the upgrade strips personal
+details from every settled Stripe and Clerk webhook record already stored.
+
 ### Added
 - Each restaurant has a phone number customers can reach it on, shown on the
   order page and in every order email; a restaurant cannot be activated
@@ -28,6 +41,9 @@ versions follow [Semantic Versioning](https://semver.org/).
   suggestions and map; driver positions are discarded within 10 minutes. The
   refunds page no longer promises a restaurant phone number the software
   does not hold (#60).
+- The webhook tests remove the unprocessed rows they insert, so a test run
+  no longer leaves a development database's `/health/operations` reporting
+  stuck and failed webhooks (#62).
 
 ## [1.1.0] - 2026-09-28
 
@@ -160,7 +176,8 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/haswanth13901/zenoeats-mvp/releases/tag/v1.0.0

@@ -1,6 +1,6 @@
 # Zenoeats: brief for legal review
 
-**Prepared:** 29 September 2026, for software release `v1.1.0` and the fixes after it
+**Prepared:** 29 September 2026, for software release `v1.2.0`
 **For:** the lawyer reviewing Zenoeats' customer-facing policies before launch
 **Status of the service:** built and tested; not yet live. No real customer
 has used it, and no real money has moved.
