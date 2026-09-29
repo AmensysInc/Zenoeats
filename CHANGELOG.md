@@ -7,11 +7,28 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-**Upgrading.** Run `bash scripts/local_https_cert.sh` once if
-`infra/certs-local/` is empty, change `STOREFRONT_URL_TEMPLATE` in `.env` to
-`https://{slug}.{root_domain}:8443`, then `docker compose --profile app up -d
---force-recreate nginx api worker`. Add `https://*.zenoeats.local:8443/*` to
-the Google Maps browser key if it is not there already.
+## [1.3.0] - 2026-09-29
+
+The release to deploy. Kitchen and cashier staff can deal with a stuck or
+cancelled order themselves, emails survive a moment without the database,
+and development runs over HTTPS only. Passed the whole suite (1,002 backend
+tests plus the new ones, 35 web tests) and an end-to-end run against the
+running stack: three guest orders paid by Stripe test card, handed over with
+the PIN, handed over without it, and cancelled with a refund, with their
+emails.
+
+**Upgrading from 1.2.1 (production).** No migration and no `.env` change.
+Check out `v1.3.0` on the server, so the edge picks up its updated template,
+then pull and restart:
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app pull`,
+then the same with `up -d` in place of `pull`.
+
+**Upgrading a development laptop.** Run `bash scripts/local_https_cert.sh`
+once if `infra/certs-local/` is empty, change `STOREFRONT_URL_TEMPLATE` in
+`.env` to `https://{slug}.{root_domain}:8443`, then `docker compose --profile
+app up -d --force-recreate nginx api worker`. Add
+`https://*.zenoeats.local:8443/*` to the Google Maps browser key if it is not
+there already.
 
 ### Changed
 - Development is HTTPS only, at `https://<slug>.zenoeats.local:8443`. The
@@ -42,8 +59,8 @@ the Google Maps browser key if it is not there already.
 
 ## [1.2.1] - 2026-09-29
 
-The release to deploy. The same application as 1.2.0, on a supported nginx,
-under the project's new name.
+The same application as 1.2.0, on a supported nginx, under the project's
+new name.
 
 **Upgrading from 1.2.0.** No migration and no `.env` change. Pull the new
 `api` and `web` images, and the nginx edge image with them:
@@ -234,7 +251,8 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/haswanth13901/Zenoeats/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/haswanth13901/Zenoeats/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/haswanth13901/Zenoeats/compare/v1.0.1...v1.1.0
