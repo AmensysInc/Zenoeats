@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-28
+
+Email. Everything Zenoeats sends now goes through SendGrid from templates in
+the repository: the order confirmation and every step after it, the staff
+and account emails, and optionally Clerk's own sign-in codes.
+
+**Upgrading from 1.0.1.** In the server's `.env`, replace `RESEND_API_KEY`
+with `SENDGRID_API_KEY` and set `EMAIL_FROM` to a sender SendGrid has
+verified (see `.env.production.example`). Migration 0042 (`sent_emails`)
+runs as usual before the api starts. Deploy the api and worker images
+together: the new email tasks live in the worker. In each restaurant's
+Stripe settings, leave "email customers" off.
+
 ### Added
 - Clerk's customer emails can go through SendGrid: with "Delivered by Clerk"
   off for an email, the `email.created` webhook sends it, the verification
@@ -125,6 +138,7 @@ pickup and delivery.
   staff roles, reports and the super admin portal (#1).
 - MIT licence (#3).
 
-[Unreleased]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/haswanth13901/zenoeats-mvp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/haswanth13901/zenoeats-mvp/releases/tag/v1.0.0
