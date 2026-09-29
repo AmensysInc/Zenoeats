@@ -14,4 +14,5 @@
 <p>Your order #{{ order_number }} from {{ restaurant_name }} has been delivered. Enjoy your meal.</p>
 <p>Thanks for ordering. If anything isn't right, contact {{ restaurant_name }}.</p>
 {{ ui.button(menu_url, "Order again") }}
+{{ ui.restaurant_contact(restaurant_name, restaurant_phone) }}
 {% endblock %}

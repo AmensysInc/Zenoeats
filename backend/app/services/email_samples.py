@@ -44,7 +44,7 @@ def _update(kind: str, *, order=None, **kw) -> tuple[str, str, str]:
     """One of the emails that follow an order, for Spice House's order 1042."""
     values = dict(
         restaurant_name="Spice House", slug="spicehouse", order=order or _order(),
-        customer_name="Sam", for_guest=False,
+        customer_name="Sam", for_guest=False, restaurant_phone="+1 (214) 555-0100",
     )
     values.update(kw)
     return order_emails.compose(kind, **values)
@@ -118,7 +118,7 @@ def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
         ),
         "order_confirmation/pickup": lambda: notifications.compose_order_confirmation(
             restaurant_name="Spice House", slug="spicehouse", order=_order(),
-            customer_name="Sam",
+            customer_name="Sam", restaurant_phone="+1 (214) 555-0100",
         ),
         "order_confirmation/delivery": lambda: notifications.compose_order_confirmation(
             restaurant_name="Spice House", slug="spicehouse",

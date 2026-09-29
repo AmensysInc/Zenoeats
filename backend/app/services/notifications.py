@@ -201,11 +201,13 @@ def compose_order_confirmation(
     order: Order,
     customer_name: str | None,
     for_guest: bool = False,
+    restaurant_phone: str | None = None,
 ) -> tuple[str, str, str]:
     """(subject, html, text) for a paid order."""
     out = email_templates.render(
         "order_confirmation",
         restaurant_name=restaurant_name,
+        restaurant_phone=restaurant_phone,
         customer_name=customer_name,
         order_number=order.order_number,
         items=order_lines(order),
@@ -231,7 +233,7 @@ def send_order_confirmation(restaurant_id: UUID, order_id: UUID) -> bool:
             return False
         if order.confirmation_email_sent_at is not None or order.paid_at is None:
             return False
-        restaurant_name, slug = restaurant.name, restaurant.slug
+        restaurant_name, slug, phone = restaurant.name, restaurant.slug, restaurant.phone
         session.expunge_all()
 
     customer = customer_contact(order)
@@ -241,6 +243,7 @@ def send_order_confirmation(restaurant_id: UUID, order_id: UUID) -> bool:
     subject, body_html, body_text = compose_order_confirmation(
         restaurant_name=restaurant_name, slug=slug, order=order,
         customer_name=customer.first_name, for_guest=customer.for_guest,
+        restaurant_phone=phone,
     )
     sent = email.send(email.Email(
         to=customer.to, subject=subject, html=body_html, text=body_text,

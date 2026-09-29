@@ -4,3 +4,7 @@ Hi{% if customer_name %} {{ customer_name }}{% endif %},
 {{ restaurant_name }} has refunded {{ refund }} for your order #{{ order_number }}. It will be credited to your original payment method within 10 to 14 business days.
 
 View your order: {{ order_url }}
+{% if restaurant_phone %}
+
+Questions about this order? Call {{ restaurant_name }} on {{ restaurant_phone }}.
+{% endif %}

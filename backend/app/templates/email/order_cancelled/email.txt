@@ -10,3 +10,7 @@ If you have questions about a refund, contact {{ restaurant_name }}. Refunds are
 {% endif %}
 
 View your order: {{ order_url }}
+{% if restaurant_phone %}
+
+Questions about this order? Call {{ restaurant_name }} on {{ restaurant_phone }}.
+{% endif %}

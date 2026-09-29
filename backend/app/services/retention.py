@@ -13,6 +13,16 @@
                      what operators did lives in platform_audit_logs, which
                      this never touches.
 
+  Webhook payloads   Stripe's and Clerk's deliveries carry people's names,
+                     emails, phones and addresses: Clerk's user objects,
+                     Stripe's billing details. Once a delivery is settled
+                     that is dead weight -- and it outlived the account it
+                     described, when the account was closed. So every settled
+                     payload is redacted on the next run: personal fields are
+                     dropped and the ids, amounts and statuses an audit needs
+                     are kept. Rows still RECEIVED or FAILED keep theirs,
+                     because they are still to be processed.
+
   users (GUEST)      A guest row is minted the moment someone chooses
                      "continue as guest", which is before they have ordered
                      anything and most of them never will. Only the abandoned
@@ -26,6 +36,7 @@ them. Deletes go in batches so a large backlog never holds a long lock on a
 table the webhook path writes to.
 """
 
+import json
 import logging
 from contextlib import contextmanager
 from datetime import timedelta
@@ -131,6 +142,69 @@ def _sweep_abandoned_guests(days: int) -> int:
     return removed
 
 
+# Keys that hold a person's details anywhere in a Stripe object: billing
+# and shipping details, the receipt address an older intent carried, and the
+# customer details Stripe attaches to some objects.
+_STRIPE_PERSONAL_KEYS = frozenset({
+    "billing_details", "shipping", "receipt_email", "email", "name", "phone",
+    "address", "customer_details", "customer_email", "customer_name",
+    "customer_phone", "customer_address", "owner",
+})
+
+
+def _without_personal(value):
+    """A Stripe object with every personal field removed, at any depth."""
+    if isinstance(value, dict):
+        return {k: _without_personal(v) for k, v in value.items()
+                if k not in _STRIPE_PERSONAL_KEYS}
+    if isinstance(value, list):
+        return [_without_personal(v) for v in value]
+    return value
+
+
+def redact_stripe(payload: dict) -> dict:
+    return {**_without_personal(payload), "redacted": True}
+
+
+def redact_clerk(payload: dict) -> dict:
+    """Which event it was and whose, by id; nothing about the person."""
+    data = payload.get("data") or {}
+    return {
+        "type": payload.get("type"),
+        "data": {key: data.get(key) for key in ("id", "object", "deleted") if key in data},
+        "redacted": True,
+    }
+
+
+def _redact_settled(table: str, redact) -> int:
+    """Replace each settled, unredacted payload with its redacted form.
+
+    As zenoeats_system, which may update both inboxes and nothing else of
+    them. Read and written a batch at a time, in Python, because a Stripe
+    object nests its personal fields at varying depths.
+    """
+    redacted = 0
+    for _ in range(MAX_BATCHES_PER_TABLE):
+        with system_session() as session:
+            rows = session.execute(
+                text(
+                    f"SELECT id, payload FROM {table} "
+                    f"WHERE status IN {SETTLED_EVENT_STATUSES!r} "
+                    "AND NOT (payload ? 'redacted') LIMIT :batch"
+                ),
+                {"batch": BATCH_SIZE},
+            ).all()
+            for row_id, payload in rows:
+                session.execute(
+                    text(f"UPDATE {table} SET payload = CAST(:p AS jsonb) WHERE id = :i"),
+                    {"p": json.dumps(redact(payload or {})), "i": row_id},
+                )
+        redacted += len(rows)
+        if len(rows) < BATCH_SIZE:
+            break
+    return redacted
+
+
 def sweep() -> dict[str, int]:
     removed = {
         "idempotency_keys": _delete_in_batches(
@@ -147,6 +221,9 @@ def sweep() -> dict[str, int]:
                 f"status IN {SETTLED_EVENT_STATUSES!r} AND received_at < :cutoff",
                 {"cutoff": cutoff},
             )
+
+    removed["stripe_payloads_redacted"] = _redact_settled("stripe_events", redact_stripe)
+    removed["clerk_payloads_redacted"] = _redact_settled("clerk_events", redact_clerk)
 
     if settings.GUEST_RETENTION_DAYS > 0:
         removed["guest_users"] = _sweep_abandoned_guests(settings.GUEST_RETENTION_DAYS)

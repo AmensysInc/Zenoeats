@@ -163,6 +163,8 @@ class PortalOut(BaseModel):
     storefront: StorefrontOut | None = None
     brand: BrandOut = BrandOut()
     pickup_address: str | None = None
+    # How a customer reaches the restaurant about an order.
+    phone: str | None = None
     restaurant_id: UUID
     slug: str
     name: str
@@ -627,6 +629,8 @@ class UpdateRestaurantIn(BaseModel):
     storefront_customization_enabled: bool = False
     name: str | None = Field(default=None, min_length=1, max_length=160)
     tagline: str | None = Field(default=None, max_length=200)
+    # Customers reach the restaurant on it; required before activation.
+    phone: str | None = Field(default=None, max_length=32)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     _timezone = field_validator("timezone")(_known_timezone)
@@ -659,6 +663,7 @@ class RestaurantOut(BaseModel):
     # Needed so the admin edit form can show current values rather than
     # making the operator retype them.
     tagline: str | None = None
+    phone: str | None = None
     timezone: str | None = None
     deleted_at: datetime | None = None
     tax_mode: str = "FLAT"

@@ -1,6 +1,6 @@
 # Zenoeats: brief for legal review
 
-**Prepared:** 28 September 2026, for software release `v1.1.0`
+**Prepared:** 29 September 2026, for software release `v1.1.0` and the fixes after it
 **For:** the lawyer reviewing Zenoeats' customer-facing policies before launch
 **Status of the service:** built and tested; not yet live. No real customer
 has used it, and no real money has moved.
@@ -21,7 +21,7 @@ disagree, or where something is missing, it is listed in
    - Refunds & Cancellations
    - Deleting your data
 
-   Printed copies are in [`review-2026-09-28/`](review-2026-09-28/). Each page
+   Printed copies are in [`review-2026-09-29/`](review-2026-09-29/). Each page
    currently shows a "Draft — not yet reviewed by a lawyer" banner, and ends
    with a paragraph headed **"Before this page goes live"** listing the
    questions specific to that page.
@@ -133,6 +133,7 @@ with its menu, and customers order from it for pickup or delivery.
 | **Any customer, per order** | Name, phone, email, address, the items ordered, any note, prices, delivery address and fee | The restaurant's record of the sale; tax | Zenoeats database, visible to that restaurant only |
 | | A pickup code | Proving who collects the food | Stored encrypted |
 | **Restaurant staff** | Email, name, role, sign-in password (stored as a one-way hash), invitation and sign-in history | Running the restaurant's side | Zenoeats database |
+| **Restaurants** | A phone number, shown to customers on their order page and in order emails | So a customer can reach the restaurant about an order | Zenoeats database |
 | **Delivery drivers** (restaurant staff) | Live position from their phone, while a delivery is on the road | Showing the customer where their order is | Held briefly: each position is discarded within 10 minutes |
 | | First name | Shown to the customer ("Dana is on the way") on the order page and in the "on its way" email | |
 | **Zenoeats operators** | Email and a password hash, set in the server's configuration | Platform administration; what each operator did is logged | Server configuration and an audit log |
@@ -205,8 +206,8 @@ created, not because of an order.
 | Guest records that never became an order | About 45 days | Deleted automatically |
 | Delivery address coordinates (from Google) | Up to 30 days | Google's terms allow about 30 days |
 | Driver positions | Under 10 minutes each | |
-| **Records of messages from Stripe and Clerk** | **365 days** | These can contain the customer's email address and name (Clerk account events) or payment details (Stripe events). They are **not removed when an account is closed**. See gap 2 |
-| **Backups** | **Up to 90 days** | Encrypted and off-site. A 30-day lock means no backup can be deleted early, even on request. See gap 2 |
+| Records of messages from Stripe and Clerk | 365 days, **with personal details removed within an hour** of each being dealt with | Names, emails, phones and addresses are stripped; ids, amounts and statuses stay for audit. A message not yet dealt with keeps its details until it is. See gap 2 |
+| **Backups** | **Up to 90 days** | Encrypted and off-site. A 30-day lock means no backup can be deleted early, even on request. The Privacy Policy and the deletion page now say so. See gap 2 |
 | Server access logs | **Not yet limited** | Contain visitors' IP addresses. See gap 4 |
 | Error reports (Sentry) | Sentry's own retention | Personal information removed before sending |
 | Emails sent | No content kept | Only a record that an email about a given order was sent, so it is never sent twice |
@@ -216,28 +217,31 @@ created, not because of an order.
 
 ## 8. Gaps and discrepancies we found
 
-We found these while preparing this brief. Items marked **(product)** need a
-change in the software; the rest need your advice or a decision.
+We found these while preparing this brief. Gaps 1 and 2 needed software
+changes and have been made; the rest need your advice or a decision.
 
-1. **No way to phone the restaurant (product).**
-   - The software does not hold a phone number for a restaurant.
-   - The refunds page used to tell customers the number was on the
-     restaurant's page and in their confirmation email. **It was not.** We
-     have corrected the page (section 10).
-   - The only contact route today is the Zenoeats mailbox named on the
-     refunds page.
-   - Should the restaurant's phone number be shown before launch?
+1. **No way to phone the restaurant: fixed.**
+   - The software did not hold a phone number for a restaurant, although the
+     refunds page said the number was on the restaurant's page and in the
+     confirmation email.
+   - **Now:** each restaurant gives a phone number, and a restaurant cannot
+     go live without one. Customers see it on their order page and in every
+     email about their order. The refunds page says so (section 10).
 
-2. **"Deleted" is not yet entirely true (product).**
-   - Closing an account removes the account details immediately. But copies
-     of the customer's email and name remain in two places:
-     - the records of messages from Clerk, for 365 days
-     - backups, for up to 90 days, which cannot be deleted early
-   - The "Deleting your data" page does not mention either.
-   - The records of messages can be cleaned at closure, or kept for a
-     shorter time, as a software change. Backups need to be disclosed, or
-     their period shortened.
-   - What wording and periods does the law require?
+2. **Copies that outlived a closed account: fixed where possible, and
+   disclosed.**
+   - Closing an account removes the account details immediately. Copies of
+     the customer's email and name remained in two places:
+     - **Records of messages from Stripe and Clerk**, kept for 365 days.
+       **Fixed:** personal details are now stripped from every such record
+       within an hour of it being dealt with. Only ids, amounts and statuses
+       remain.
+     - **Backups**, for up to 90 days, which cannot be deleted early (a
+       30-day lock protects them from tampering). **Disclosed:** the
+       deletion page and the Privacy Policy now say that encrypted backups
+       hold the details until each is deleted, within 90 days, and are used
+       only to restore the service.
+   - Is 90 days acceptable, and is the wording adequate?
 
 3. **Orders are kept forever.** What retention period does tax and
    accounting law require for a restaurant's sales records, and must
@@ -340,8 +344,9 @@ change in the software; the rest need your advice or a decision.
 
 11. What retention period applies to orders and the customer details on
     them (gap 3)?
-12. How must the deletion page treat backups and the retained records of
-    messages from Stripe and Clerk (gap 2)?
+12. Is the deletion page's account of backups (kept up to 90 days) and of
+    the records of messages (details stripped within an hour) adequate
+    (gap 2)?
 13. Are 7 days to confirm and 30 days to complete a deletion request
     acceptable (section 2)?
 14. Is keeping paid orders, with the contact details on them, after an
@@ -388,12 +393,19 @@ corrections only; nothing was changed that is a legal judgement.
 - **Driver positions:** said they are not kept after a delivery. It now says
   each is discarded within 10 minutes of being reported, which is what
   happens.
+- **Retention:** now lists the records of messages from Stripe and Clerk
+  (details stripped within an hour) and backups (up to 90 days) (gap 2).
+
+**Deleting your data**
+- **What gets deleted:** now says that two copies take longer: the records
+  of messages, cleaned within an hour, and encrypted backups, deleted within
+  90 days (gap 2).
 
 **Refunds & Cancellations**
 - **Restaurant contact:** said the restaurant's phone number was on its page
-  and in the confirmation email. The software holds no phone number. The page
-  now says where the address is shown, and points to the Zenoeats contact
-  route (gap 1).
+  and in the confirmation email, when the software held none. The software
+  now requires one (gap 1), and the page says it is on the order page and in
+  every order email.
 - **Note for reviewers:** said the software has no refund button. It now has
   one, and the note describes how refunds are issued.
 
@@ -402,7 +414,7 @@ corrections only; nothing was changed that is a legal judgement.
 ## 11. Where things are
 
 - **The four pages as sent to you:** PDFs in
-  [`review-2026-09-28/`](review-2026-09-28/).
+  [`review-2026-09-29/`](review-2026-09-29/).
 - **The pages in the software:** `web/legal/privacy.html`, `terms.html`,
   `refunds.html` and `data-deletion.html`.
 - **Once live**, they are at `https://<domain>/legal/privacy`, `/legal/terms`,

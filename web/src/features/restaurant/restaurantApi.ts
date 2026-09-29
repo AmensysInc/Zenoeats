@@ -66,6 +66,8 @@ export type RestaurantProfile = {
   currency: string;
   name: string;
   tagline: string | null;
+  /** Shown to customers on the order page and in order emails. */
+  phone: string | null;
   timezone: string;
   accepting_orders: boolean;
   tax_mode: "FLAT" | "STRIPE_TAX";

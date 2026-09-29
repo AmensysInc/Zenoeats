@@ -46,6 +46,7 @@ export function RestaurantEditForm({
   const [storefrontEnabled, setStorefrontEnabled] = useState(restaurant.storefront_customization_enabled);
   const [name, setName] = useState(restaurant.name);
   const [tagline, setTagline] = useState(restaurant.tagline ?? "");
+  const [phone, setPhone] = useState(restaurant.phone ?? "");
   const [taxPct, setTaxPct] = useState((restaurant.tax_rate_bps / 100).toString());
   const [accepting, setAccepting] = useState(restaurant.accepting_orders);
   const [taxMode, setTaxMode] = useState<TaxMode>(restaurant.tax_mode ?? "FLAT");
@@ -69,6 +70,8 @@ export function RestaurantEditForm({
     // An empty box means "no tagline", which is null rather than "".
     const nextTagline = tagline.trim() === "" ? null : tagline.trim();
     if (nextTagline !== restaurant.tagline) changes.tagline = nextTagline;
+    const nextPhone = phone.trim() === "" ? null : phone.trim();
+    if (nextPhone !== (restaurant.phone ?? null)) changes.phone = nextPhone;
 
     const bps = Math.round(parseFloat(taxPct || "0") * 100);
     if (Number.isFinite(bps) && bps !== restaurant.tax_rate_bps) changes.tax_rate_bps = bps;
@@ -109,6 +112,17 @@ export function RestaurantEditForm({
             maxLength={200}
             placeholder="none"
             onChange={(e) => setTagline(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="label">Phone for customers</span>
+          <input
+            className="field mt-[7px]"
+            type="tel"
+            value={phone}
+            maxLength={32}
+            placeholder="needed to activate"
+            onChange={(e) => setPhone(e.target.value)}
           />
         </label>
       </div>

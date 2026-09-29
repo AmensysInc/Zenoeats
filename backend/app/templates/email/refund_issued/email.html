@@ -17,4 +17,5 @@
 <p>Hi{% if customer_name %} {{ customer_name }}{% endif %},</p>
 <p>{{ restaurant_name }} has refunded {{ refund }} for your order #{{ order_number }}. It will be credited to your original payment method within 10 to 14 business days.</p>
 {{ ui.button(order_url, "View your order") }}
+{{ ui.restaurant_contact(restaurant_name, restaurant_phone) }}
 {% endblock %}

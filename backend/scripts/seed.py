@@ -68,6 +68,7 @@ def main() -> None:
             currency="USD",
             tax_rate_bps=825,  # 8.25% flat. Replace with Stripe Tax for real.
             tagline="Wood-fired burgers and cold drinks",
+            phone="+1 214 555 0100",
             storefront_customization_enabled=True,
         )
         session.add(restaurant)

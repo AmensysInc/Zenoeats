@@ -127,8 +127,9 @@ account and the rest of this list is ticked.
 
 #### Step 5 — Before announcing
 
-- [ ] **First restaurant**: create it in the admin portal, create its owner,
-      Stripe onboarding, activate, then "Refresh Stripe" should show
+- [ ] **First restaurant**: create it in the admin portal with its phone
+      number for customers, create its owner, Stripe onboarding, activate
+      (refused without the phone number), then "Refresh Stripe" should show
       "Apple Pay active · Google Pay active". → §3.4, §8
 - [ ] **Rehearsal** in the production shape. → §10
   - sign-up and sign-in, by email and socially
@@ -1141,7 +1142,8 @@ that. Everything below runs on it, as a user with `sudo`.
 8. **Backups** (§5): write `/etc/zenoeats/backup.env`, install the timer, run
    it once and see it land in R2.
 9. **Monitors** (§6): the two uptime checks.
-10. **First restaurant** (§8): create it in the admin portal, create its owner,
+10. **First restaurant** (§8): create it in the admin portal with its phone
+    number for customers (activation refuses one without), create its owner,
     run Stripe onboarding, activate, and press "Refresh Stripe" to see the
     wallets active.
 

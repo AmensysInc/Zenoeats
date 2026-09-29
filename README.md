@@ -187,8 +187,9 @@ system read surface.
 - **Settings** is the admin's own screen, in six parts. *Your account* is
   your display name and the address you sign in with -- the name saves on its
   own, the address asks for your password, since it is a credential and a name
-  is not. *The restaurant* is the trading name, tagline and whether you are
-  taking orders. *Where you are* is the pickup address, which is also the
+  is not. *The restaurant* is the trading name, tagline, the **phone number**
+  customers see on their order page and in every order email (a restaurant
+  cannot be activated without one), and whether you are taking orders. *Where you are* is the pickup address, which is also the
   address your sales tax is worked out for, and your timezone, which decides
   which day an order counts on in reports. *Delivery* is below. *Tax* is a flat
   rate or Stripe Tax, which needs a connected account that has finished its own

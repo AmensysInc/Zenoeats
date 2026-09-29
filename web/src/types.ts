@@ -113,6 +113,8 @@ export type Portal = {
    *  storefront is customized. */
   brand?: Brand;
   pickup_address?: string | null;
+  /** How a customer reaches the restaurant about an order. */
+  phone?: string | null;
   restaurant_id: string;
   slug: string;
   name: string;
