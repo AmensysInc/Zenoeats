@@ -488,6 +488,9 @@ class PaymentIntentOut(BaseModel):
     stripe_account_id: str
     publishable_key: str
     payment_status: str
+    # The customer's email, for the payment's billing details. Null when
+    # there is no real address yet.
+    customer_email: str | None = None
 
 
 # ---------- Admin --------------------------------------------------------

@@ -394,9 +394,7 @@ def create_payment_intent(
 
     # Stripe's own idempotency key is derived from the order id, so a retry
     # returns the same intent rather than creating a second one.
-    intent = stripe_service.create_payment_intent(
-        order, account, receipt_email=order.contact_email or clerk_customers.receipt_address(user)
-    )
+    intent = stripe_service.create_payment_intent(order, account)
 
     payment.stripe_payment_intent_id = intent.id
     payment.stripe_client_secret = intent.client_secret
@@ -411,6 +409,9 @@ def create_payment_intent(
         stripe_account_id=account.stripe_account_id,
         publishable_key=settings.STRIPE_PUBLISHABLE_KEY,
         payment_status=payment.status,
+        # For the payment's billing details, which Stripe screens for fraud.
+        # Not a receipt address: Stripe sends no receipt (stripe_service).
+        customer_email=order.contact_email or clerk_customers.receipt_address(user),
     )
     idempotency.store(
         db, key=idempotency_key, actor_id=user.id, endpoint=endpoint,

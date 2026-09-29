@@ -356,6 +356,7 @@ export function CheckoutPage() {
         clientSecret: intent.client_secret,
         stripeAccountId: intent.stripe_account_id,
         publishableKey: intent.publishable_key,
+        customerEmail: intent.customer_email ?? null,
         totalMinor: amounts.total_minor,
         fulfillment,
         deliveryAddress: delivering ? collapse(contact.address) : null,

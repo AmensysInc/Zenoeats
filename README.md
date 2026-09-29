@@ -680,10 +680,13 @@ in an email; the order page shows it.
 SendGrid is optional. With `SENDGRID_API_KEY` empty nothing is sent: the
 worker logs each skipped email, and the portal says when an invitation or a
 reset password did not go, so the admin passes it on by hand. Order pages
-still show everything the emails would have said. Stripe can also email its
-own payment and refund receipts, once "email customers" is on in a
-restaurant's Stripe settings; with both on, a customer gets Stripe's receipt
-as well as Zenoeats' email.
+still show everything the emails would have said.
+
+Stripe sends **no** receipt of its own. A `receipt_email` on the payment
+would make it email one in live mode whatever the account's settings say,
+and another for every refund, duplicating Zenoeats' confirmation and refund
+emails. The customer's address still goes to Stripe as the payment's billing
+email, which its fraud screening uses.
 
 **Turning it on.** Put a key from SendGrid › Settings › API Keys (with *Mail
 Send* access; it starts `SG.`) in `.env` as `SENDGRID_API_KEY`. SendGrid only
@@ -1124,9 +1127,10 @@ Tax* (the save checks Stripe), and activate. The product tax code is
 calculation.
 
 **2.8 Before real money.**
-- Decide on Stripe's own **email receipts** for connected accounts. Zenoeats
-  already emails the confirmation and every refund; with Stripe's on as well,
-  a customer gets both.
+- Stripe's own **email receipts** are not used: Zenoeats emails the
+  confirmation and every refund itself, and never gives Stripe a
+  `receipt_email`, so leaving "email customers" off in each restaurant's
+  Stripe settings keeps it to one email per event.
 - Tell restaurants they receive payouts directly and handle disputes.
 - Complete Stripe's annual **PCI** self-assessment (SAQ A: card data never
   touches the servers).

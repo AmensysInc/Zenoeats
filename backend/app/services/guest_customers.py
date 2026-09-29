@@ -2,7 +2,7 @@
 
 Deliberately the same shape as a signed-in customer, because everything
 downstream -- the orders foreign key, idempotency's actor, the per-user rate
-limit, the pickup PIN, the confirmation email, the Stripe receipt -- already
+limit, the pickup PIN, the order emails -- already
 works in terms of a users row and should not learn a second case.
 
 What differs is only how the row is reached: by the cookie minted alongside

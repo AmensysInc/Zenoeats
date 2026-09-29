@@ -31,6 +31,9 @@ type IntentBundle = {
    *  or the client secret for a direct charge will not resolve. */
   stripeAccountId: string;
   publishableKey: string;
+  /** Sent with the card as its billing email, which Stripe screens for
+   *  fraud. Stripe sends no receipt: Zenoeats emails the confirmation. */
+  customerEmail?: string | null;
 };
 
 export type PaymentHandoff = IntentBundle & {
@@ -76,6 +79,7 @@ function readHandoff(state: unknown): PaymentHandoff | null {
     clientSecret: s.clientSecret,
     stripeAccountId: s.stripeAccountId,
     publishableKey: s.publishableKey,
+    customerEmail: typeof s.customerEmail === "string" ? s.customerEmail : null,
     totalMinor: s.totalMinor,
     fulfillment: s.fulfillment === "DELIVERY" || s.fulfillment === "PICKUP" ? s.fulfillment : undefined,
     deliveryAddress: typeof s.deliveryAddress === "string" ? s.deliveryAddress : null,
@@ -136,6 +140,7 @@ export function PaymentPage() {
           clientSecret: intent.client_secret,
           stripeAccountId: intent.stripe_account_id,
           publishableKey: intent.publishable_key,
+          customerEmail: intent.customer_email ?? null,
         });
       })
       .catch((e) => {
@@ -247,6 +252,7 @@ export function PaymentPage() {
             >
               <PayForm
                 orderId={orderId}
+                customerEmail={payment.customerEmail ?? null}
                 total={total}
                 currency={restaurant.currency}
                 onPaid={() => {
@@ -273,11 +279,13 @@ export function PaymentPage() {
 
 function PayForm({
   orderId,
+  customerEmail,
   total,
   currency,
   onPaid,
 }: {
   orderId: string;
+  customerEmail: string | null;
   total: number;
   currency: string;
   onPaid: () => void;
@@ -297,7 +305,12 @@ function PayForm({
 
     const { error: stripeError } = await stripe.confirmPayment({
       elements,
-      confirmParams: { return_url: `${window.location.origin}/orders/${orderId}` },
+      confirmParams: {
+        return_url: `${window.location.origin}/orders/${orderId}`,
+        ...(customerEmail
+          ? { payment_method_data: { billing_details: { email: customerEmail } } }
+          : {}),
+      },
       redirect: "if_required",
     });
 
