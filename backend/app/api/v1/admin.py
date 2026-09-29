@@ -206,7 +206,7 @@ def list_restaurants(
             text(
                 """
                 SELECT r.id, r.slug, r.name, r.status, r.currency, r.tax_rate_bps,
-                       r.storefront_customization_enabled, r.accepting_orders, r.created_at, r.tagline, r.timezone,
+                       r.storefront_customization_enabled, r.accepting_orders, r.created_at, r.tagline, r.phone, r.timezone,
                        r.deleted_at, r.tax_mode, r.tax_code, r.address_line1,
                        r.address_line2, r.address_city, r.address_state,
                        r.address_postal_code, r.address_country,
@@ -229,7 +229,7 @@ def list_restaurants(
             stripe_account_id=r["stripe_account_id"],
             charges_enabled=bool(r["charges_enabled"]),
             created_at=r["created_at"],
-            tagline=r["tagline"], timezone=r["timezone"],
+            tagline=r["tagline"], phone=r["phone"], timezone=r["timezone"],
             deleted_at=r["deleted_at"],
             **_tax_fields(r),
         )
@@ -260,7 +260,7 @@ def _restaurant_out(session, restaurant: Restaurant) -> RestaurantOut:
         storefront_customization_enabled=restaurant.storefront_customization_enabled,
         stripe_account_id=account["stripe_account_id"] if account else None,
         charges_enabled=bool(account["charges_enabled"]) if account else False,
-        created_at=restaurant.created_at, tagline=restaurant.tagline,
+        created_at=restaurant.created_at, tagline=restaurant.tagline, phone=restaurant.phone,
         timezone=restaurant.timezone, deleted_at=restaurant.deleted_at,
         **_tax_fields(restaurant),
     )
@@ -1003,6 +1003,12 @@ def activate_restaurant(restaurant_id: UUID, admin: User = Depends(require_platf
 
         account = session.execute(select(RestaurantPaymentAccount)).scalar_one_or_none()
         blockers = []
+        # The refunds policy sends a customer with a problem to the
+        # restaurant first; there has to be a way to reach it.
+        if not restaurant.phone:
+            blockers.append(
+                "No phone number for customers: the restaurant adds it in Settings."
+            )
         if account is None:
             blockers.append("No Stripe connected account.")
         elif not account.charges_enabled:

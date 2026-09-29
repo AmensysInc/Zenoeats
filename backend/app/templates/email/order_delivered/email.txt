@@ -6,3 +6,7 @@ Your order #{{ order_number }} from {{ restaurant_name }} has been delivered. En
 Thanks for ordering. If anything isn't right, contact {{ restaurant_name }}.
 
 Order again: {{ menu_url }}
+{% if restaurant_phone %}
+
+Questions about this order? Call {{ restaurant_name }} on {{ restaurant_phone }}.
+{% endif %}

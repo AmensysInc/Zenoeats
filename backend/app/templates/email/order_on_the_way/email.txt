@@ -9,3 +9,7 @@ Follow them live on your order page:
 Your order page shows its progress:
 {% endif %}
 {{ order_url }}
+{% if restaurant_phone %}
+
+Questions about this order? Call {{ restaurant_name }} on {{ restaurant_phone }}.
+{% endif %}

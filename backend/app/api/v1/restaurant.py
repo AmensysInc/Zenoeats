@@ -494,6 +494,8 @@ class RestaurantProfileIn(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=160)
     tagline: str | None = Field(default=None, max_length=200)
+    # Shown to customers on the order page and in every order email.
+    phone: str | None = Field(default=None, max_length=32)
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     _timezone = field_validator("timezone")(known_timezone)
     accepting_orders: bool | None = None
@@ -530,6 +532,7 @@ class RestaurantProfileOut(BaseModel):
     currency: str
     name: str
     tagline: str | None
+    phone: str | None
     timezone: str
     accepting_orders: bool
     tax_mode: str
@@ -560,8 +563,8 @@ def _profile_out(db: Session, restaurant: Restaurant) -> RestaurantProfileOut:
     ).mappings().one_or_none()
     return RestaurantProfileOut(
         slug=restaurant.slug, status=restaurant.status, currency=restaurant.currency,
-        name=restaurant.name, tagline=restaurant.tagline, timezone=restaurant.timezone,
-        accepting_orders=restaurant.accepting_orders,
+        name=restaurant.name, tagline=restaurant.tagline, phone=restaurant.phone,
+        timezone=restaurant.timezone, accepting_orders=restaurant.accepting_orders,
         tax_mode=restaurant.tax_mode, tax_rate_bps=restaurant.tax_rate_bps,
         tax_code=restaurant.tax_code,
         address_line1=restaurant.address_line1, address_line2=restaurant.address_line2,

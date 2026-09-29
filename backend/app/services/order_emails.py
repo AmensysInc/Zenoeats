@@ -63,6 +63,7 @@ def compose(
     pickup_address: str | None = None,
     driver_name: str | None = None,
     refund: int | None = None,
+    restaurant_phone: str | None = None,
 ) -> tuple[str, str, str]:
     """(subject, html, text) for one of these emails. `refund` is in minor
     units; everything else is as the customer should read it."""
@@ -71,6 +72,7 @@ def compose(
     out = email_templates.render(
         kind,
         restaurant_name=restaurant_name,
+        restaurant_phone=restaurant_phone,
         customer_name=customer_name,
         order_number=order.order_number,
         delivering=order.fulfillment_type == FulfillmentType.DELIVERY.value,
@@ -107,7 +109,7 @@ def send(kind: str, restaurant_id: UUID, order_id: UUID, extra: dict | None = No
         ).scalar_one_or_none()
         refunded = refund_minor(payment)
         charged = payment.amount_minor if payment else order.total_minor
-        restaurant_name, slug = restaurant.name, restaurant.slug
+        restaurant_name, slug, phone = restaurant.name, restaurant.slug, restaurant.phone
         pickup_address = restaurant.pickup_address_line or None
         driver_id = order.driver_user_id
         session.expunge_all()
@@ -149,6 +151,7 @@ def send(kind: str, restaurant_id: UUID, order_id: UUID, extra: dict | None = No
         restaurant_name=restaurant_name, slug=slug, order=order,
         customer_name=customer.first_name, for_guest=customer.for_guest,
         pickup_address=pickup_address, driver_name=driver_name, refund=refund,
+        restaurant_phone=phone,
     )
     if covers:
         # Before sending, not after: Stripe's report of the same refund can

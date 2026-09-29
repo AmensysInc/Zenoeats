@@ -41,6 +41,7 @@ def get_portal(
         slug=restaurant.slug,
         name=restaurant.name,
         pickup_address=restaurant.pickup_address_line or None,
+        phone=restaurant.phone,
         tagline=restaurant.tagline,
         currency=restaurant.currency,
         is_orderable=restaurant.is_orderable,

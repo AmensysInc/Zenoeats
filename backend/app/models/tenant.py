@@ -93,6 +93,9 @@ class Restaurant(Base, TimestampMixin):
 
     # Branding
     tagline: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # How a customer reaches the restaurant about an order: on the order page
+    # and in every order email. Required to activate (admin.activate).
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     accepting_orders: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # --- Delivery -------------------------------------------------------

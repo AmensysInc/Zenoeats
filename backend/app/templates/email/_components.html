@@ -29,3 +29,11 @@
 {% set weight = "font-weight:600" if total else "color:" ~ muted %}
 <tr><td style="padding:4px 0;{{ weight }}">{{ label }}</td><td style="padding:4px 0;text-align:right;{{ weight }}">{{ amount }}</td></tr>
 {%- endmacro %}
+
+{#- How to reach the restaurant about an order, when it has given a number.
+    The tel: link keeps only what a phone dials. -#}
+{% macro restaurant_contact(restaurant_name, phone) -%}
+{% if phone %}
+<p style="margin:20px 0 0;color:{{ muted }};font-size:13px">Questions about this order? Call {{ restaurant_name }} on <a href="tel:{{ phone|replace(' ', '')|replace('(', '')|replace(')', '')|replace('-', '')|replace('.', '') }}" style="color:{{ ink }}">{{ phone }}</a>.</p>
+{% endif %}
+{%- endmacro %}

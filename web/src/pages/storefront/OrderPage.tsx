@@ -265,6 +265,22 @@ export function OrderPage() {
           )}
           <p className="text-caption text-muted">Payment: {order.payment_status.toLowerCase()}</p>
 
+          {/* The restaurant is who a customer turns to about an order -- a
+              missing item, a late delivery, a refund -- so how to reach it
+              sits beside the order itself. */}
+          {portal.data?.phone && (
+            <p className="mt-4 text-sm">
+              Questions about this order? Call {portal.data.name} on{" "}
+              <a
+                className="font-semibold underline"
+                href={`tel:${portal.data.phone.replace(/[^+0-9]/g, "")}`}
+              >
+                {portal.data.phone}
+              </a>
+              .
+            </p>
+          )}
+
           <Link to="/" className="btn-quiet mt-6 min-h-[50px] w-full rounded-full">
             Order something else
           </Link>

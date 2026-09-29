@@ -7,3 +7,7 @@ Your order #{{ order_number }} is ready at {{ restaurant_name }}. Show your pick
 
 Collect from: {{ pickup_address }}
 {% endif %}
+{% if restaurant_phone %}
+
+Questions about this order? Call {{ restaurant_name }} on {{ restaurant_phone }}.
+{% endif %}

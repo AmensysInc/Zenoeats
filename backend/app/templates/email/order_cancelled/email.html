@@ -24,4 +24,5 @@
 <p>If you have questions about a refund, contact {{ restaurant_name }}. Refunds are issued by the restaurant.</p>
 {% endif %}
 {{ ui.button(order_url, "View your order") }}
+{{ ui.restaurant_contact(restaurant_name, restaurant_phone) }}
 {% endblock %}

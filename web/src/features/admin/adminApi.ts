@@ -13,6 +13,7 @@ export type Restaurant = {
   charges_enabled: boolean;
   created_at: string;
   tagline: string | null;
+  phone: string | null;
   timezone: string | null;
   deleted_at: string | null;
   /** FLAT applies tax_rate_bps; STRIPE_TAX calculates per order in Stripe. */
@@ -106,6 +107,7 @@ export type StripeSync = {
 export type RestaurantPatch = Partial<{
   name: string;
   tagline: string | null;
+  phone: string | null;
   timezone: string;
   currency: string;
   tax_rate_bps: number;

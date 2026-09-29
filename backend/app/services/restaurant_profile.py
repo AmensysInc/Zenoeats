@@ -12,6 +12,7 @@ and that stays with each caller's schema.
 """
 
 import json
+import re
 
 from sqlalchemy import text
 
@@ -56,6 +57,25 @@ def stripe_tax_blockers(restaurant_view, stripe_account_id: str | None) -> list[
     return blockers
 
 
+PHONE_PATTERN = re.compile(r"^[+0-9()\-.\s]{7,25}$")
+
+
+def clean_phone(value: str | None) -> str | None:
+    """A phone number as a customer would dial it, or None for none.
+
+    Only checks it could be one -- digits, spaces and the punctuation people
+    write numbers with, and at least seven digits -- not that it rings.
+    """
+    if value is None or not value.strip():
+        return None
+    value = " ".join(value.split())
+    if not PHONE_PATTERN.match(value) or sum(c.isdigit() for c in value) < 7:
+        raise errors.validation_error(
+            "Enter a phone number customers can call, like +1 214 555 0100."
+        )
+    return value
+
+
 def normalize(changes: dict) -> dict:
     """Tidy a PATCH's values and refuse the ones that cannot be cleared.
 
@@ -63,6 +83,8 @@ def normalize(changes: dict) -> dict:
     otherwise a restaurant can satisfy the Stripe Tax gate with a space bar.
     Tax mode and tax code have no "none": every order needs both.
     """
+    if "phone" in changes:
+        changes["phone"] = clean_phone(changes["phone"])
     if changes.get("currency"):
         changes["currency"] = changes["currency"].upper()
     if changes.get("address_country"):

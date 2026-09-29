@@ -167,6 +167,20 @@ export function SettingsPage() {
                   onChange={(e) => edit({ tagline: e.target.value })}
                 />
               </Field>
+              <Field
+                label="Phone number"
+                hint="Shown to customers on their order page and in every order email, so they can reach you about an order. Needed before your restaurant can go live."
+              >
+                <input
+                  className="field"
+                  type="tel"
+                  autoComplete="tel"
+                  value={draft.phone ?? ""}
+                  maxLength={32}
+                  placeholder="+1 214 555 0100"
+                  onChange={(e) => edit({ phone: e.target.value })}
+                />
+              </Field>
               <label className="flex items-start gap-2.5 text-sm">
                 <input
                   type="checkbox"
@@ -477,6 +491,7 @@ function changedFields(original: RestaurantProfile, draft: RestaurantProfile) {
   const editable = [
     "name",
     "tagline",
+    "phone",
     "timezone",
     "accepting_orders",
     "tax_mode",
