@@ -175,16 +175,19 @@ class FakeRestaurant:
 
 
 class FakeSession:
-    """Answers the two reads price_cart makes: the items, then the combo."""
+    """Answers the two reads price_cart makes: the items, then the combos.
+    `combo` is one combo or a list of them. Every read is counted."""
 
     def __init__(self, items, combo):
         self._items = items
-        self._combo = combo
+        self._combos = combo if isinstance(combo, list) else [combo]
         self._pending = None
+        self.reads = []
 
     def execute(self, statement):
         model = statement.column_descriptions[0]["entity"].__name__
-        self._pending = self._items if model == "Item" else [self._combo]
+        self.reads.append(model)
+        self._pending = self._items if model == "Item" else self._combos
         return self
 
     def scalars(self):
@@ -367,6 +370,36 @@ def test_a_sold_out_choice_is_refused(meal_deal):
     with pytest.raises(errors.ApiError) as caught:
         _cart(meal_deal)
     assert "sold out" in str(caught.value.detail).lower()
+
+
+def test_every_combo_in_the_cart_is_read_in_one_query(meal_deal):
+    """Three meal deals -- two of them the same deal -- used to be three reads
+    of the combos table, on the quote and again at checkout. Now the items
+    are one read and the combos are one, however many deals there are."""
+    from app.services.pricing import price_cart
+
+    burger, tea, fries, meal = meal_deal
+    solo = FakeCombo("Burger Solo", [FakeSlot(FOOD, [burger])], "AMOUNT", 100)
+
+    def deal(combo, *items):
+        return {
+            "combo_id": str(combo.id),
+            "quantity": 1,
+            "selections": [
+                {"slot_id": str(slot.id), "menu_item_id": str(item.id)}
+                for slot, item in zip(combo.slots, items)
+            ],
+        }
+
+    session = FakeSession([burger, tea, fries], [meal, solo])
+    cart = price_cart(
+        session, FakeRestaurant(), [],
+        [deal(meal, burger, tea, fries), deal(solo, burger), deal(meal, burger, tea, fries)],
+    )
+
+    assert session.reads == ["Item", "Combo"]
+    assert [l.combo_group for l in cart.lines] == [1, 1, 1, 2, 3, 3, 3]
+    assert cart.discount_minor == 170 + 100 + 170
 
 
 def test_a_withdrawn_combo_cannot_be_ordered(meal_deal):

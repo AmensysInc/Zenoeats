@@ -125,8 +125,21 @@ export function OrderPage() {
   }
 
   const delivering = order.fulfillment_type === "DELIVERY";
-  const copy = (delivering ? DELIVERY_COPY[order.status] : undefined) ??
-    STATUS_COPY[order.status] ?? { title: order.status, detail: "" };
+  // A payment that landed after the order had expired. The kitchen never saw
+  // the order, so the money is refunded automatically -- and "nothing was
+  // charged" would be untrue.
+  const paidAfterExpiry =
+    order.status === "EXPIRED" &&
+    ["PAID", "REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED"].includes(order.payment_status);
+  const copy = paidAfterExpiry
+    ? {
+        title: "Expired",
+        detail:
+          "Your payment arrived after this order had expired, so it is being refunded in full. " +
+          "It will be back on your original payment method within 10 to 14 business days.",
+      }
+    : (delivering ? DELIVERY_COPY[order.status] : undefined) ??
+      STATUS_COPY[order.status] ?? { title: order.status, detail: "" };
   // Only once the restaurant has actually issued the refund: a cancellation
   // made without one must not promise money that is not on its way.
   const refundNotice =

@@ -124,26 +124,43 @@ def _handle_intent_succeeded(payload: dict, event_account_id: str | None):
     restaurant_id, payment_id = resolved
 
     with tenant_session(restaurant_id) as session:
-        # Locked, because a webhook and a reconciliation can arrive for the
-        # same payment at the same moment. The second waits here and then
-        # finds succeeded_at already set, rather than both reading it empty
-        # and both trying to move the order.
+        # Payment, then order, both locked -- the order the expiry sweep takes
+        # them in too. A webhook, a reconciliation and the sweep can all reach
+        # the same order at the same moment; whichever comes second waits here
+        # and then sees what the first did, rather than both reading the old
+        # state and the last to commit overwriting the other.
         payment = session.get(Payment, payment_id, with_for_update=True)
         if payment is None:
             return
         order_id = payment.order_id
+        order = session.get(Order, order_id, with_for_update=True)
         if payment.succeeded_at is None:
             payment.status = PaymentStatus.PAID.value
             payment.succeeded_at = utcnow()
             payment.failure_message = None
 
-            order = session.get(Order, order_id)
             if order and order.status == OrderStatus.PENDING_PAYMENT.value:
                 # Only Stripe's word can do this -- a verified webhook, or the
                 # intent read back from Stripe. The client never can.
                 transition(order, OrderStatus.AUTO_ACCEPTED.value)
                 transition(order, OrderStatus.PREPARING.value)
                 log.info("order %s paid and now PREPARING", order.order_number)
+
+        # Money taken for an order that had already expired. The sweep now
+        # cancels the intent before expiring, so this is a payment Stripe was
+        # still settling, or an order expired before it did. EXPIRED is final
+        # and the kitchen never saw it, so the money goes back. Decided on
+        # every delivery, not only the first, so a refund Stripe refused is
+        # tried again when the event is retried.
+        expired = order is not None and order.status == OrderStatus.EXPIRED.value
+        refund_late = expired and payment.status == PaymentStatus.PAID.value
+
+    if refund_late:
+        _refund_late_payment(restaurant_id, payment_id)
+    if expired:
+        # Refunded now or on an earlier delivery: either way there is no
+        # order to confirm and no sale to record tax on.
+        return
 
     # After the paid state has committed, and outside any transaction (rule
     # 6). Reached on a redelivery too, not only the first delivery: if Stripe
@@ -156,6 +173,41 @@ def _handle_intent_succeeded(payload: dict, event_account_id: str | None):
     # provider never holds up or fails the payment webhook. Safe to enqueue on
     # every delivery: the task sends once per order.
     send_order_confirmation.delay(str(restaurant_id), str(order_id))
+
+
+def _refund_late_payment(restaurant_id, payment_id) -> None:
+    """Give back a payment that arrived after its order expired.
+
+    The whole amount, as a cancellation from the board would, on the same
+    idempotency key -- so a retried event refunds once. Raises when Stripe
+    refuses, so the event is retried rather than the money quietly kept.
+    The customer is told by the refund email.
+    """
+    from app.services import order_emails
+
+    with tenant_session(restaurant_id) as session:
+        payment = session.get(Payment, payment_id)
+        if payment is None:
+            return
+        session.expunge(payment)
+    order_id = payment.order_id
+
+    log.warning("order %s was paid after it expired; refunding it", order_id)
+    refund = stripe_service.refund_order(payment, "Paid after the order had expired")
+
+    with tenant_session(restaurant_id) as session:
+        row = session.get(Payment, payment_id, with_for_update=True)
+        if row is not None and row.status == PaymentStatus.PAID.value:
+            if refund.get("status") == "succeeded":
+                row.status = PaymentStatus.REFUNDED.value
+                row.refunded_minor = min(int(refund.get("amount") or 0), row.amount_minor)
+            else:
+                row.status = PaymentStatus.REFUND_PENDING.value
+
+    order_emails.queue(
+        "refund_issued", restaurant_id, order_id,
+        refunded_before=0, refunded_after=payment.amount_minor,
+    )
 
 
 def _handle_intent_failed(payload: dict, event_account_id: str | None):
@@ -188,9 +240,15 @@ def _handle_intent_canceled(payload: dict, event_account_id: str | None):
         if payment is None or payment.succeeded_at is not None:
             return
         payment.status = PaymentStatus.FAILED.value
-        order = session.get(Order, payment.order_id)
+        order = session.get(Order, payment.order_id, with_for_update=True)
         if order and order.status == OrderStatus.PENDING_PAYMENT.value:
-            transition(order, OrderStatus.CANCELLED.value, reason="PAYMENT_CANCELLED")
+            if intent.get("cancellation_reason") == "abandoned":
+                # The expiry sweep's own cancellation, reported back before
+                # the sweep has written the expiry itself. It is the same
+                # outcome, so it reads the same way on every report.
+                transition(order, OrderStatus.EXPIRED.value)
+            else:
+                transition(order, OrderStatus.CANCELLED.value, reason="PAYMENT_CANCELLED")
 
 
 def reconcile_payment_intent(intent_id: str, stripe_account_id: str) -> str | None:
@@ -549,23 +607,51 @@ def _expire_order(restaurant_id, order_id, intent_id, account_id, succeeded_at) 
     is checked with Stripe first, outside any transaction (rule 6), and one
     Stripe cannot answer for is left for the next sweep rather than guessed
     at.
+
+    Then the intent is cancelled at Stripe before the order is expired.
+    Expiring alone left it payable: a customer with the payment page still
+    open could pay afterwards and be charged for an order the kitchen never
+    saw. Stripe settles a confirm and a cancel of one intent one at a time,
+    so it is the referee: if the customer paid first the cancel fails and the
+    order goes to the kitchen; if the cancel wins, nothing can be charged.
     """
     if intent_id and account_id and succeeded_at is None:
         try:
-            reconcile_payment_intent(intent_id, account_id)
+            status = reconcile_payment_intent(intent_id, account_id)
+            if status == "succeeded":
+                return False  # paid after all; the handler sent it to the kitchen
+            if status not in (None, "canceled"):
+                status = stripe_service.cancel_payment_intent(intent_id, account_id)
+                if status == "succeeded":
+                    # Paid in the moment between the check and the cancel.
+                    reconcile_payment_intent(intent_id, account_id)
+                    return False
         except Exception:
-            log.warning("not expiring order %s: could not check its payment with Stripe",
+            log.warning("not expiring order %s: could not check or close its payment with Stripe",
                         order_id, exc_info=True)
+            return False
+        if status not in (None, "canceled"):
+            # Still settling ("processing"), and Stripe will not cancel it.
+            # Its outcome arrives by webhook; the next sweep looks again.
+            log.info("not expiring order %s yet: its payment is %s", order_id, status)
             return False
 
     with tenant_session(restaurant_id) as session:
-        order = session.get(Order, order_id)
+        # Payment, then order, both locked: the order the payment handler
+        # takes them in. Checked again under the locks, because a payment can
+        # have been recorded since the rows were first read.
+        payment = session.execute(
+            select(Payment).where(Payment.order_id == order_id).with_for_update()
+        ).scalar_one_or_none()
+        order = session.get(Order, order_id, with_for_update=True)
         if order is None or order.status != OrderStatus.PENDING_PAYMENT.value:
             return False
-        payment = session.execute(
-            select(Payment).where(Payment.order_id == order.id)
-        ).scalar_one_or_none()
         if payment and payment.succeeded_at is not None:
             return False  # paid; the handler that recorded it owns the order
+        if payment:
+            # Closed, not still in progress: the intent was cancelled above,
+            # and "Payment: processing" on an expired order reads as money
+            # that might yet be taken. The canceled webhook says the same.
+            payment.status = PaymentStatus.FAILED.value
         transition(order, OrderStatus.EXPIRED.value)
         return True
