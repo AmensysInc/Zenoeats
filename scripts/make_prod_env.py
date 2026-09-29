@@ -7,13 +7,14 @@
 Run it on the server, in the repository, once. Standard library only: a fresh
 VM needs nothing installed to run it.
 
-Writing: starts from .env.example, so every setting keeps its explanation.
+Writing: starts from .env.production.example, so every setting keeps its
+explanation.
   - Generated: SESSION_SECRET, FIELD_ENCRYPTION_KEY, POSTGRES_PASSWORD, the
     three database role passwords and the two Redis passwords.
   - Set for production: ENV, the domain, image tags, email links, Sentry
     environment, two API workers.
-  - Commented out: the development URLs. docker-compose.prod.yml builds every
-    database and Redis URL from the passwords above.
+  - No database or Redis URLs: docker-compose.prod.yml builds every one from
+    the passwords above. (Any found are commented out.)
   - Left EMPTY, marked "# FILL IN:": what only your accounts can supply
     (Clerk, Stripe, SendGrid, Sentry, ADMIN_USERS). Empty on purpose: the API
     refuses to start without the required ones, where a placeholder word
@@ -38,7 +39,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-TEMPLATE = REPO / ".env.example"
+TEMPLATE = REPO / ".env.production.example"
 OWNER = "haswanth13901"
 
 # Hex, because these are spliced into connection URLs unescaped.
