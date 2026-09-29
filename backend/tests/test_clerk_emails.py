@@ -142,6 +142,16 @@ def test_a_queue_that_is_down_makes_clerk_deliver_it_again(clerk_webhook, monkey
     assert res.status_code == 200 and "duplicate" not in res.json()
     assert len(broker["sent"]) == 1
 
+    # The FAILED row is what /health/operations reports; take it back out so
+    # a development database is not left reporting a fault.
+    from app.services import retention
+
+    with retention._platform_transaction() as session:
+        session.execute(
+            text("DELETE FROM clerk_events WHERE clerk_event_id LIKE :failed"),
+            {"failed": f"{msg_id}:unqueued:%"},
+        )
+
 
 # ------------------------------------------------------------- the email ---
 
