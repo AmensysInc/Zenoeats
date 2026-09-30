@@ -12,7 +12,7 @@ Pillow==12.3.0
 PyJWT[crypto]==2.14.0
 stripe==15.6.1
 celery==5.4.0
-redis==5.2.1
+redis==8.1.0
 cryptography==50.0.1
 svix==1.44.0
 httpx==0.28.1
