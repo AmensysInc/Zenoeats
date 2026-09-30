@@ -2,11 +2,13 @@
 #
 # The host nginx (infra/nginx/staging/vps-stg9.conf) terminates TLS for
 # stg9.zenoeats.com and *.stg9.zenoeats.com and proxies here over plain HTTP.
-# This container therefore listens on port 80 only, and it does not redirect
-# to HTTPS: that redirect is the host's job. Doing it here would loop.
+# This container listens on port 80 only and does not redirect to HTTPS.
 #
-# Rendered by the nginx image at start. ${ROOT_DOMAIN} comes from the
-# container environment. $host and the other nginx variables are left as-is.
+# Docker's DNS (127.0.0.11) is queried on each request. A static upstream
+# would keep the API container's old address after a recreate and answer 502.
+#
+# ${ROOT_DOMAIN} is filled from the container environment at start. Nginx
+# variables ($host and the rest) are left as-is.
 
 server_tokens off;
 
@@ -14,15 +16,7 @@ log_format zenoeats_noquery '$remote_addr - $remote_user [$time_local] '
                             '"$request_method $uri $server_protocol" $status '
                             '$body_bytes_sent "$http_user_agent" rt=$request_time';
 
-upstream zenoeats_api {
-    server api:8000;
-    keepalive 32;
-}
-
-upstream zenoeats_web {
-    server web:3000;
-    keepalive 32;
-}
+resolver 127.0.0.11 ipv6=off valid=10s;
 
 server {
     listen 80 default_server;
@@ -44,48 +38,64 @@ server {
     proxy_hide_header X-Frame-Options;
     proxy_hide_header Referrer-Policy;
 
-    # The host proxy is the only client (bound to 127.0.0.1). Keep the
-    # visitor address and the https scheme it already set. Overwriting them
-    # with this container's peer would record every customer as the proxy.
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $http_x_real_ip;
-    proxy_set_header X-Forwarded-For $http_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Zenoeats-Restaurant "";
-
+    # Any proxy_set_header in a location replaces the server-level set, so
+    # each location repeats the visitor headers itself.
     location /api/ {
-        proxy_pass http://zenoeats_api;
+        set $zenoeats_api api:8000;
+        proxy_pass http://$zenoeats_api;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $http_x_real_ip;
+        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Zenoeats-Restaurant "";
         proxy_read_timeout 30s;
     }
 
     location /images/ {
-        proxy_pass http://zenoeats_api;
+        set $zenoeats_api api:8000;
+        proxy_pass http://$zenoeats_api;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $http_x_real_ip;
+        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
     }
 
     location ^~ /health {
-        proxy_pass http://zenoeats_api;
+        set $zenoeats_api api:8000;
+        proxy_pass http://$zenoeats_api;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
         access_log off;
     }
 
     location ^~ /admin {
+        set $zenoeats_web web:3000;
         if ($host != admin.${ROOT_DOMAIN}) {
             return 404;
         }
-        proxy_pass http://zenoeats_web;
+        proxy_pass http://$zenoeats_web;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $http_x_real_ip;
+        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
     }
 
     location / {
-        proxy_pass http://zenoeats_web;
+        set $zenoeats_web web:3000;
+        proxy_pass http://$zenoeats_web;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $http_x_real_ip;
+        proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
     }
 }
