@@ -1,0 +1,55 @@
+# Staging on a VPS that already serves other apps on 80/443.
+#
+# Layers on top of the production file. The database and Redis stay off the
+# host network. Nginx is published only on localhost, same idea as
+# zenohr-stg1's 127.0.0.1:3015. The host reverse proxy (vps-stg9.conf)
+# is what the internet talks to.
+#
+# Images are built on the server from this checkout. The published GHCR
+# tags are not required. .env must still set API_IMAGE and WEB_IMAGE to
+# any non-empty value, because docker-compose.prod.yml checks they exist;
+# the names below are what actually get built.
+#
+#   export COMPOSE_PROJECT_NAME=zenoeats-stg9
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.staging.yml
+#   docker compose --profile app up -d --build
+#
+# Or: bash scripts/staging_up.sh
+
+x-stg-api: &stg-api
+  image: zenoeats-stg9-api:local
+  build: ./backend
+  pull_policy: build
+
+services:
+  migrate:
+    <<: *stg-api
+    mem_limit: 384m
+
+  api:
+    <<: *stg-api
+    mem_limit: 512m
+    cpus: 0.75
+    environment:
+      WEB_CONCURRENCY: "1"
+
+  worker:
+    <<: *stg-api
+    mem_limit: 384m
+    cpus: 0.5
+
+  beat:
+    <<: *stg-api
+    mem_limit: 128m
+
+  web:
+    image: zenoeats-stg9-web:local
+    build: ./web
+    pull_policy: build
+    mem_limit: 96m
+
+  nginx:
+    volumes: !override
+      - ./infra/nginx/staging/zenoeats.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports: !override
+      - "127.0.0.1:${STAGING_HTTP_PORT:-8099}:80"

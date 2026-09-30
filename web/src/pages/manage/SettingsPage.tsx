@@ -14,6 +14,7 @@ import {
   type RestaurantProfilePatch,
 } from "@/features/restaurant/restaurantApi";
 import { errorMessage } from "@/services/apiClient";
+import { restaurantHost } from "@/utils/storefront";
 
 const SECTIONS = [
   ["own-account", "Your account"],
@@ -376,7 +377,7 @@ export function SettingsPage() {
             <dl>
               <ReadOnly
                 label="Your web address"
-                value={`${draft.slug}.zenoeats.com`}
+                value={restaurantHost(draft.slug)}
                 why="It is printed on your tables and saved in customers' bookmarks, so moving it is a job we do with you rather than a text box."
               />
               <ReadOnly

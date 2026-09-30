@@ -9,6 +9,37 @@ The client may send a restaurant id. We never authorize from it.
 
 from app.config import settings
 
+# Customer sessions may be minted on these sites, whichever one this process
+# is deployed as. Production is zenoeats.com; staging is stg9.zenoeats.com.
+# ROOT_DOMAIN is added as well, so local development (zenoeats.local) stays
+# allowed without being listed here.
+ALLOWED_ORIGIN_ROOTS = (
+    "zenoeats.com",
+    "stg9.zenoeats.com",
+)
+
+
+def allowed_origin_roots() -> tuple[str, ...]:
+    """Roots a browser page of ours may be served on.
+
+    A host is allowed when it equals one of these or is a subdomain of one.
+    """
+    seen: list[str] = []
+    for root in (settings.ROOT_DOMAIN, *ALLOWED_ORIGIN_ROOTS):
+        root = root.strip().lower().rstrip(".")
+        if root and root not in seen:
+            seen.append(root)
+    return tuple(seen)
+
+
+def host_on_allowed_origin(host: str) -> bool:
+    """True when `host` is one of our roots or a subdomain of one."""
+    name = host.strip().lower().rstrip(".")
+    if not name:
+        return False
+    return any(name == root or name.endswith("." + root) for root in allowed_origin_roots())
+
+
 RESERVED_SLUGS = {
     "www", "api", "admin", "app", "media", "static", "assets",
     "mail", "staging", "dev", "internal", "status", "docs",

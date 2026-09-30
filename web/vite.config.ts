@@ -123,7 +123,7 @@ export default defineConfig({
     host: true,
     // Tenancy is resolved from the Host header, so every restaurant is a
     // different origin. Vite refuses unknown hosts by default.
-    allowedHosts: [".zenoeats.local"],
+    allowedHosts: [".zenoeats.local", ".zenoeats.com", ".stg9.zenoeats.com"],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",

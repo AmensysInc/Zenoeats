@@ -12,6 +12,23 @@
  * was built -- which in production pointed every restaurant at a dead
  * address.
  */
+/** Production, then staging, then local. Longer names first so
+ *  spicehouse.stg9.zenoeats.com is staging, not a subdomain of production. */
+const PUBLIC_ROOTS = ["stg9.zenoeats.com", "zenoeats.com", "zenoeats.local"];
+
+/** `<slug>.<root>`, including a dev port. The root is whichever of the
+ *  public sites this page is open on. */
+export function restaurantHost(
+  slug: string,
+  from: Pick<Location, "hostname" | "port"> = window.location,
+): string {
+  const host = from.hostname.replace(/^admin\./, "");
+  const root = PUBLIC_ROOTS.find((name) => host === name || host.endsWith(`.${name}`));
+  const base = root ?? host.split(".").slice(1).join(".");
+  const port = from.port ? `:${from.port}` : "";
+  return `${slug}.${base}${port}`;
+}
+
 export function storefrontUrl(
   slug: string,
   from: Pick<Location, "protocol" | "hostname" | "port"> = window.location,

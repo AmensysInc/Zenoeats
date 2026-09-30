@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import mimetypes
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.config import settings
+from app.core.tenant import allowed_origin_roots
 from app.core import errors, logsafe, observability, stall_watch, startup_checks
 from app.db.session import app_engine, system_engine
 from app.services import ops_health
@@ -97,12 +99,11 @@ app = FastAPI(
 # Outside production the middleware stays, because a developer may run the SPA
 # and the API on different ports.
 if settings.ENV != "production":
+    _origins = "|".join(re.escape(root) for root in allowed_origin_roots())
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=(
-            r"https?://([a-z0-9-]+\.)?"
-            + settings.ROOT_DOMAIN.replace(".", r"\.")
-            + r"(:\d+)?$"
+            r"https?://([a-z0-9-]+\.)*(" + _origins + r")(:\d+)?$"
         ),
         allow_credentials=True,
         allow_methods=["*"],

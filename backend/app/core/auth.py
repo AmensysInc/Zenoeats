@@ -10,13 +10,13 @@ In particular org_id in the token is a hint. It is never the tenant key.
 """
 
 import logging
-import re
 from dataclasses import dataclass
 
 import jwt
 from jwt import PyJWKClient
 
 from app.config import settings
+from app.core.tenant import host_of, host_on_allowed_origin
 
 log = logging.getLogger(__name__)
 
@@ -43,13 +43,13 @@ def _authorized_party_is_ours(azp: str) -> bool:
     Clerk's own recommendation: without it, a token obtained by some other site
     running against the same Clerk instance would be accepted here.
     """
-    scheme, sep, host = azp.partition("://")
+    scheme, sep, _host = azp.partition("://")
     if not sep or scheme not in ("http", "https"):
         return False
-    pattern = (
-        r"^(?:[a-z0-9-]+\.)*" + re.escape(settings.ROOT_DOMAIN.lower()) + r"(?::\d{1,5})?$"
-    )
-    return bool(re.match(pattern, host.lower()))
+    host = host_of(azp)
+    if host is None:
+        return False
+    return host_on_allowed_origin(host)
 
 
 @dataclass(frozen=True)
