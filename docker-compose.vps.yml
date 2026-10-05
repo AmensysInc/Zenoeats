@@ -1,0 +1,45 @@
+# Production on a VPS that already serves other apps on 80/443.
+#
+# Same idea as docker-compose.staging.yml, at production size: layered on
+# docker-compose.prod.yml, images built on the server from this checkout,
+# nginx published on localhost only. The host nginx
+# (infra/nginx/production/vps-zenoeats.com.conf) terminates TLS for
+# zenoeats.com and *.zenoeats.com and proxies here.
+#
+# Resource limits are the production defaults from docker-compose.prod.yml.
+#
+# .env must still set API_IMAGE and WEB_IMAGE to any non-empty value, because
+# docker-compose.prod.yml checks they exist; the names below are what
+# actually get built.
+#
+#   bash scripts/prod_up.sh
+
+x-prod-api: &prod-api
+  image: zenoeats-prod-api:local
+  build: ./backend
+  pull_policy: build
+
+services:
+  migrate:
+    <<: *prod-api
+
+  api:
+    <<: *prod-api
+
+  worker:
+    <<: *prod-api
+
+  beat:
+    <<: *prod-api
+
+  web:
+    image: zenoeats-prod-web:local
+    build: ./web
+    pull_policy: build
+
+  nginx:
+    volumes: !override
+      # Plain HTTP behind the host proxy; the template is not staging-specific.
+      - ./infra/nginx/staging/zenoeats.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports: !override
+      - "127.0.0.1:${PROD_HTTP_PORT:-8100}:80"
