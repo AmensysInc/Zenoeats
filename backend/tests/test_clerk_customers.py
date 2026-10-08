@@ -139,16 +139,20 @@ integration = pytest.mark.integration
 @integration
 def test_a_new_customer_gets_a_row_with_their_clerk_email(monkeypatch):
     clerk_id = _clerk_id()
+    # Unique per run, like the clerk id beside it. One address per customer is
+    # enforced by uq_users_customer_email, so a literal here would pass once
+    # and collide with its own leftover row on the next run.
+    fresh_email = f"new-{clerk_id}@zenoeats.invalid"
     calls = []
 
     def fetch(cid):
         calls.append(cid)
-        return clerk_customers.ClerkProfile(cid, "new@zenoeats.invalid", True, "New Person")
+        return clerk_customers.ClerkProfile(cid, fresh_email, True, "New Person")
 
     monkeypatch.setattr(clerk_customers, "fetch_profile", fetch)
 
     user = clerk_customers.customer_for_clerk_user(clerk_id)
-    assert user.email == "new@zenoeats.invalid"
+    assert user.email == fresh_email
     assert user.full_name == "New Person"
     assert user.kind == "CUSTOMER"
 
@@ -161,15 +165,16 @@ def test_a_new_customer_gets_a_row_with_their_clerk_email(monkeypatch):
 @integration
 def test_when_clerk_is_unreachable_the_address_is_filled_in_later(monkeypatch):
     clerk_id = _clerk_id()
+    later_email = f"later-{clerk_id}@zenoeats.invalid"  # unique per run; see above
     monkeypatch.setattr(clerk_customers, "fetch_profile", lambda cid: None)
     user = clerk_customers.customer_for_clerk_user(clerk_id)
     assert user.email == f"{clerk_id}@pending.local"
 
     monkeypatch.setattr(
         clerk_customers, "fetch_profile",
-        lambda cid: clerk_customers.ClerkProfile(cid, "later@zenoeats.invalid", True, None),
+        lambda cid: clerk_customers.ClerkProfile(cid, later_email, True, None),
     )
-    assert clerk_customers.customer_for_clerk_user(clerk_id).email == "later@zenoeats.invalid"
+    assert clerk_customers.customer_for_clerk_user(clerk_id).email == later_email
 
 
 @integration
@@ -253,9 +258,12 @@ def staff_restaurant():
 @integration
 def test_the_order_endpoints_accept_a_clerk_bearer_token(monkeypatch, staff_restaurant):
     slug, _ = staff_restaurant
+    # Derived from the clerk id so each run gets its own: one address per
+    # customer is a database constraint, and a literal collides with the row
+    # the previous run left behind.
     monkeypatch.setattr(
         clerk_customers, "fetch_profile",
-        lambda cid: clerk_customers.ClerkProfile(cid, "buyer@zenoeats.invalid", True, None),
+        lambda cid: clerk_customers.ClerkProfile(cid, f"buyer-{cid}@zenoeats.invalid", True, None),
     )
     client = _client(f"{slug}.zenoeats.local")
 

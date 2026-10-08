@@ -123,7 +123,15 @@ export default defineConfig({
     host: true,
     // Tenancy is resolved from the Host header, so every restaurant is a
     // different origin. Vite refuses unknown hosts by default.
-    allowedHosts: [".zenoeats.local", ".zenoeats.com", ".stg9.zenoeats.com"],
+    //
+    // ".localhost" is here for the no-sudo path: browsers resolve every
+    // *.localhost name to 127.0.0.1 on their own, so with ROOT_DOMAIN=localhost
+    // a storefront is reachable at http://<slug>.localhost:3000 without
+    // editing /etc/hosts or trusting a certificate. Useful on a machine where
+    // you cannot get administrator rights, and for a quick look at one
+    // restaurant. The real edge is still HTTPS on .zenoeats.local -- that is
+    // what exercises nginx, the certificate and the cookie flags.
+    allowedHosts: [".zenoeats.local", ".zenoeats.com", ".stg9.zenoeats.com", ".localhost"],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",

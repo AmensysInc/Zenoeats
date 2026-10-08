@@ -5,6 +5,36 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 
+# ---------- Platform root: the location picker ---------------------------
+
+class LocationOut(BaseModel):
+    """One card on the platform root.
+
+    `is_orderable` is the only thing the card should branch on. It folds two
+    separate gates together -- the location is OPEN and the restaurant behind
+    it is actually taking orders -- so the browser never has to know the
+    difference, and a location whose tenant is suspended reads as unavailable
+    rather than as a link that fails after the click.
+    """
+
+    slug: str
+    name: str
+    city: str
+    region: str | None = None
+    address_line: str | None = None
+    blurb: str | None = None
+    status: str
+    is_orderable: bool
+    # Absolute, because it crosses to the restaurant's own subdomain and so
+    # cannot be a path on the page doing the linking. Null unless orderable.
+    storefront_url: str | None = None
+    image_url: str | None = None
+
+
+class LocationsOut(BaseModel):
+    locations: list[LocationOut]
+
+
 # ---------- Portal / menu ------------------------------------------------
 
 class OptionOut(BaseModel):
@@ -169,6 +199,16 @@ class PortalOut(BaseModel):
     slug: str
     name: str
     tagline: str | None
+    # Where "all locations" goes. Absolute, and built by the server: it crosses
+    # from this restaurant's subdomain to the platform root, so the browser
+    # would otherwise have to strip a label off its own hostname and guess --
+    # which is wrong for www, for a reserved label, and on any environment
+    # whose root domain is not what the page assumed.
+    platform_url: str
+    # Whether to offer "Continue with Google". False when no OAuth client is
+    # configured, which is also when pressing it would 503 -- a button that
+    # cannot work should not be drawn.
+    google_sign_in: bool = False
     currency: str
     is_orderable: bool
     accepting_orders: bool

@@ -1,5 +1,7 @@
-# The project virtualenv. Windows puts binaries in Scripts/, POSIX in bin/.
-PY := .venv/Scripts/python.exe
+# The project virtualenv. Windows puts binaries in Scripts/, POSIX in bin/,
+# so pick whichever is actually there rather than hard-coding one and failing
+# on the other machine with "no such file or directory".
+PY := $(firstword $(wildcard .venv/Scripts/python.exe .venv/bin/python) .venv/bin/python)
 
 .PHONY: help setup certs infra api web worker up-all down logs migrate seed test rls fresh key
 

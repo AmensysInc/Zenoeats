@@ -18,24 +18,29 @@
       <!-- Decoration beside the form from 1024px up. Static: no motion. -->
       <aside class="auth-art" aria-hidden="true">
         <div class="auth-brand"><span class="brand-mark" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></div>
-        <div>
-          <div class="cloche ml-10 mt-10 scale-150"><span class="cloche-plate"></span><span class="cloche-dome"></span><span class="cloche-knob"></span></div>
+        <!-- A photograph rather than the drawn cloche. The panel was a flat
+             colour with a small illustration on it, which read as a
+             placeholder next to a storefront full of real food. The image is
+             behind the type, dimmed by .auth-art::after, so the caption
+             stays legible wherever the photo is bright. -->
+        <img class="auth-art-photo" src="/auth-art.webp" alt="" />
+        <div class="relative z-section">
           <p class="auth-art-caption">Good food.<br />A little closer.</p>
         </div>
         <p class="auth-art-foot text-caption">From their kitchen to your hands.</p>
       </aside>
 
       <section class="auth-form">
-        <div class="auth-brand"><span class="brand-mark" aria-hidden="true" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></div>
+        <a class="back-link" href="/">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Back to the menu
+        </a>
+        <a class="auth-brand" href="/" aria-label="Back to the menu"><span class="brand-mark" aria-hidden="true" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></a>
         <h1 id="heading">Sign in to order</h1>
-        <p class="auth-intro">
-          Browsing is open to everyone. An account is how your order and its pickup PIN
-          find their way back to you.
-        </p>
-
         <p id="error" class="note-error mb-5" role="alert" hidden></p>
 
         <section id="password-section">
+
           <!-- One button per social sign-in switched on in Clerk (Google, Apple,
                Facebook), rendered by customer-shared.ts. Hidden when there are none. -->
           <section id="social-section" class="mb-[17px]" hidden>
@@ -65,24 +70,32 @@
             <a id="sign-up" class="text-ink underline underline-offset-[3px]" href="/account/sign-up">Create an account</a>
           </p>
 
-          <!-- Ordering without an account. Last on the page and quieter than the
-               form above it, because an account is the better outcome for
-               anyone who will order twice -- but the counter still wants the
-               order of someone who will not. Revealed once a restaurant is
-               known: a guest session belongs to the restaurant being ordered
-               from, so on the platform root there is nothing to be a guest
-               of. It never waits on Clerk: this is the way through when the
-               sign-in service is unreachable or unconfigured. -->
-          <section id="guest-section" class="mt-[25px] border-t border-hairline pt-[25px] sm:mt-[30px]" aria-labelledby="guest-heading" hidden>
-            <h2 id="guest-heading" class="mb-2.5 font-display text-[22px] leading-[1.3]">Order without an account</h2>
-            <p class="text-caption text-muted">
-              We'll email your receipt and the link to your order. Keep this browser:
-              it's the only thing that can open your pickup PIN again.
+          <!-- Ordering without an account, last and behind a press.
+               The order of this page is the one a customer expects: a
+               provider, then an account, then the way through without one.
+               Guest is a button rather than a third open form -- two
+               complete forms at once showed four fields and two submit
+               buttons and left the reader to work out which pair was theirs.
+
+               Shown once a restaurant is known: a guest session belongs to
+               the restaurant being ordered from, so on the platform root
+               there is nothing to be a guest of. It never waits on an
+               identity provider -- this is the way through when none is
+               configured. -->
+          <section id="guest-section" class="mt-[22px] border-t border-hairline pt-[22px] sm:mt-[26px] sm:pt-[26px]" aria-labelledby="guest-heading" hidden>
+            <h2 id="guest-heading" class="sr-only">Order without an account</h2>
+
+            <button id="guest-reveal" type="button" class="btn-quiet w-full" aria-expanded="false" aria-controls="guest-form">
+              Continue as a guest
+            </button>
+            <p id="guest-why" class="mt-2.5 text-center text-caption text-muted">
+              No account, no password — just an email for your receipt.
             </p>
+
 
             <p id="guest-error" class="note-error mt-4" role="alert" hidden></p>
 
-            <form id="guest-form" class="auth-stack mt-4" novalidate>
+            <form id="guest-form" class="auth-stack mt-4" novalidate hidden>
               <label class="block">
                 <span class="label text-caption">Email</span>
                 <input id="guest-email" class="field mt-[7px]" type="email" autocomplete="email" required />
@@ -95,11 +108,12 @@
                 <input id="guest-name" class="field mt-[7px]" type="text" autocomplete="name" maxlength="160" />
               </label>
 
-              <button id="guest-submit" class="btn-quiet w-full" type="submit">
-                Continue as guest
+              <button id="guest-submit" class="btn-primary w-full" type="submit">
+                Start my order
               </button>
             </form>
           </section>
+
         </section>
 
         <!-- The second step of signing in, when Clerk asks for one: an

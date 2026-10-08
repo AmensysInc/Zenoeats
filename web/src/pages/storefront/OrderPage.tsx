@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { StatePage } from "@/components/common/Feedback";
+import { BackLink } from "@/components/common/BackLink";
 import { Cloche } from "@/components/common/icons";
 import { useOrderQuery, usePortalQuery } from "@/features/storefront/storefrontApi";
 import { DeliveryTracking } from "@/features/storefront/components/DeliveryTracking";
@@ -160,6 +161,13 @@ export function OrderPage() {
           the link itself is the credential. */}
       {portal.data && <CustomerHeader restaurant={portal.data} />}
       <main className="mx-auto w-full max-w-[720px] px-5 pb-[50px] pt-6 sm:px-6 sm:pb-[70px] sm:pt-10 lg:max-w-[1040px]">
+      {/* Above the grid, so it reads as a way off this page rather than part
+          of the order. A link, not history.back(): this page is often opened
+          from a confirmation email, where there is no history to go back
+          through. */}
+      <div className="mb-[18px]">
+        <BackLink />
+      </div>
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-[50px]">
         <section className="min-w-0">
           {/* The cloche is for a collection. A delivery has its own card

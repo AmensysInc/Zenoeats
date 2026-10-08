@@ -31,6 +31,7 @@ import type { PaymentHandoff } from "./PaymentPage";
 import type { Amounts, Contact, FulfillmentType } from "@/types";
 import { readCheckoutDraft, saveCheckoutDraft } from "@/features/storefront/checkoutDraft";
 import { loadGooglePlaces, type PlacesAutocomplete } from "@/services/googleMaps";
+import { BackLink } from "@/components/common/BackLink";
 
 /** The answers a delivery quote gives about the address rather than the
  *  cart. They belong beside the address field, where retyping can fix them. */
@@ -421,13 +422,7 @@ export function CheckoutPage() {
       <CustomerHeader restaurant={restaurant} />
       <main className="mx-auto w-full max-w-[720px] px-5 pb-[50px] pt-3 sm:px-6 sm:pb-[70px] sm:pt-6 lg:max-w-[1040px]">
         <CustomerAccountBar />
-        <Link
-          to="/"
-          className="inline-flex min-h-[40px] items-center gap-2 text-caption text-muted hover:text-ink"
-        >
-          <Icon name="back" className="h-4 w-4" />
-          Back to the menu
-        </Link>
+        <BackLink />
         <h1 className="mt-[18px] font-display text-[34px] leading-[1.12] tracking-[-1px] [overflow-wrap:anywhere] sm:mt-5 sm:text-[40px]">
           {delivering ? `Delivery from ${restaurant.name}` : `Pick up from ${restaurant.name}`}
         </h1>

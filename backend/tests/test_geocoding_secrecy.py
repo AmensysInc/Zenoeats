@@ -133,13 +133,42 @@ def test_nothing_the_customer_sees_mentions_the_provider_at_all(armed, monkeypat
 
 
 def test_without_a_key_nothing_is_requested_at_all(monkeypatch):
-    """An empty key is not a reason to call Google anonymously and find out."""
+    """An empty key is not a reason to call Google anonymously and find out.
+
+    The provider is pinned rather than inherited: this is a statement about
+    the Google path, and a deployment running Nominatim has no key by design.
+    """
     from app.config import settings
 
+    monkeypatch.setattr(settings, "GEOCODING_PROVIDER", "google")
     monkeypatch.setattr(settings, "GOOGLE_MAPS_API_KEY", "")
 
     def boom(*args, **kwargs):
         raise AssertionError("no request should be made without a key")
+
+    monkeypatch.setattr(geocoding.httpx, "get", boom)
+
+    assert geocoding.configured() is False
+    with pytest.raises(geocoding.GeocodingUnavailable):
+        geocoding.geocode(HOME)
+
+
+def test_without_a_contact_nominatim_is_not_called_either(monkeypatch):
+    """The same rule for the keyless provider.
+
+    Nominatim needs no key, so "unconfigured" means something else there: no
+    way to identify who is calling. Sending anonymous traffic anyway is what
+    gets an IP blocked for everyone behind it, so it must be refused in the
+    same place and in the same way.
+    """
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "GEOCODING_PROVIDER", "nominatim")
+    monkeypatch.setattr(settings, "NOMINATIM_CONTACT", "")
+    monkeypatch.setattr(settings, "EMAIL_FROM", "")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("no request should be made without a contact")
 
     monkeypatch.setattr(geocoding.httpx, "get", boom)
 

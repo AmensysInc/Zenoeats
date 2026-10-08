@@ -367,6 +367,17 @@ def delete_restaurant(restaurant_id: UUID, admin: User = Depends(require_platfor
 # the whole correctness argument and a loop over table names would hide it.
 # A new tenant table missing from this list leaves orphans behind, which is
 # why the test beside it checks the list against the schema.
+# Tables carrying restaurant_id that a purge DETACHES rather than deletes.
+#
+# `locations` is platform data that points at a tenant: the restaurant is what
+# a location opens, not what owns it. Deleting the row with the tenant would
+# take a city off the front page as a side effect of removing one restaurant,
+# so the purge nulls the pointer and puts the location back to COMING_SOON.
+#
+# The gate beside _PURGE_ORDER accepts either treatment -- what it refuses is a
+# table that is in neither list, because that is the one that leaves orphans.
+_PURGE_DETACH = ["locations"]
+
 _PURGE_ORDER = [
     "storefront_collection_items",
     "storefront_banners",
@@ -464,6 +475,24 @@ def purge_restaurant(restaurant_id: UUID, admin: User = Depends(require_platform
                 "RESTAURANT_HAS_HISTORY",
                 f"{name} has {orders} order(s) and {payments} payment(s). "
                 "A restaurant that has taken money cannot be removed permanently.",
+            )
+
+        # Locations are platform rows that point at a tenant, not tenant rows
+        # the tenant owns, so a purge detaches them instead of deleting them:
+        # the place still exists and stays on the front page, we have simply
+        # stopped serving it, and whoever opens the admin portal next can see
+        # that rather than find a city quietly missing.
+        #
+        # As the system role, because the app role may only read this table.
+        # Before the deletes, because the foreign key is RESTRICT and would
+        # otherwise refuse the restaurant row at the end of this block.
+        with system_session() as platform:
+            platform.execute(
+                text(
+                    "UPDATE locations SET restaurant_id = NULL, status = 'COMING_SOON' "
+                    "WHERE restaurant_id = :r"
+                ),
+                {"r": restaurant_id},
             )
 
         removed = {}

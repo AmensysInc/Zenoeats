@@ -380,6 +380,30 @@
   .auth-art {
     @apply relative hidden flex-col justify-between overflow-hidden bg-paper p-[42px] lg:flex xl:p-[60px];
   }
+  /* Above ::after, which would otherwise sit over them. */
+  .auth-art > .auth-brand,
+  .auth-art > .auth-art-foot {
+    @apply relative z-section;
+  }
+  /* The photograph behind the caption, and the wash that keeps type on it
+     readable. Both are decoration: the panel is aria-hidden, and nothing
+     here carries meaning the form does not also state. */
+  .auth-art-photo {
+    @apply absolute inset-0 h-full w-full object-cover;
+    /* Settles in rather than snapping, and only once. A panel that is pure
+       decoration should not announce itself. */
+    animation: auth-art-in 900ms var(--ze-ease) both;
+  }
+  .auth-art::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0;
+    background: linear-gradient(
+      165deg,
+      rgb(var(--ze-hero) / 0.9) 12%,
+      rgb(var(--ze-hero) / 0.66) 58%,
+      rgb(var(--ze-hero) / 0.86) 100%
+    );
+  }
   .auth-art-caption {
     @apply relative z-section mt-[70px] max-w-[260px] font-display text-4xl leading-[1.1] text-[#80644C];
   }
@@ -397,8 +421,20 @@
   .auth-foot {
     @apply mt-[22px] text-caption text-muted;
   }
+  /* An <a> on the customer pages, a <div> on the staff and admin ones --
+     a customer has a menu to go back to, an operator signing in does not.
+     no-underline and the inherited colour keep the two looking identical. */
+  /* The way back on the pages served outside React. Same shape as
+     components/common/BackLink, which the app's own pages use -- one of
+     them cannot import the other, so the look is kept in step by hand. */
+  .back-link {
+    @apply mb-[18px] inline-flex min-h-[40px] w-fit items-center gap-2 text-caption text-muted no-underline transition-colors duration-color hover:text-ink;
+  }
   .auth-brand {
-    @apply mb-[30px] flex items-center gap-[9px] font-display text-2xl sm:mb-[38px];
+    @apply mb-[30px] flex items-center gap-[9px] font-display text-2xl no-underline sm:mb-[38px];
+  }
+  a.auth-brand {
+    @apply w-fit transition-opacity duration-color hover:opacity-80;
   }
   .brand-mark {
     @apply inline-flex h-[26px] w-[26px] -rotate-3 items-center justify-center rounded-[7px] bg-brick font-display text-[23px] leading-none text-white;
@@ -703,4 +739,13 @@ html:not([data-wordmark-ready]) [data-wordmark-mark] {
 }
 @keyframes wordmark-fallback {
   to { visibility: visible; }
+}
+
+
+/* The auth panel's photograph, easing in on first paint. Collapsed to
+   nothing by the reduced-motion rule above, which sets every animation to
+   0.01ms -- the picture simply appears, which is the right outcome. */
+@keyframes auth-art-in {
+  from { opacity: 0; transform: scale(1.06); }
+  to   { opacity: 1; transform: none; }
 }

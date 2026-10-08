@@ -14,22 +14,31 @@
     <main class="auth">
       <aside class="auth-art" aria-hidden="true">
         <div class="auth-brand"><span class="brand-mark" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></div>
-        <div>
-          <div class="cloche ml-10 mt-10 scale-150"><span class="cloche-plate"></span><span class="cloche-dome"></span><span class="cloche-knob"></span></div>
+        <!-- A photograph rather than the drawn cloche. The panel was a flat
+             colour with a small illustration on it, which read as a
+             placeholder next to a storefront full of real food. The image is
+             behind the type, dimmed by .auth-art::after, so the caption
+             stays legible wherever the photo is bright. -->
+        <img class="auth-art-photo" src="/auth-art.webp" alt="" />
+        <div class="relative z-section">
           <p class="auth-art-caption">Good food.<br />A little closer.</p>
         </div>
         <p class="auth-art-foot text-caption">From their kitchen to your hands.</p>
       </aside>
 
       <section class="auth-form">
-        <div class="auth-brand"><span class="brand-mark" aria-hidden="true" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></div>
+        <a class="back-link" href="/">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Back to the menu
+        </a>
+        <a class="auth-brand" href="/" aria-label="Back to the menu"><span class="brand-mark" aria-hidden="true" data-wordmark-mark>Z</span><span data-wordmark-name>Zenoeats</span></a>
         <h1>Create an account</h1>
 
         <p id="error" class="note-error mb-5" role="alert" hidden></p>
 
         <section id="form-section">
           <p class="auth-intro">
-            We&apos;ll email you a 6-digit code to confirm the address.
+            Your orders, your details and your favourites, kept for next time.
           </p>
 
           <!-- One button per social sign-in switched on in Clerk (Google, Apple,

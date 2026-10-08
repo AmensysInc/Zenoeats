@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { ErrorNote, Spinner } from "@/components/common/Feedback";
-import { getClerk } from "@/services/clerk";
 import { errorMessage } from "@/services/apiClient";
-import { useCloseAccountMutation } from "../storefrontApi";
+import { useCloseAccountMutation, useCustomerLogoutMutation } from "../storefrontApi";
 import type { CustomerSession } from "@/types";
 
 /**
@@ -22,6 +21,7 @@ export function CloseAccount({ session }: { session: CustomerSession }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [closeAccount] = useCloseAccountMutation();
+  const [logout] = useCustomerLogoutMutation();
 
   // A guest has no account to close: the session ends on its own, and the
   // record behind it is cleared out with the rest.
@@ -34,8 +34,8 @@ export function CloseAccount({ session }: { session: CustomerSession }) {
       await closeAccount().unwrap();
       // Signed out here rather than left holding a session for an account
       // that no longer exists. The reload lands on the menu as a stranger.
-      const clerk = await getClerk();
-      await clerk.signOut({ redirectUrl: "/" });
+      // The API has already cleared the credential; this clears the cookie.
+      await logout().unwrap();
       window.location.assign("/");
     } catch (e) {
       setError(errorMessage(e));

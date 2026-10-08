@@ -12,6 +12,7 @@ guest session lasts about as long as one checkout, and a saved list that
 vanished with it would be worse than none, so saving one asks for an account.
 """
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -24,12 +25,16 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import TenantDb, current_restaurant, get_current_user
 from app.core import errors
 from app.core.ratelimit import per_user
+from app.db.session import system_session
 from app.models import (
     CustomerFavourite, Item, Order, OrderStatus, Restaurant, User, UserKind,
 )
 from app.schemas.api import CustomerSessionOut, ProfileContactIn
 from app.services import account_emails, clerk_customers, customer_profile, terms
+# Shared with customer_accounts.py: one definition of who is signed in.
+from app.services.customer_view import session_out as _session_out
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/customer", tags=["customer"])
 
 # Orders nobody paid for are not history: an abandoned checkout expired, and
@@ -37,16 +42,6 @@ router = APIRouter(prefix="/customer", tags=["customer"])
 _UNPAID = (OrderStatus.PENDING_PAYMENT.value, OrderStatus.EXPIRED.value)
 
 
-def _session_out(user: User) -> CustomerSessionOut:
-    return CustomerSessionOut(
-        email=user.email,
-        full_name=user.full_name,
-        phone=user.phone,
-        address=user.address,
-        email_pending=clerk_customers.has_placeholder_email(user),
-        is_guest=user.kind == UserKind.GUEST.value,
-        terms_accepted=not terms.needs_recording(user),
-    )
 
 
 # ------------------------------------------------------------- details ---
@@ -119,8 +114,6 @@ def sync_verified_email(
     if (profile.clerk_user_id != user.clerk_user_id or not profile.email or
             not profile.email_verified):
         raise errors.ApiError(409, "EMAIL_UNVERIFIED", "Verify your new email before saving it.")
-    from app.db.session import system_session
-
     with system_session() as db:
         current = db.get(User, user.id)
         if current is None or not current.is_active or current.deleted_at is not None:
@@ -156,12 +149,15 @@ def close_account(
     Guests have no account to close: their session expires on its own, and
     the record behind it is cleared out with the rest after 45 days.
     """
-    if user.kind != UserKind.CUSTOMER.value or not user.clerk_user_id:
+    if user.kind != UserKind.CUSTOMER.value:
         raise errors.ApiError(403, "ACCOUNT_REQUIRED", "There is no account here to close.")
 
-    clerk_customers.delete_clerk_user(user.clerk_user_id)
-
-    from app.db.session import system_session
+    # Clerk first, where the sign-in is Clerk's: an account emptied here but
+    # still signed in to would be the worst of both. An account whose password
+    # we hold has nothing at Clerk to delete -- close_account below clears the
+    # digest, which is the same step for this kind of sign-in.
+    if user.clerk_user_id:
+        clerk_customers.delete_clerk_user(user.clerk_user_id)
 
     tell = None
     with system_session() as db:

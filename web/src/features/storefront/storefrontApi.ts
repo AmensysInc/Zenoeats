@@ -1,7 +1,7 @@
 import { api } from "@/services/api";
 import type {
   Amounts, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Order, OrderSummary,
-  Portal,
+  PlatformLocation, Portal,
 } from "@/types";
 
 export type QuoteItem = {
@@ -44,6 +44,33 @@ export const storefrontApi = api.injectEndpoints({
     publicMenu: build.query<{ meals: Meal[] }, void>({
       query: () => ({ url: "/menu" }),
       providesTags: ["Menu"],
+    }),
+
+    /** Change the address on this account. The current password goes with it:
+     *  a session alone must not be enough to redirect every future receipt
+     *  and password-reset link. */
+    changeEmail: build.mutation<CustomerSession, { email: string; password: string }>({
+      query: (body) => ({ url: "/customer/email", method: "PUT", body }),
+      invalidatesTags: ["CustomerSession"],
+    }),
+
+    /** End a signed-in customer's session: the API clears the cookie it set.
+     *
+     *  Harmless when there is no such cookie, which is what lets every
+     *  sign-out path call it without first working out which kind of session
+     *  it is ending. */
+    customerLogout: build.mutation<void, void>({
+      query: () => ({ url: "/customer/logout", method: "POST" }),
+      invalidatesTags: ["CustomerSession"],
+    }),
+
+    /** Every location the platform offers, open or not.
+     *
+     *  Served on any host including the bare root domain, which is the only
+     *  place that reads it: the root has no restaurant to resolve, so this is
+     *  what it renders instead of an error. */
+    locations: build.query<{ locations: PlatformLocation[] }, void>({
+      query: () => ({ url: "/locations" }),
     }),
 
     /** Authoritative pricing. Whatever the cart showed locally is a guess
@@ -240,6 +267,7 @@ export const storefrontApi = api.injectEndpoints({
 export const {
   usePortalQuery,
   usePublicMenuQuery,
+  useLocationsQuery,
   useQuoteMutation,
   useCreateOrderMutation,
   useCreatePaymentIntentMutation,
@@ -247,6 +275,8 @@ export const {
   useCustomerSessionQuery,
   useStartGuestSessionMutation,
   useEndGuestSessionMutation,
+  useCustomerLogoutMutation,
+  useChangeEmailMutation,
   useUpdateProfileMutation,
   useSyncProfileEmailMutation,
   useCloseAccountMutation,

@@ -8,7 +8,7 @@ import { MenuImage } from "@/components/common/MenuImage";
 import { ModifierSheet } from "@/features/cart/components/ModifierSheet";
 import { ComboSheet, savingLabel } from "@/features/cart/components/ComboSheet";
 import { CustomerHeader } from "@/features/storefront/components/CustomerHeader";
-import { CustomerHeaderAccount } from "@/features/storefront/components/CustomerHeaderAccount";
+import { AccountPanel } from "@/features/storefront/components/AccountPanel";
 import { FavouriteButton, useFavourites } from "@/features/storefront/components/FavouriteButton";
 import {
   comboAdded,
@@ -113,22 +113,13 @@ export function StorefrontPage() {
         }
       />
 
-      <div className="mx-auto w-full max-w-[1336px] px-[19px] pb-[132px] sm:px-7 xl:px-10">
-        {/* Signing in is offered here and required nowhere on this page: the
-            menu is public, and the account only matters once there is an
-            order to attach to someone. */}
-        <CustomerHeaderAccount
-          leading={
-            <span className="flex items-center gap-2 text-caption text-muted">
-              <span
-                aria-hidden="true"
-                className={`h-[7px] w-[7px] rounded-full ${open ? "bg-brick" : "bg-warning"}`}
-              />
-              {open ? "Taking orders" : "Not taking orders"}
-            </span>
-          }
-        />
-
+      {/* No bottom padding: the cart bar is cleared by CustomerFooter,
+          which follows this and reserves the room only when there is a
+          cart to review. Keeping it here as well left 132px of nothing
+          between the restaurant footer and the one below it. */}
+      {/* pt: the banner is a card, so it sits below the header rather
+          than welded to it. */}
+      <div className="mx-auto w-full max-w-[1336px] px-[19px] pt-5 sm:px-7 sm:pt-6 xl:px-10">
         <HomeBanner restaurant={restaurant} photo={heroPhoto(meals)} storefront={restaurant.storefront} onTarget={(slide) => {
           if (slide.cta_target_kind === "item") {
             const item = meals.flatMap(categoriesOf).flatMap((c) => c.items).find((i) => i.id === slide.cta_target_id);
@@ -141,6 +132,21 @@ export function StorefrontPage() {
             });
           }
         }} />
+
+        {/* Signing in is offered here and required nowhere on this page: the
+            menu is public, and the account only matters once there is an
+            order to attach to someone. */}
+        <AccountPanel
+          leading={
+            <span className="flex items-center gap-2 text-caption text-muted">
+              <span
+                aria-hidden="true"
+                className={`h-[7px] w-[7px] rounded-full ${open ? "bg-brick" : "bg-warning"}`}
+              />
+              {open ? "Taking orders now" : "Not taking orders"}
+            </span>
+          }
+        />
 
         {!open && (
           <p className="note-warning mt-5" role="status">
@@ -161,7 +167,7 @@ export function StorefrontPage() {
               if (!items.length) return null;
               return <section key={collection.id} className="mt-8" aria-labelledby={`collection-${collection.id}`}>
                 <h2 id={`collection-${collection.id}`} tabIndex={-1} className="mb-4 scroll-mt-6 font-display text-2xl font-bold text-brick">{collection.title}</h2>
-                <ul className="flex gap-4 overflow-x-auto pb-3">{items.map(({item, path}) => <li key={item.id} className="w-[min(85vw,440px)] shrink-0"><MenuCard item={item} path={path} open={open} onPick={() => setCustomizing(item)} /></li>)}</ul>
+                <ul className="no-scrollbar flex gap-4 overflow-x-auto pb-3">{items.map(({item, path}) => <li key={item.id} className="w-[min(85vw,440px)] shrink-0"><MenuCard item={item} path={path} open={open} onPick={() => setCustomizing(item)} /></li>)}</ul>
               </section>;
             })}
             {/* A hand-picked shortcut's own section: the items the restaurant
@@ -173,7 +179,7 @@ export function StorefrontPage() {
               if (!items.length) return null;
               return <section key={shortcut.id} className="mt-8" aria-labelledby={`heading-shortcut-${shortcut.id}`}>
                 <h2 id={`heading-shortcut-${shortcut.id}`} tabIndex={-1} className="mb-4 scroll-mt-6 font-display text-2xl font-bold text-brick">{shortcut.label}</h2>
-                <ul className="flex gap-4 overflow-x-auto pb-3">{items.map(({item, path}) => <li key={item.id} className="w-[min(85vw,440px)] shrink-0"><MenuCard item={item} path={path} open={open} onPick={() => setCustomizing(item)} /></li>)}</ul>
+                <ul className="no-scrollbar flex gap-4 overflow-x-auto pb-3">{items.map(({item, path}) => <li key={item.id} className="w-[min(85vw,440px)] shrink-0"><MenuCard item={item} path={path} open={open} onPick={() => setCustomizing(item)} /></li>)}</ul>
               </section>;
             })}
 
@@ -245,18 +251,70 @@ export function StorefrontPage() {
           </>
         )}
 
-        <footer className="mt-[39px] flex flex-col items-start justify-between gap-5 border-t border-[rgb(var(--ze-footer-line))] pt-[30px] text-caption text-[rgb(var(--ze-footer-text))] sm:mt-[62px] sm:flex-row sm:flex-wrap sm:gap-[25px] sm:pt-[38px] lg:flex-nowrap">
-          <div>
-            <p className="font-display text-2xl font-bold tracking-[-.8px] text-brick">
-              {restaurant.name}
-              <span className="text-accent">.</span>
-            </p>
-            {restaurant.tagline && <p className="mt-2">{restaurant.tagline}</p>}
+        {/* The restaurant's own footer.
+            It was three lines spread across the full width by
+            justify-between, which on a desktop left a band of empty space
+            between them and read as a layout accident. It also said nothing
+            useful: the address and phone number were in the portal payload
+            and shown nowhere on this page, so a customer wanting to call or
+            walk in had to find them elsewhere.
+
+            Columns now, sized to their content, with the contact details
+            actually in them. The platform's own footer -- allergens and
+            policies -- follows this one from CustomerSurface. */}
+        <footer className="mt-[39px] border-t border-[rgb(var(--ze-footer-line))] pt-[30px] text-caption text-[rgb(var(--ze-footer-text))] sm:mt-[62px] sm:pt-[38px]">
+          {/* Columns sit together and stop. ml-auto on the last one threw
+              it at the far edge, so on a wide window the footer read as
+              three items stranded across a band of empty space -- the
+              wider the window, the worse it looked. */}
+          <div className="flex max-w-[980px] flex-col gap-8 sm:flex-row sm:flex-wrap sm:gap-x-[56px] sm:gap-y-9">
+            <div className="min-w-0 max-w-[34ch]">
+              <p className="font-display text-2xl font-bold tracking-[-.8px] text-brick">
+                {restaurant.name}
+                <span className="text-accent">.</span>
+              </p>
+              {restaurant.tagline && <p className="mt-2">{restaurant.tagline}</p>}
+              <p className="mt-2">
+                {restaurant.delivery_offered
+                  ? "Order online for pick-up or delivery."
+                  : "Order online for pick-up."}
+              </p>
+            </div>
+
+            {(restaurant.pickup_address || restaurant.phone) && (
+              <div className="min-w-0">
+                <p className="mb-2 text-[10px] uppercase tracking-[1.2px] text-[rgb(var(--ze-menu-muted))]">
+                  Find us
+                </p>
+                {restaurant.pickup_address && (
+                  <p className="flex items-start gap-2 [overflow-wrap:anywhere]">
+                    <Icon name="store" className="mt-[3px] h-3.5 w-3.5 shrink-0" />
+                    {restaurant.pickup_address}
+                  </p>
+                )}
+                {restaurant.phone && (
+                  <p className="mt-1.5 flex items-center gap-2">
+                    <Icon name="info" className="h-3.5 w-3.5 shrink-0" />
+                    {/* A tel: link, because most of the people reading this
+                        are holding the thing that can dial it. */}
+                    <a className="link" href={`tel:${restaurant.phone.replace(/[^+\d]/g, "")}`}>
+                      {restaurant.phone}
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <p className="mb-2 text-[10px] uppercase tracking-[1.2px] text-[rgb(var(--ze-menu-muted))]">
+                Other locations
+              </p>
+              <a className="link" href={restaurant.platform_url}>
+                See every Zenoeats location
+              </a>
+              <p className="mt-2 text-[11px]">Ordering powered by Zenoeats</p>
+            </div>
           </div>
-          <p className="sm:pt-[5px]">
-            {restaurant.delivery_offered ? "Order online for pick-up or delivery." : "Order online for pick-up."}
-          </p>
-          <p className="text-[11px] sm:pt-1">Ordering powered by Zenoeats</p>
         </footer>
       </div>
 

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAppSelector } from "@/app/hooks";
+import { BackLink } from "@/components/common/BackLink";
 import { Cloche } from "@/components/common/icons";
 import { CartLines } from "@/features/cart/components/CartLines";
 import {
@@ -46,7 +47,8 @@ export function CartPage() {
       {portal.data && <CustomerHeader restaurant={portal.data} />}
 
       <main className="mx-auto max-w-[760px] px-5 pb-16 pt-8 sm:px-7">
-        <p className="eyebrow text-muted">Your order</p>
+        <BackLink />
+        <p className="eyebrow mt-[18px] text-muted">Your order</p>
         <h1 className="mt-2 font-display text-[34px] font-bold leading-[1.1] tracking-[-1px] text-brick sm:text-[40px]">
           Your cart
         </h1>

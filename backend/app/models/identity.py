@@ -87,6 +87,12 @@ class User(Base, TimestampMixin):
     clerk_user_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True, index=True
     )
+    # The `sub` of a Google ID token, for an account that signs in with
+    # Google. Never reissued and never changed, unlike the address on it --
+    # see migration 0046 for why the address is not the identity.
+    google_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     full_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     # Customers and guests: the details checkout last saved, offered again

@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route } from "react-router-dom";
 import { RequireCustomer } from "@/components/layout/Guards";
-import { StorefrontPage } from "@/pages/storefront/StorefrontPage";
+import { HomeRoute } from "@/routes/HomeRoute";
 import { CustomerSurface } from "@/components/layout/CustomerSurface";
 import { Booting } from "@/components/layout/guardParts";
 import { NotFound } from "@/routes/NotFound";
@@ -30,7 +30,10 @@ import { NotFound } from "@/routes/NotFound";
  * fetched when the customer moves towards paying.
  *
  * The storefront itself stays eager. It is the first thing rendered on the
- * busiest route in the product, and splitting it would buy a spinner.
+ * busiest route in the product, and splitting it would buy a spinner. The
+ * location picker is eager for the same reason on the other hostname -- it is
+ * the platform's own front door -- and it is small enough that carrying it
+ * into the storefront chunk costs less than a spinner on first paint.
  *
  * The boundary is the import graph, not this file: an area's chunk is
  * whatever it imports. That is why each portal owns its own sub-routes and
@@ -74,10 +77,18 @@ const AdminRoute = lazyRoute(() => import("@/routes/AdminArea"));
 
 const router = createBrowserRouter(createRoutesFromElements(
       <>
+        {/* "/" is two pages behind one path: a restaurant's storefront on a
+            restaurant subdomain, the location picker on the platform root.
+            Which one is the server's answer, not the browser's guess, so the
+            branch lives in HomeRoute -- and it therefore sits outside the
+            CustomerSurface layout and applies that layout itself on the
+            storefront side. The picker belongs to no restaurant and must not
+            take its theme or its footer. */}
+        <Route path="/" element={<HomeRoute />} />
+
         {/* Customer surface. The storefront is deliberately public; only the
             routes that need an identity are guarded. */}
         <Route element={<CustomerSurface />}>
-          <Route path="/" element={<StorefrontPage />} />
           {/* Reviewing your own cart needs no account. Checkout is where an
               identity is asked for, because that is where an order is placed. */}
           <Route path="/cart" element={CartRoute} />

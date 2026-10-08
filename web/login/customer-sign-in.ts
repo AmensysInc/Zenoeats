@@ -1,6 +1,6 @@
 import { errorMessage, request } from "@/services/apiClient";
 import {
-  RETURN_ERRORS, activateAndContinue, clerkErrorMessage, el, loadClerk, nextPath,
+  RETURN_ERRORS, activateAndContinue, clerkErrorMessage, el, loadClerk, nextPath, wireGoogleButton,
   paintRestaurantName, paintWordmarks, params, readCode, showMessage, wireSocialButtons,
   withNext,
   type ClerkInstance,
@@ -49,11 +49,66 @@ if (returned) showMessage(errorBox, RETURN_ERRORS[returned] ?? "Sign-in didn't c
 
 void paintWordmarks();
 
+// Offered when the API has an OAuth client; see wireGoogleButton.
+void wireGoogleButton(el("social-section"), el("social-buttons"));
+
 void paintRestaurantName(el("heading"), (name) => `Sign in to order from ${name}`).then(
   (hasRestaurant) => {
     if (hasRestaurant) wireGuestCheckout();
   },
 );
+
+/**
+ * The submit button starts disabled in the markup and is enabled here, once
+ * there is something to submit.
+ *
+ * It used to be Clerk's start() that enabled it, so on a deployment with no
+ * Clerk the button stayed greyed out forever and the form could not be sent
+ * at all. Enabling it from the fields themselves is both the fix and the
+ * better behaviour: it no longer depends on anything outside this page.
+ */
+function refreshSubmit(): void {
+  submitButton.disabled = !(emailInput.value.trim() && passwordInput.value);
+}
+emailInput.addEventListener("input", refreshSubmit);
+passwordInput.addEventListener("input", refreshSubmit);
+refreshSubmit();
+
+/**
+ * Email and password, against our own API.
+ *
+ * Wired at module scope rather than inside start(), because this is the one
+ * path that must not wait for -- or depend on -- an identity provider. The
+ * API holds the Argon2id digest and mints the session cookie itself
+ * (backend/app/core/customer_auth.py), so this form works on a deployment
+ * with no Clerk configured at all.
+ *
+ * Clerk, where it is configured, is left with exactly one job: brokering
+ * Google and Apple. It no longer owns passwords.
+ */
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showMessage(errorBox, null);
+
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+  if (!email || !password) {
+    showMessage(errorBox, "Enter your email and password.");
+    return;
+  }
+
+  setBusy(true);
+  try {
+    await request("/customer/login", { method: "POST", body: { email, password } });
+    // A full navigation rather than a client route: the session is an
+    // httpOnly cookie, so the app has to boot holding it.
+    window.location.replace(nextPath());
+  } catch (e) {
+    showMessage(errorBox, errorMessage(e));
+    passwordInput.select();
+    setBusy(false);
+  }
+});
 
 /**
  * "Continue as guest": order with no account behind it.
@@ -74,7 +129,49 @@ function wireGuestCheckout(): void {
   const guestName = el<HTMLInputElement>("guest-name");
   const guestButton = el<HTMLButtonElement>("guest-submit");
   const guestError = el<HTMLParagraphElement>("guest-error");
+  const reveal = el<HTMLButtonElement>("guest-reveal");
   section.hidden = false;
+
+  // Choosing guest commits the page to it: the account half goes away and
+  // what is left is the two things a guest order needs. Leaving a password
+  // form and a "create an account" link above the fields would be offering
+  // the choice again to somebody who has already made it.
+  //
+  // A reload brings the full page back, which is the way out of a mis-press.
+  reveal.addEventListener("click", () => {
+    reveal.hidden = true;
+    el("guest-why").hidden = true;
+    reveal.setAttribute("aria-expanded", "true");
+
+    // The account half.
+    el("social-section").hidden = true;
+    form.hidden = true;
+    el("sign-up").closest(".auth-foot")?.setAttribute("hidden", "");
+
+    // Guest is the whole page now, so the rule and spacing that separated it
+    // from the form above come off with the form.
+    section.classList.remove(
+      "mt-[22px]", "border-t", "border-hairline", "pt-[22px]",
+      "sm:mt-[26px]", "sm:pt-[26px]",
+    );
+    // The h1 still said "Sign in to order" above a page with no sign-in on
+    // it. Rewritten from the name the restaurant is known by, which
+    // paintRestaurantName has already put in the heading.
+    const heading = el("heading");
+    const known = heading.textContent?.replace(/^Sign in to order from /, "") ?? "";
+    heading.textContent = known && known !== heading.textContent
+      ? `Order from ${known}`
+      : "Start your order";
+
+    el("guest-heading").classList.remove("sr-only");
+    el("guest-heading").className =
+      "mb-[18px] font-display text-[26px] leading-[1.2] tracking-[-.6px]";
+    el("guest-heading").textContent = "Order as a guest";
+
+    guestForm.hidden = false;
+    // Straight into the one field that is required.
+    guestEmail.focus();
+  });
 
   guestForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -106,8 +203,11 @@ function wireGuestCheckout(): void {
 }
 
 function setBusy(busy: boolean): void {
-  submitButton.disabled = busy;
   submitButton.textContent = busy ? "Signing in…" : "Sign in";
+  // Not a plain `disabled = busy`: coming back from a failed attempt must
+  // re-apply the field check rather than enable an empty form.
+  if (busy) submitButton.disabled = true;
+  else refreshSubmit();
 }
 
 void loadClerk(errorBox).then((clerk) => {
@@ -218,27 +318,6 @@ function start(clerk: ClerkInstance): void {
 
   wireSocialButtons(clerk, "sign-in", el("social-buttons"), el("social-section"), errorBox);
   submitButton.disabled = false;
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(errorBox, null);
-
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
-    if (!email || !password) {
-      showMessage(errorBox, "Enter your email and password.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      await advance(await signIn().create({ strategy: "password", identifier: email, password }));
-    } catch (e) {
-      showMessage(errorBox, clerkErrorMessage(e));
-      passwordInput.select();
-    }
-    setBusy(false);
-  });
 
   codeForm.addEventListener("submit", async (event) => {
     event.preventDefault();

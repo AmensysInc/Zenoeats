@@ -82,6 +82,29 @@ MAX_PIXELS = 40_000_000
 # phone-width hero; 1600 covers a high-density screen at either size.
 MAX_EDGE = 1600
 
+# What each kind is actually displayed at, which is not the same number.
+#
+# Everything used to be stored at MAX_EDGE regardless, so a category circle
+# 65 pixels across downloaded a 1600-pixel photograph -- about fifteen times
+# the bytes it could possibly use, on the page a QR code opens, on a phone, on
+# restaurant wifi. There is one stored size per image (no srcset, no resizing
+# proxy), so that one size has to be chosen per kind rather than once.
+#
+# Each is roughly three times its largest on-screen size, which covers a
+# high-density screen with room for the layout to grow.
+EDGE_BY_KIND = {
+    # Full-bleed hero, up to a desktop window wide.
+    "banners": 2000,
+    # The photo column of a menu card, and the hero of the item sheet.
+    "items": 900,
+    # A 65px circle in the shortcut row, and a category header image.
+    "categories": 420,
+    # A modifier option's thumbnail: smaller again.
+    "options": 320,
+    # A logo beside the restaurant's name.
+    "branding": 600,
+}
+
 WEBP_QUALITY = 82
 
 ACCEPTED_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
@@ -134,7 +157,7 @@ def process(data: bytes, kind: ImageKind = ImageKind.ITEMS) -> bytes:
             picture.mode == "P" and "transparency" in picture.info
         )
         picture = picture.convert("RGBA" if has_alpha else "RGB")
-        edge = 2400 if kind == ImageKind.BANNERS else MAX_EDGE
+        edge = EDGE_BY_KIND.get(kind.value, MAX_EDGE)
         picture.thumbnail((edge, edge), Image.Resampling.LANCZOS)
 
         out = io.BytesIO()

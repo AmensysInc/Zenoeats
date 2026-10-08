@@ -233,11 +233,20 @@ def close_account(session, user: User) -> None:
     user.full_name = None
     user.phone = None
     user.address = None
+    # The credential itself, for an account whose password we hold. Clerk
+    # accounts have theirs removed by delete_clerk_user; these have it here,
+    # and leaving it would be an account that is closed and still signs in.
+    user.password_hash = None
     # Email is NOT NULL and unique, so it is replaced rather than emptied.
     # The placeholder is the one a customer awaiting verification already
     # gets, so nothing downstream meets a shape it has not seen.
-    if user.clerk_user_id and not has_placeholder_email(user):
-        user.email = _placeholder_email(user.clerk_user_id)
+    #
+    # Keyed on the user id when there is no Clerk id -- a password account has
+    # none. Without that fallback the address stays on the closed row, and
+    # uq_users_customer_email then stops that person ever registering again
+    # with the address they just asked us to forget.
+    if not has_placeholder_email(user):
+        user.email = _placeholder_email(user.clerk_user_id or str(user.id))
     session.execute(delete(CustomerFavourite).where(CustomerFavourite.user_id == user.id))
     session.flush()
     log.info("closed customer account %s", user.id)

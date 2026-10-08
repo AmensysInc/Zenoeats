@@ -243,10 +243,23 @@ services:
     # The IP is spelled out rather than using the "host-gateway" keyword:
     # that keyword adds an IPv6 entry alongside the IPv4 one, and nginx tries
     # the unreachable IPv6 address first, logging an error and burning a round
-    # trip before falling back. 192.168.65.254 is Docker Desktop's fixed host
-    # gateway on Windows and macOS. On Linux use "zenoeats-host:host-gateway".
+    # trip before falling back.
+    #
+    # The default is Docker Desktop's fixed host gateway on Windows and macOS.
+    # Other engines put the host elsewhere and the wrong address fails in the
+    # least obvious way: Docker service DNS still answers while the app
+    # profile is up, so everything works until you run `make api` natively,
+    # and then nginx hangs on the backup upstream with connect=- instead of
+    # erroring. Override HOST_GATEWAY_IP in .env per engine:
+    #
+    #   Docker Desktop (Windows, macOS)   192.168.65.254   (the default)
+    #   OrbStack                          0.250.250.254
+    #   Linux                             use "zenoeats-host:host-gateway"
+    #
+    # To find it on any engine, ask a running container what the host is:
+    #   docker compose exec nginx getent hosts host.docker.internal
     extra_hosts:
-      - "zenoeats-host:192.168.65.254"
+      - "zenoeats-host:${HOST_GATEWAY_IP:-192.168.65.254}"
     # The only way in: https://<slug>.zenoeats.local:8443. There is no plain
     # HTTP port. Needs infra/certs-local/ (git-ignored), made by
     # `bash scripts/local_https_cert.sh`; see README, "Running it".

@@ -3,6 +3,8 @@
     customer_welcome   a new account, the first time it is used at a
                        restaurant: "Welcome to Spice House"
     account_closed     the account has been closed and its details removed
+    customer_password_reset
+                       a signed, one-hour link to choose a new password
 
 A customer account is Zenoeats', not one restaurant's -- Clerk holds one
 sign-in for every storefront, and says nothing about which one a person
@@ -97,6 +99,8 @@ def send(kind: str, args: dict) -> bool:
         return _send_welcome(args["slug"], UUID(args["user_id"]))
     if kind == "account_closed":
         return _send_closed(args)
+    if kind == "customer_password_reset":
+        return _send_password_reset(args)
     raise ValueError(f"no such account email: {kind}")
 
 
@@ -139,4 +143,41 @@ def _send_closed(args: dict) -> bool:
     return email.deliver(email.Email(
         to=crypto.decrypt_field(args["sealed_to"]), subject=subject, html=body_html,
         text=body_text, idempotency_key="account-closed",
+    )).sent
+
+
+def queue_password_reset(to: str, first_name: str | None, reset_url: str) -> None:
+    """Queue the reset email.
+
+    The address and the link both travel sealed: the broker keeps what it
+    holds on disk, and this link is the whole credential for the account --
+    anybody who could read the queue would otherwise be able to take it.
+    """
+    from app.workers.tasks import send_account_email
+
+    try:
+        send_account_email.delay("customer_password_reset", {
+            "sealed_to": crypto.encrypt_field(to),
+            "sealed_url": crypto.encrypt_field(reset_url),
+            "first_name": first_name,
+        })
+    except Exception:
+        log.warning("could not queue the password-reset email", exc_info=True)
+
+
+def _send_password_reset(args: dict) -> bool:
+    from app.core.customer_auth import RESET_TOKEN_TTL_MINUTES
+
+    subject, body_html, body_text = compose(
+        "customer_password_reset",
+        name=args.get("first_name"),
+        reset_url=crypto.decrypt_field(args["sealed_url"]),
+        expires_in_minutes=RESET_TOKEN_TTL_MINUTES,
+    )
+    # Not through send_once. Asking twice is a person who did not get the
+    # first one, and the second link is a different credential -- suppressing
+    # it would leave them holding an email they cannot act on.
+    return email.deliver(email.Email(
+        to=crypto.decrypt_field(args["sealed_to"]), subject=subject, html=body_html,
+        text=body_text, idempotency_key="customer-password-reset",
     )).sent

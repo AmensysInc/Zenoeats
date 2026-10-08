@@ -52,9 +52,20 @@ class GeocodingUnavailable(Exception):
     """
 
 
+def provider() -> str:
+    return (settings.GEOCODING_PROVIDER or "google").strip().lower()
+
+
 def configured() -> bool:
-    """Whether addresses can be placed at all. Delivery depends on it."""
-    return bool(settings.GOOGLE_MAPS_API_KEY) and settings.GEOCODING_PROVIDER == "google"
+    """Whether addresses can be placed at all. Delivery depends on it.
+
+    Google needs a key. Nominatim needs none -- what it needs instead is a
+    contact address in the User-Agent, which its policy treats as mandatory
+    and which _nominatim refuses to run without.
+    """
+    if provider() == "nominatim":
+        return bool(_contact())
+    return bool(settings.GOOGLE_MAPS_API_KEY) and provider() == "google"
 
 
 def miles_between(origin: Point, destination: Point) -> float:
@@ -90,7 +101,7 @@ def geocode(address: str) -> Point | None:
         # ago is not worth asking about again on every keystroke.
         return Point(**cached) if cached else None
 
-    point = _google(cleaned)
+    point = _nominatim(cleaned) if provider() == "nominatim" else _google(cleaned)
     _cache_put(cleaned, point)
     return point
 
@@ -223,3 +234,109 @@ def _cache_put(address: str, point: Point | None) -> None:
         )
     except (RedisError, OSError):
         pass
+
+
+# ------------------------------------------------- OpenStreetMap Nominatim
+#
+# Free, keyless, and run on donated hardware, which is why its usage policy is
+# not a formality: a deployment that ignores it gets blocked, and the block
+# lands on the whole IP rather than on one request.
+#
+# Three obligations, all enforced below rather than written down and hoped for:
+#
+#   Identify yourself.  A User-Agent naming the application and a way to reach
+#                       whoever runs it. Requests with a generic or absent one
+#                       are refused, so configured() treats a missing contact
+#                       as "not configured" rather than letting checkout
+#                       discover it.
+#   One request/second. Across the whole deployment, not per process -- so the
+#                       gate is a Redis key, not a local variable. Several
+#                       API workers behind a load balancer would otherwise
+#                       send one each.
+#   Cache results.      Already done, for thirty days, by the cache above.
+#                       Most lookups never reach here.
+#
+# No key appears in the URL, so unlike the Google path there is nothing to
+# redact -- but the address itself is still a customer's home, so the
+# exception text is never logged here either.
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+
+# Their stated limit is one request a second. The gate below is a one-second
+# window in Redis; a caller that finds it taken waits briefly rather than
+# failing, because the alternative is refusing a checkout over somebody else's
+# keystroke.
+_RATE_KEY = "geocode:nominatim:second"
+_RATE_WAIT_SECONDS = 1.1
+
+
+def _contact() -> str:
+    """How Nominatim reaches whoever runs this. Required by their policy."""
+    return (settings.NOMINATIM_CONTACT or settings.EMAIL_FROM or "").strip()
+
+
+def _user_agent() -> str:
+    return f"Zenoeats/1.0 ({_contact()})"
+
+
+def _claim_the_second() -> bool:
+    """True when this process may send a request now.
+
+    SET NX EX 1 is the whole gate: the first caller in any given second gets
+    the key and the slot, everyone else is refused until it expires. Fails
+    open when Redis is down -- a cache outage must not take delivery offline,
+    and one unthrottled process is a smaller problem than a dead checkout.
+    """
+    try:
+        from app.core.ratelimit import runtime_redis
+
+        return bool(runtime_redis().set(_RATE_KEY, "1", nx=True, ex=1))
+    except (RedisError, OSError):
+        return True
+
+
+def _nominatim(address: str) -> Point | None:
+    import time
+
+    if not _contact():
+        # configured() already refuses this, so reaching here is a bug rather
+        # than a deployment mistake. Still refuse: sending anonymous traffic
+        # is what gets an IP blocked for everyone behind it.
+        log.error("nominatim needs NOMINATIM_CONTACT (or EMAIL_FROM) set")
+        raise GeocodingUnavailable("No geocoding provider is configured.")
+
+    if not _claim_the_second():
+        # Wait for the window rather than refusing. Bounded, and shorter than
+        # GEOCODE_TIMEOUT_SECONDS, so a queue cannot outlast the caller.
+        time.sleep(_RATE_WAIT_SECONDS)
+        _claim_the_second()
+
+    failure = None
+    try:
+        response = httpx.get(
+            NOMINATIM_URL,
+            params={"q": address, "format": "jsonv2", "limit": 1, "addressdetails": 0},
+            headers={"User-Agent": _user_agent()},
+            timeout=settings.GEOCODE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPStatusError as exc:
+        failure = f"provider returned HTTP {exc.response.status_code}"
+    except (httpx.HTTPError, ValueError) as exc:
+        failure = type(exc).__name__
+    if failure is not None:
+        _blame(failure)
+
+    # An empty list is an address Nominatim cannot place: the customer's
+    # problem, not ours, and no retry helps. Distinct from the failures above.
+    if not isinstance(body, list) or not body:
+        return None
+
+    try:
+        return Point(latitude=float(body[0]["lat"]), longitude=float(body[0]["lon"]))
+    except (KeyError, IndexError, TypeError, ValueError):
+        log.error("nominatim returned an unreadable location")
+        raise GeocodingUnavailable(
+            "The geocoding service returned nothing usable."
+        ) from None

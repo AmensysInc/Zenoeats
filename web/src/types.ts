@@ -107,6 +107,31 @@ export type Meal = {
   combos: Combo[];
 };
 
+/**
+ * One place on the platform root's location picker.
+ *
+ * Not a restaurant: a location can be announced long before there is a tenant
+ * behind it, and it owns its own public name. The door says "Jr's Corner"; the
+ * tenant it opens is "Spice House".
+ */
+export type PlatformLocation = {
+  slug: string;
+  name: string;
+  city: string;
+  region?: string | null;
+  address_line?: string | null;
+  blurb?: string | null;
+  status: "OPEN" | "COMING_SOON" | "HIDDEN";
+  /** The only field a card should branch on. Folds two gates together: the
+   *  location is open AND the restaurant behind it is taking orders, so a
+   *  suspended tenant reads as unavailable rather than as a dead link. */
+  is_orderable: boolean;
+  /** Absolute -- it crosses to the restaurant's own subdomain. Null unless
+   *  orderable. */
+  storefront_url?: string | null;
+  image_url?: string | null;
+};
+
 export type Portal = {
   storefront?: Storefront | null;
   /** The logo and name lettering from Settings. Shown whether or not the
@@ -119,6 +144,10 @@ export type Portal = {
   slug: string;
   name: string;
   tagline: string | null;
+  /** The platform root, for "all locations". Absolute and server-built: it
+   *  crosses from this restaurant's subdomain to the bare domain, which the
+   *  browser cannot work out by trimming its own hostname. */
+  platform_url: string;
   currency: string;
   is_orderable: boolean;
   accepting_orders: boolean;
@@ -211,6 +240,14 @@ export type CartLine = {
   key: string;
   menu_item_id: string;
   name: string;
+  /** The dish's photo, copied in when it was added.
+   *
+   *  Copied rather than looked up: the cart is restored from localStorage
+   *  before any menu request finishes, and a row that pops a picture in
+   *  half a second later is worse than one that never had one. Optional
+   *  because a cart saved before this existed has none, and plenty of items
+   *  have no photo at all. */
+  imageUrl?: string | null;
   quantity: number;
   note?: string;
   unitPreviewMinor: number; // display only; the server reprices everything
@@ -233,6 +270,8 @@ export type CartComboSelection = {
  *  on a line. What the deal actually costs is the server's answer. */
 export type CartComboLine = {
   key: string;
+  /** Borrowed from one of the deal's own items; see CartLine. */
+  imageUrl?: string | null;
   combo_id: string;
   name: string;
   quantity: number;
