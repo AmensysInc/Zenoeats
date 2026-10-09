@@ -20,7 +20,7 @@ httpx==0.28.1
 Jinja2==3.1.6
 pytest==9.0.3
 # Password hashing for platform-admin and (later) restaurant credentials.
-argon2-cffi==23.1.0
+argon2-cffi==25.1.0
 # Error tracking. Inert unless SENTRY_DSN is set.
 sentry-sdk==2.69.1
 # IANA timezones for zoneinfo: restaurant-local report days. Slim images and
