@@ -38,11 +38,15 @@ def admin_user():
 def cleanup():
     """Purge every restaurant a test registers, whatever happened."""
     from app.api.v1.admin import _PURGE_ORDER
-    from app.db.session import tenant_session
+    from app.db.session import system_session, tenant_session
 
     created = []
     yield created
     for rid in created:
+        # Activation lists a restaurant on the platform root, and the location
+        # row holds a RESTRICT key on it. System role: the app role only reads.
+        with system_session() as session:
+            session.execute(text("DELETE FROM locations WHERE restaurant_id = :r"), {"r": rid})
         with tenant_session(rid) as session:
             for table in _PURGE_ORDER:
                 session.execute(text(f"DELETE FROM {table} WHERE restaurant_id = :r"), {"r": rid})
@@ -307,3 +311,107 @@ def test_a_value_the_database_cannot_hold_is_a_422_not_a_500(
         cleanup.append(res.json()["id"])
     assert res.status_code == 422, res.text
     assert field in res.json()["message"]
+
+
+# --- Activation, and what the super admin can see of a restaurant's logins ---
+
+
+def _location(restaurant_id):
+    from app.db.session import system_session
+
+    with system_session() as session:
+        return session.execute(
+            text("SELECT slug, name, status FROM locations WHERE restaurant_id = :r"),
+            {"r": restaurant_id},
+        ).mappings().all()
+
+
+def test_a_restaurant_goes_live_without_a_phone_or_stripe(admin_user, cleanup):
+    """The menu is built and the storefront tested before Stripe is connected,
+    so activation must not wait for either."""
+    from app.api.v1.admin import activate_restaurant
+
+    restaurant = _create(admin_user, cleanup)
+    out = activate_restaurant(restaurant.id, admin=admin_user)
+
+    assert out["status"] == "ACTIVE"
+    assert out["wallet_domain"] is None  # nothing to register without an account
+
+
+def test_activation_lists_the_restaurant_on_the_platform_root(admin_user, cleanup):
+    from app.api.v1.admin import activate_restaurant, suspend_restaurant
+
+    restaurant = _create(admin_user, cleanup)
+    assert _location(restaurant.id) == []
+
+    assert activate_restaurant(restaurant.id, admin=admin_user)["location"] == "created"
+    [listed] = _location(restaurant.id)
+    assert listed["slug"] == restaurant.slug and listed["status"] == "OPEN"
+    assert listed["name"] == "Admin Test Kitchen"
+
+    # Suspending and reactivating reuses the one row rather than adding more.
+    suspend_restaurant(restaurant.id, admin=admin_user)
+    assert activate_restaurant(restaurant.id, admin=admin_user)["location"] == "unchanged"
+    assert len(_location(restaurant.id)) == 1
+
+
+def test_activation_links_a_location_announced_before_the_restaurant(admin_user, cleanup):
+    from app.api.v1.admin import activate_restaurant
+    from app.db.session import system_session
+
+    slug = f"adm-{uuid.uuid4().hex[:8]}"
+    with system_session() as session:
+        session.execute(
+            text("INSERT INTO locations (slug, name, city, status) "
+                 "VALUES (:s, 'Announced', 'Ardmore', 'COMING_SOON')"),
+            {"s": slug},
+        )
+    restaurant = _create(admin_user, cleanup, slug=slug)
+
+    assert activate_restaurant(restaurant.id, admin=admin_user)["location"] == "linked"
+    [listed] = _location(restaurant.id)
+    assert listed["name"] == "Announced" and listed["status"] == "OPEN"
+
+
+def test_a_hidden_location_stays_hidden_on_activation(admin_user, cleanup):
+    from app.api.v1.admin import activate_restaurant
+    from app.db.session import system_session
+
+    restaurant = _create(admin_user, cleanup)
+    with system_session() as session:
+        session.execute(
+            text("INSERT INTO locations (slug, name, city, status, restaurant_id) "
+                 "VALUES (:s, 'Pulled', 'Ardmore', 'HIDDEN', :r)"),
+            {"s": restaurant.slug, "r": restaurant.id},
+        )
+
+    assert activate_restaurant(restaurant.id, admin=admin_user)["location"] == "unchanged"
+    assert _location(restaurant.id)[0]["status"] == "HIDDEN"
+
+
+def test_the_admin_sees_every_login_and_whether_it_was_used(admin_user, cleanup):
+    from app.api.v1.admin import list_restaurant_logins
+
+    restaurant = _create(admin_user, cleanup)
+    assert list_restaurant_logins(restaurant.id, admin=admin_user) == []
+
+    email = _email()
+    out, _ = _owner(admin_user, restaurant.id, email, "Jr Owner")
+    [login] = list_restaurant_logins(restaurant.id, admin=admin_user)
+    assert (login.email, login.full_name, login.role, login.status) == (
+        email, "Jr Owner", "ADMIN", "ACTIVE"
+    )
+    assert login.signed_in is False  # still on the temporary password
+    assert "password" not in login.model_dump_json()
+
+    _set_own_password(email, "a-password-they-chose")
+    [login] = list_restaurant_logins(restaurant.id, admin=admin_user)
+    assert login.signed_in is True
+
+
+def test_logins_for_a_restaurant_that_does_not_exist_is_a_404(admin_user):
+    from app.api.v1.admin import list_restaurant_logins
+
+    with pytest.raises(errors.ApiError) as missing:
+        list_restaurant_logins(uuid.uuid4(), admin=admin_user)
+    assert missing.value.status_code == 404

@@ -28,13 +28,13 @@ from app.core.tenant import admin_host
 from app.db.base import utcnow
 from app.db.session import system_session, tenant_session
 from app.models import (
-    ItemType, Restaurant, RestaurantOrderCounter, RestaurantPaymentAccount,
-    RestaurantStatus, RestaurantUser, StaffRole, StaffStatus, TaxMode, User, UserKind,
+    ItemType, Location, LocationStatus, Restaurant, RestaurantOrderCounter,
+    RestaurantPaymentAccount, RestaurantStatus, RestaurantUser, StaffRole, StaffStatus, TaxMode, User, UserKind,
     STARTER_ITEM_TYPES,
 )
 from app.schemas.api import (
     AdminOrderOut, AdminOrderPageOut, CreateOwnerIn, CreateOwnerOut,
-    CreateRestaurantIn, RestaurantOut, RestaurantReportOut, StripeSyncOut,
+    CreateRestaurantIn, RestaurantLoginOut, RestaurantOut, RestaurantReportOut, StripeSyncOut,
     UpdateRestaurantIn,
 )
 from app.services import images, restaurant_profile, stripe_service, stripe_tax
@@ -827,6 +827,51 @@ def reset_owner_password(
     )
 
 
+@router.get("/restaurants/{restaurant_id}/logins", response_model=list[RestaurantLoginOut])
+def list_restaurant_logins(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
+    """Every staff login on a restaurant: who has one, in what role, and
+    whether they have signed in yet.
+
+    Without it the only trace of an owner created here was the one-time
+    password panel, so an admin who closed it could not tell whether a login
+    existed -- until "Create login" refused with ALREADY_STAFF. Owners first,
+    then by when they were invited. Revoked logins are kept in the list, marked
+    so: they still exist, and the restaurant can re-invite them.
+    """
+    with tenant_session(restaurant_id) as session:
+        if session.get(Restaurant, restaurant_id) is None:
+            raise errors.ApiError(404, "RESTAURANT_NOT_FOUND", "No such restaurant.")
+        memberships = session.execute(
+            select(RestaurantUser).order_by(RestaurantUser.invited_at, RestaurantUser.created_at)
+        ).scalars().all()
+        members = [
+            (m.user_id, m.role_code, m.status, m.invited_at or m.created_at) for m in memberships
+        ]
+
+    with system_session() as session:
+        _audit(session, admin, "SUPER_ADMIN_LIST_RESTAURANT_LOGINS",
+               {"restaurant_id": str(restaurant_id)})
+        users = {
+            u.id: u for u in session.execute(
+                select(User).where(User.id.in_([m[0] for m in members]))
+            ).scalars().all()
+        } if members else {}
+
+        out = [
+            RestaurantLoginOut(
+                user_id=user_id, email=users[user_id].email,
+                full_name=users[user_id].full_name, role=role, status=status,
+                signed_in=bool(users[user_id].password_hash)
+                and not users[user_id].must_change_password,
+                invited_at=invited_at,
+            )
+            for user_id, role, status, invited_at in members
+            if user_id in users
+        ]
+    out.sort(key=lambda login: login.role != StaffRole.ADMIN.value)
+    return out
+
+
 def _restaurant_owner_email(restaurant_id: UUID) -> str | None:
     """The address of the restaurant's owner, or None if it has no owner yet.
 
@@ -1013,17 +1058,18 @@ def refresh_stripe_status(
 
 @router.post("/restaurants/{restaurant_id}/activate", response_model=dict)
 def activate_restaurant(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
-    """Readiness gate. Activation requires a connected account with charges
-    enabled.
+    """Put a restaurant live and list it on the platform root.
 
-    Deliberately says nothing about the menu. Activation is about whether
-    money can be taken, which is the one thing a restaurant cannot fix for
-    itself; what is on the menu is the restaurant's own business and changes
-    every day. An active restaurant with nothing on it shows an empty
-    storefront, which is honest and is undone by adding an item -- it does
-    not need a super admin's attention. The storefront also refuses orders
-    whenever accepting_orders is off, so an empty menu was never the thing
-    standing between a customer and a bad order.
+    Neither a phone number nor a Stripe account is required. A restaurant is
+    set up in this order: the owner builds the menu, the restaurant is put
+    live to be seen and tested, and Stripe is connected afterwards. Until it
+    is, the storefront and menu are public and checkout refuses payment with
+    "not set up for card payments" (orders.py) -- nothing is charged, and the
+    unpaid order expires like any abandoned checkout.
+
+    Stripe Tax is the one check kept, and only once an account exists: a
+    restaurant that asked Stripe to calculate its tax would otherwise charge
+    customers none.
     """
     with tenant_session(restaurant_id) as session:
         restaurant = session.get(Restaurant, restaurant_id)
@@ -1031,49 +1077,91 @@ def activate_restaurant(restaurant_id: UUID, admin: User = Depends(require_platf
             raise errors.ApiError(404, "RESTAURANT_NOT_FOUND", "No such restaurant.")
 
         account = session.execute(select(RestaurantPaymentAccount)).scalar_one_or_none()
-        blockers = []
-        # The refunds policy sends a customer with a problem to the
-        # restaurant first; there has to be a way to reach it.
-        if not restaurant.phone:
-            blockers.append(
-                "No phone number for customers: the restaurant adds it in Settings."
-            )
-        if account is None:
-            blockers.append("No Stripe connected account.")
-        elif not account.charges_enabled:
-            blockers.append("Stripe account cannot accept charges yet.")
         uses_stripe_tax = restaurant.tax_mode == TaxMode.STRIPE_TAX.value
         tax_view = dict(_tax_fields(restaurant))
         account_id = account.stripe_account_id if account else None
+        charges_enabled = bool(account and account.charges_enabled)
         slug = restaurant.slug
 
-    # A Stripe Tax restaurant that went live without working tax settings
-    # would refuse every checkout. Asked outside the transaction (rule 6).
-    if uses_stripe_tax and not blockers:
+    if uses_stripe_tax and account_id:
         from types import SimpleNamespace
 
-        blockers.extend(_stripe_tax_blockers(SimpleNamespace(**tax_view), account_id))
-
-    if blockers:
-        raise errors.ApiError(409, "NOT_READY_FOR_ACTIVATION", " ".join(blockers))
+        blockers = _stripe_tax_blockers(SimpleNamespace(**tax_view), account_id)
+        if blockers:
+            raise errors.ApiError(409, "NOT_READY_FOR_ACTIVATION", " ".join(blockers))
 
     with tenant_session(restaurant_id) as session:
         restaurant = session.get(Restaurant, restaurant_id)
         if restaurant is None:
             raise errors.ApiError(404, "RESTAURANT_NOT_FOUND", "No such restaurant.")
         restaurant.status = RestaurantStatus.ACTIVE.value
+        listing = {
+            "slug": restaurant.slug, "name": restaurant.name,
+            "city": restaurant.address_city or "", "region": restaurant.address_state,
+            "address_line": restaurant.address_line1, "blurb": restaurant.tagline,
+        }
 
-    # After the restaurant is live, and never a reason for it not to be:
-    # without this the storefront takes cards but never offers Apple Pay or
-    # Google Pay. Outside any transaction (rule 6).
-    wallets = stripe_service.ensure_wallet_domain(account_id, slug)
+    # Wallet registration belongs to the connected account, so there is
+    # nothing to register until Stripe is connected.
+    wallets = (
+        stripe_service.ensure_wallet_domain(account_id, slug) if charges_enabled else None
+    )
 
     with system_session() as session:
+        location = _list_on_platform_root(session, restaurant_id, listing)
         _audit(session, admin, "SUPER_ADMIN_ACTIVATE_RESTAURANT",
-               {"restaurant_id": str(restaurant_id), "wallet_domain": wallets})
+               {"restaurant_id": str(restaurant_id), "wallet_domain": wallets,
+                "location": location})
 
     return {"restaurant_id": str(restaurant_id), "status": RestaurantStatus.ACTIVE.value,
-            "wallet_domain": wallets}
+            "wallet_domain": wallets, "location": location}
+
+
+def _list_on_platform_root(session, restaurant_id: UUID, listing: dict) -> str:
+    """Make sure the platform root shows this restaurant, and say what was done.
+
+    The root lists locations, not restaurants, so an activated restaurant with
+    no location is live but invisible from zenoeats.com. In order:
+
+      already linked   Opened if it was COMING_SOON. A HIDDEN one stays hidden:
+                       somebody pulled it from the front page on purpose.
+      unlinked, same   A location announced under this slug before the
+      slug             restaurant existed is linked and opened.
+      none             One is made from the restaurant's own name, address and
+                       tagline, last in the list.
+
+    As the system role: the app role may only read this table.
+    """
+    linked = session.execute(
+        select(Location).where(Location.restaurant_id == restaurant_id).limit(1)
+    ).scalar_one_or_none()
+    if linked is not None:
+        if linked.status == LocationStatus.COMING_SOON.value:
+            linked.status = LocationStatus.OPEN.value
+            return "opened"
+        return "unchanged"
+
+    announced = session.execute(
+        select(Location).where(Location.slug == listing["slug"], Location.restaurant_id.is_(None))
+    ).scalar_one_or_none()
+    if announced is not None:
+        announced.restaurant_id = restaurant_id
+        if announced.status != LocationStatus.HIDDEN.value:
+            announced.status = LocationStatus.OPEN.value
+        return "linked"
+
+    # Location slugs are unique on their own, so a slug taken by another
+    # restaurant's location falls back to one that cannot be.
+    slug = listing["slug"]
+    if session.execute(select(Location.id).where(Location.slug == slug)).first():
+        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+    last = session.execute(text("SELECT COALESCE(max(sort_order), 0) FROM locations")).scalar_one()
+    session.add(Location(
+        slug=slug, name=listing["name"], city=listing["city"], region=listing["region"],
+        address_line=listing["address_line"], blurb=listing["blurb"],
+        status=LocationStatus.OPEN.value, restaurant_id=restaurant_id, sort_order=last + 1,
+    ))
+    return "created"
 
 
 @router.post("/restaurants/{restaurant_id}/suspend", response_model=dict)

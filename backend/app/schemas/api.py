@@ -648,6 +648,23 @@ class CreateOwnerOut(BaseModel):
     email_configured: bool = False
 
 
+class RestaurantLoginOut(BaseModel):
+    """One staff login on a restaurant, as the super admin sees it.
+
+    Never a password: only whether the person has replaced the temporary one,
+    which is what tells the admin whether a handed-over code was ever used.
+    """
+    user_id: UUID
+    email: str
+    full_name: str | None
+    role: str
+    # INVITED, ACTIVE or REVOKED.
+    status: str
+    # True once the temporary password has been replaced at first sign-in.
+    signed_in: bool
+    invited_at: datetime | None
+
+
 class UpdateRestaurantIn(BaseModel):
     """Every field optional: absent means "leave alone", which is what lets a
     caller clear the tagline by sending null without also blanking the rest.

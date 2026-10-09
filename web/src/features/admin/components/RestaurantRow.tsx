@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Spinner, StatusPill } from "@/components/common/Feedback";
 import { Icon } from "@/components/common/icons";
 import { RestaurantEditForm } from "./RestaurantEditForm";
+import { RestaurantLogins } from "./RestaurantLogins";
 import type { Restaurant, RestaurantPatch, StripeSync } from "../adminApi";
 import { storefrontUrl } from "@/utils/storefront";
 
@@ -24,6 +25,8 @@ export type RowActions = {
   onOnboard: () => void;
   onRefreshStripe: () => void;
   onOwner: () => void;
+  onToggleLogins: () => void;
+  onResetLogin: (email: string) => void;
 };
 
 /**
@@ -39,12 +42,14 @@ export function RestaurantRow({
   restaurant: r,
   busy,
   editing,
+  loginsOpen,
   stripeStatus,
   actions,
 }: {
   restaurant: Restaurant;
   busy: boolean;
   editing: boolean;
+  loginsOpen: boolean;
   stripeStatus: StripeSync | undefined;
   actions: RowActions;
 }) {
@@ -168,6 +173,14 @@ export function RestaurantRow({
               <button type="button" className={action} onClick={actions.onOwner}>
                 Owner login
               </button>
+              <button
+                type="button"
+                className={action}
+                aria-expanded={loginsOpen}
+                onClick={actions.onToggleLogins}
+              >
+                {loginsOpen ? "Hide logins" : "Logins"}
+              </button>
               <Link className={action} to={`/admin/restaurants/${r.id}/orders`}>
                 Orders
               </Link>
@@ -210,6 +223,10 @@ export function RestaurantRow({
             </button>
           </div>
         </div>
+      )}
+
+      {loginsOpen && !deleted && (
+        <RestaurantLogins restaurant={r} busy={busy} onReset={actions.onResetLogin} />
       )}
 
       {editing && (

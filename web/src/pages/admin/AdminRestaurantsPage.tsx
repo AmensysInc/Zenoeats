@@ -41,6 +41,7 @@ export function AdminRestaurantsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [ownerFor, setOwnerFor] = useState<Restaurant | null>(null);
+  const [loginsFor, setLoginsFor] = useState<string | null>(null);
   const [issued, setIssued] = useState<{
     email: string;
     password: string | null;
@@ -83,6 +84,24 @@ export function AdminRestaurantsPage() {
       return undefined;
     } finally {
       setBusyId(null);
+    }
+  }
+
+  /** A new temporary password for one of a restaurant's logins, shown once
+   *  in the same panel as a newly created one. */
+  async function resetLogin(restaurant: Restaurant, email: string) {
+    const res = await run(restaurant.id, () => resetOwner({ id: restaurant.id, email }).unwrap());
+    if (res) {
+      setIssued({
+        email: res.email,
+        password: res.temporary_password,
+        status: res.status,
+        emailConfigured: res.email_configured,
+        emailed: true,
+        restaurant,
+      });
+      setOwnerFor(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
@@ -198,22 +217,7 @@ export function AdminRestaurantsPage() {
                 setOwnerFor(null);
               }
             }}
-            onReset={async (email) => {
-              const res = await run(ownerFor.id, () =>
-                resetOwner({ id: ownerFor.id, email }).unwrap(),
-              );
-              if (res) {
-                setIssued({
-                  email: res.email,
-                  password: res.temporary_password,
-                  status: res.status,
-                  emailConfigured: res.email_configured,
-                  emailed: true,
-                  restaurant: ownerFor,
-                });
-                setOwnerFor(null);
-              }
-            }}
+            onReset={(email) => void resetLogin(ownerFor, email)}
           />
         )}
 
@@ -229,6 +233,7 @@ export function AdminRestaurantsPage() {
                   restaurant={r}
                   busy={busyId === r.id}
                   editing={editing === r.id}
+                  loginsOpen={loginsFor === r.id}
                   stripeStatus={stripeStatus[r.id]}
                   actions={{
                     onEdit: () => setEditing(r.id),
@@ -258,6 +263,8 @@ export function AdminRestaurantsPage() {
                       if (res) setStripeStatus((prev) => ({ ...prev, [r.id]: res }));
                     },
                     onOwner: () => setOwnerFor(r),
+                    onToggleLogins: () => setLoginsFor((open) => (open === r.id ? null : r.id)),
+                    onResetLogin: (email) => void resetLogin(r, email),
                   }}
                 />
               ))}

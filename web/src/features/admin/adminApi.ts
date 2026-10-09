@@ -84,6 +84,19 @@ export type IssuedCredential = {
   email_configured: boolean;
 };
 
+/** A staff login on a restaurant. Never carries a password. */
+export type RestaurantLogin = {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  /** ADMIN is the owner; the rest are staff the owner invited. */
+  role: string;
+  status: "INVITED" | "ACTIVE" | "REVOKED";
+  /** False while the temporary password has not been replaced. */
+  signed_in: boolean;
+  invited_at: string | null;
+};
+
 export type StripeSync = {
   stripe_account_id: string;
   charges_enabled: boolean;
@@ -235,6 +248,7 @@ export const adminApi = api.injectEndpoints({
         method: "POST",
         body,
       }),
+      invalidatesTags: (_r, _e, arg) => [{ type: "RestaurantLogin", id: arg.id }],
     }),
 
     resetOwnerPassword: build.mutation<IssuedCredential, { id: string; email: string }>({
@@ -243,6 +257,12 @@ export const adminApi = api.injectEndpoints({
         method: "POST",
         body: { email },
       }),
+      invalidatesTags: (_r, _e, arg) => [{ type: "RestaurantLogin", id: arg.id }],
+    }),
+
+    restaurantLogins: build.query<RestaurantLogin[], string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/logins` }),
+      providesTags: (_r, _e, id) => [{ type: "RestaurantLogin", id }],
     }),
 
     platformReports: build.query<Report[], void>({
@@ -278,6 +298,7 @@ export const {
   useRefreshStripeStatusMutation,
   useCreateOwnerMutation,
   useResetOwnerPasswordMutation,
+  useRestaurantLoginsQuery,
   usePlatformReportsQuery,
   useRestaurantOrdersQuery,
 } = adminApi;

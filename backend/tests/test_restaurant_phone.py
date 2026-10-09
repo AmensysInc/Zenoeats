@@ -2,8 +2,9 @@
 
 The refunds policy sends a customer with a problem to the restaurant first,
 so there has to be a way to reach it. The restaurant sets the number in
-Settings, customers see it on their order page and in every order email, and
-a restaurant cannot be activated without one.
+Settings, and customers see it on their order page and in every order email.
+It is not required to go live: a restaurant is put live to build and test its
+storefront before everything is filled in.
 """
 
 import uuid
@@ -60,18 +61,19 @@ def test_the_restaurant_sets_it_and_customers_see_it(shop):
 
 
 @integration
-def test_a_restaurant_without_one_cannot_go_live(team, admin_user):
-    """Activation says so by name, among its other reasons."""
+def test_a_restaurant_without_one_can_still_go_live(team, admin_user):
     from app.api.v1.admin import activate_restaurant
+    from app.db.session import system_session
+    from sqlalchemy import text
 
-    with pytest.raises(errors.ApiError) as refused:
-        activate_restaurant(team.id, admin=admin_user)
-    assert "phone number" in refused.value.detail["message"]
-
-    team.owner.patch(URL, json={"phone": "+1 214 555 0100"})
-    with pytest.raises(errors.ApiError) as still:
-        activate_restaurant(team.id, admin=admin_user)  # no Stripe account yet
-    assert "phone number" not in still.value.detail["message"]
+    try:
+        assert activate_restaurant(team.id, admin=admin_user)["status"] == "ACTIVE"
+    finally:
+        # The team fixture deletes the restaurant, which the location's
+        # RESTRICT key would refuse.
+        with system_session() as session:
+            session.execute(text("DELETE FROM locations WHERE restaurant_id = :r"),
+                            {"r": team.id})
 
 
 def test_every_order_email_says_how_to_reach_the_restaurant():

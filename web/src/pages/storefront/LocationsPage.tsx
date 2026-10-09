@@ -201,9 +201,10 @@ export function LocationsPage() {
                       New stores
                     </h2>
                     <p className="mt-1 max-w-[52ch] text-caption text-[rgb(var(--ze-item-description))]">
-                      {soon.length} more {soon.length === 1 ? "store" : "stores"} are on
-                      the way. None of them is taking orders yet — {placeOf(open[0]!)} is
-                      the only one open today.
+                      {soon.length} more {soon.length === 1 ? "store" : "stores"}{" "}
+                      {soon.length === 1 ? "is" : "are"} on the way.{" "}
+                      None of them is taking orders yet
+                      {open.length === 1 ? ` — ${placeOf(open[0]!)} is the only one open today.` : "."}
                     </p>
                   </div>
                   <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-warningSoft px-[11px] py-[6px] text-[11px] font-[650] uppercase tracking-[1px] text-[rgb(var(--ze-warning))]">
@@ -270,6 +271,9 @@ function CountStrip({ open, soon }: { open: number; soon: number }) {
  * real address.
  */
 function placeOf(location: PlatformLocation): string {
+  // A location made on activation carries the restaurant's address, which
+  // may not be filled in yet. Its name is the next best thing to say.
+  if (!location.city.trim()) return location.name;
   const region = location.region?.trim();
   if (!region || region.toLowerCase() === location.city.trim().toLowerCase()) {
     return location.city;
