@@ -11,7 +11,7 @@ import uuid
 import pytest
 from sqlalchemy import inspect, select, text
 
-from app.api.v1.admin import _PURGE_ORDER, purge_restaurant
+from app.api.v1.admin import _PURGE_DETACH, _PURGE_ORDER, purge_restaurant
 from app.core import errors
 from app.db.session import app_engine, system_session, tenant_session
 from app.db.base import utcnow
@@ -64,6 +64,12 @@ def test_the_purge_list_covers_every_table_that_carries_a_restaurant():
     argument. That makes it something a new table can be left out of, and a
     table left out of it leaves rows behind pointing at a restaurant that no
     longer exists.
+
+    A table may be handled either way. Most carry rows the tenant owns and are
+    deleted (_PURGE_ORDER); `locations` is platform data that merely points at
+    a tenant, so it is detached instead (_PURGE_DETACH) -- removing one
+    restaurant must not take a city off the front page. What this gate refuses
+    is a table in neither list, because that is the one leaving orphans.
     """
     columns = _schema()
     tenant_tables = {
@@ -72,8 +78,11 @@ def test_the_purge_list_covers_every_table_that_carries_a_restaurant():
         if any(c["name"] == "restaurant_id" for c in columns.get_columns(table))
     }
 
-    missing = tenant_tables - set(_PURGE_ORDER)
+    missing = tenant_tables - set(_PURGE_ORDER) - set(_PURGE_DETACH)
     assert not missing, f"tenant tables the purge would leave behind: {sorted(missing)}"
+
+    both = set(_PURGE_ORDER) & set(_PURGE_DETACH)
+    assert not both, f"tables both deleted and detached: {sorted(both)}"
 
 
 def test_the_purge_list_names_only_real_tables():

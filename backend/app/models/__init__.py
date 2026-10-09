@@ -50,8 +50,14 @@ from app.models.tenant import (
     RestaurantStatus,
     TaxMode,
 )
+from app.models.platform import (
+    Location,
+    LocationStatus,
+)
 
 __all__ = [
+    "Location",
+    "LocationStatus",
     "StorefrontBanner", "StorefrontCollection", "StorefrontCollectionItem",
     "StorefrontShortcut", "StorefrontShortcutItem",
     "DeliveryZone",

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import { usePortalQuery } from "@/features/storefront/storefrontApi";
 import { CustomerFooter } from "@/features/storefront/components/CustomerFooter";
 import { attachFont, themeVariables } from "@/features/storefront/theme";
@@ -14,7 +14,7 @@ import { Outlet } from "react-router-dom";
  * palette. Removed on the way out, so a restaurant portal reached by client
  * navigation is never left forest green.
  */
-export function CustomerSurface() {
+export function CustomerSurface({ children }: { children?: ReactNode }) {
   const { data } = usePortalQuery();
   const theme = data?.storefront?.theme ?? null;
   // Kept for the sign-in pages, which are served without the app and would
@@ -43,7 +43,11 @@ export function CustomerSurface() {
 
   return (
     <>
-      <Outlet />
+      {/* `children` for the one route that cannot be an Outlet: "/" decides
+          between a storefront and the platform picker, so it renders the
+          storefront into this layout itself. Every other customer route is
+          nested under it as usual. */}
+      {children ?? <Outlet />}
       <CustomerFooter />
     </>
   );

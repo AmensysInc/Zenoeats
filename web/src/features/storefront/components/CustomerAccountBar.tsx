@@ -2,12 +2,13 @@ import { clearCheckoutDrafts } from "../checkoutDraft";
 import { useState } from "react";
 import {
   useCustomerSessionQuery,
+  useCustomerLogoutMutation,
   useEndGuestSessionMutation,
 } from "@/features/storefront/storefrontApi";
 import { ErrorNote } from "@/components/common/Feedback";
 import { errorMessage } from "@/services/apiClient";
-import { getClerk } from "@/services/clerk";
 import { GUEST_WARNING, GuestSessionConfirm } from "./GuestSession";
+import { endSession } from "../session";
 
 /**
  * Who is ordering, and a way to stop being them.
@@ -24,6 +25,7 @@ import { GUEST_WARNING, GuestSessionConfirm } from "./GuestSession";
 export function CustomerAccountBar() {
   const { data: session } = useCustomerSessionQuery();
   const [endGuest] = useEndGuestSessionMutation();
+  const [logout] = useCustomerLogoutMutation();
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,10 @@ export function CustomerAccountBar() {
     setBusy(true);
     setError(null);
     try {
-      if (session?.is_guest) await endGuest().unwrap();
-      else await getClerk().then(c => c.signOut());
+      await endSession(session, {
+        endGuest: () => endGuest().unwrap(),
+        logout: () => logout().unwrap(),
+      });
       clearCheckoutDrafts();
       window.location.assign("/");
     } catch (e) {

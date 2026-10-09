@@ -1,16 +1,22 @@
 import { useState } from "react";
 import { ErrorNote, Spinner } from "@/components/common/Feedback";
-import { getClerk, clerkErrorMessage } from "@/services/clerk";
 import { errorMessage } from "@/services/apiClient";
-import { useSyncProfileEmailMutation } from "../storefrontApi";
+import { useChangeEmailMutation } from "../storefrontApi";
 import { moveCheckoutDraft } from "../checkoutDraft";
 import type { CustomerSession } from "@/types";
 
-type ClerkUser = NonNullable<Awaited<ReturnType<typeof getClerk>>["user"]>;
-type Email = Awaited<ReturnType<ClerkUser["createEmailAddress"]>>;
-
-/** Clerk owns verification; the API independently reads the verified primary
- * address before updating its mirror. A failed sync can be retried safely. */
+/**
+ * Change the address on this account.
+ *
+ * This was a four-step dance through Clerk: create an address, send a code,
+ * attempt verification, promote it to primary, then sync our mirror of it.
+ * With the credential held here, it is one request -- the new address and the
+ * current password, which is what proves the person asking owns the account
+ * rather than merely found it signed in.
+ *
+ * The API enforces the rest: one account per address, and the account must
+ * still be active.
+ */
 export function ChangeEmail({
   session,
   slug,
@@ -26,110 +32,102 @@ export function ChangeEmail({
 }) {
   const setOpen = onOpenChange;
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [pending, setPending] = useState<Email | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [sync] = useSyncProfileEmailMutation();
-  const [sent, setSent] = useState(false);
-
-  async function confirm(address: Email) {
-    const clerk = await getClerk();
-    if (!clerk.user) throw new Error("Sign in again to change your email.");
-    await clerk.user.update({ primaryEmailAddressId: address.id });
-    const updated = await sync().unwrap();
-    moveCheckoutDraft(slug, session, updated);
-    setOpen(false);
-    setPending(null);
-    setCode("");
-    setEmail("");
-    setSaved(true);
-  }
+  const [changeEmail, { isLoading: busy }] = useChangeEmailMutation();
 
   async function submit() {
     if (busy) return;
-    setBusy(true);
     setError(null);
+
+    const value = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value === session.email.toLowerCase()) {
+      setError("Enter a different, valid email address.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your current password.");
+      return;
+    }
+
     try {
-      const clerk = await getClerk();
-      if (!clerk.user) throw new Error("Sign in again to change your email.");
-      if (pending) {
-        const verified = pending.verification.status === "verified"
-          ? pending : await pending.attemptVerification({ code: code.trim() });
-        setPending(verified);
-        if (verified.verification.status !== "verified") throw new Error("Enter the verification code from your email.");
-        await confirm(verified);
-      } else {
-        const value = email.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || value === session.email.toLowerCase())
-          throw new Error("Enter a different, valid email address.");
-        const address = clerk.user.emailAddresses.find(e => e.emailAddress.toLowerCase() === value)
-          ?? await clerk.user.createEmailAddress({ email: value });
-        // Remember the resource even if sending a code fails, so retry does
-        // not try to create the same address again.
-        setPending(address);
-        if (address.verification.status === "verified") await confirm(address);
-        else {
-          await address.prepareVerification({ strategy: "email_code" });
-          setSent(true);
-        }
-      }
+      const updated = await changeEmail({ email: value, password }).unwrap();
+      // The checkout draft is keyed by who is ordering, so it moves with them
+      // rather than being stranded under the old address.
+      moveCheckoutDraft(slug, session, updated);
+      setOpen(false);
+      setEmail("");
+      setPassword("");
+      setSaved(true);
     } catch (e) {
-      setError(clerkErrorMessage(e) || errorMessage(e));
-    } finally { setBusy(false); }
+      setError(errorMessage(e));
+    }
   }
 
-  async function resend() {
-    if (!pending || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await pending.prepareVerification({ strategy: "email_code" });
-      setSent(true);
-    } catch (e) { setError(clerkErrorMessage(e) || errorMessage(e)); }
-    finally { setBusy(false); }
+  if (!open) {
+    return saved ? (
+      <p className="mt-2 text-caption text-success" role="status">
+        Your email has been changed.
+      </p>
+    ) : null;
   }
 
-  if (session.is_guest) return null;
-  // Nothing of its own until it is opened: the link that opens it is beside
-  // the email field, where the address it changes is.
-  if (!open && !saved) return null;
   return (
-    <div className="mt-6 border-t border-hairline pt-6">
-      {saved && <p className="note-success mb-4" role="status">Your verified email is saved.</p>}
-      {!open ? null : (
-        <form onSubmit={e => { e.preventDefault(); void submit(); }} className="space-y-4">
-          <h3 className="font-semibold">Change email address</h3>
-          <p className="text-sm text-muted">Verify the new address before it becomes your sign-in and receipt email.</p>
-          {pending ? (
-            <>
-              <p className="text-sm" role="status">
-                {pending.verification.status === "verified" ? "Verified. Save to finish updating your profile."
-                  : sent ? "Enter the code sent to " + pending.emailAddress + "." : "Request a code to verify " + pending.emailAddress + "."}
-              </p>
-              {pending.verification.status !== "verified" && <label className="block label">Verification code
-                <input autoFocus className="field mt-2" autoComplete="one-time-code" inputMode="numeric"
-                  value={code} onChange={e => setCode(e.target.value)} disabled={busy} required maxLength={12} />
-              </label>}
-            </>
-          ) : <label className="block label">New email address
-            <input autoFocus className="field mt-2" type="email" autoComplete="email" required maxLength={320}
-              value={email} onChange={e => setEmail(e.target.value)} disabled={busy} />
-          </label>}
-          <ErrorNote message={error} />
-          <div className="flex flex-wrap gap-3">
-            <button className="btn-primary" type="submit" disabled={busy}>
-              {busy && <Spinner />}{pending ? "Verify and save" : "Send verification code"}
-            </button>
-            {pending && pending.verification.status !== "verified" &&
-              <button type="button" className="btn-quiet" disabled={busy} onClick={() => void resend()}>Resend code</button>}
-            <button type="button" className="btn-quiet" disabled={busy} onClick={() => {
-              setOpen(false); setPending(null); setCode(""); setSent(false); setError(null);
-            }}>Cancel</button>
-          </div>
-        </form>
-      )}
-    </div>
+    <form
+      className="mt-3 rounded-banner border border-hairline bg-surface p-4 sm:p-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <p className="text-caption text-muted">
+        Receipts, order links and password resets all go to this address, so we
+        ask for your password before moving it.
+      </p>
+
+      <label className="mt-3 block">
+        <span className="label">New email</span>
+        <input
+          className="field mt-[7px]"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+        />
+      </label>
+
+      <label className="mt-3 block">
+        <span className="label">Your current password</span>
+        <input
+          className="field mt-[7px]"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
+      </label>
+
+      <ErrorNote message={error} className="mt-3" />
+
+      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+        <button type="submit" className="btn-primary min-h-[44px] px-5" disabled={busy}>
+          {busy ? <Spinner /> : "Save new email"}
+        </button>
+        <button
+          type="button"
+          className="btn-quiet min-h-[44px] px-5"
+          disabled={busy}
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }

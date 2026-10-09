@@ -22,15 +22,22 @@ export function CustomerHeader({
   restaurant,
   links,
   showOrder = false,
+  flush = false,
 }: {
-  restaurant: Pick<Portal, "name" | "delivery_offered" | "is_orderable" | "accepting_orders" | "storefront" | "brand">;
+  restaurant: Pick<Portal, "name" | "delivery_offered" | "is_orderable" | "accepting_orders" | "storefront" | "brand" | "platform_url">;
   /** Jump links into the page. Hidden on a phone, where the category row
    *  below does the same job. */
   links?: ReactNode;
   showOrder?: boolean;
+  /** The next thing on the page is a full-width block of its own -- the menu
+   *  banner -- so the header's bottom rule is dropped. The two meet at the
+   *  same pixel, and a line between them reads as a gap rather than as the
+   *  edge of anything. Every other page keeps it: there the header sits
+   *  above page colour, and the rule is what separates them. */
+  flush?: boolean;
 }) {
   return (
-    <header className="border-b border-[#E6E5DB] bg-cream">
+    <header className={`bg-cream ${flush ? "" : "border-b border-[#E6E5DB]"}`}>
       <div className="mx-auto flex min-h-[72px] max-w-[1336px] items-center gap-[15px] px-[19px] sm:min-h-[78px] sm:gap-[25px] sm:px-7 lg:min-h-[88px] lg:gap-[30px] xl:gap-[50px] xl:px-10">
         <Wordmark name={restaurant.name} brand={brandFrom(restaurant.brand)} />
         {links && (
@@ -41,8 +48,24 @@ export function CustomerHeader({
         <div className="ml-auto flex min-w-0 items-center gap-5">
           {showOrder ? (
             <>
-              <span className="hidden items-center gap-[7px] text-caption text-[#637365] xl:flex">
+              {/* The way back out. A storefront reached from the platform root
+                  had no route back to it, so the only way to look at another
+                  location was to edit the address bar. A plain anchor, not a
+                  Link: the root is a different origin to this subdomain. */}
+              {/* Shown at every width. It was `hidden sm:flex`, which left a
+                  phone -- the device a QR code is scanned on -- with no route
+                  back to the location picker at all. The label drops below
+                  sm so the row still fits beside the cart button; the icon
+                  and the accessible name stay. */}
+              <a
+                href={restaurant.platform_url}
+                aria-label="All locations"
+                className="flex min-h-[44px] items-center gap-[7px] text-caption text-[#637365] transition-colors duration-color hover:text-brick"
+              >
                 <Icon name="store" className="h-[17px] w-[17px]" />
+                <span className="hidden sm:inline">All locations</span>
+              </a>
+              <span className="hidden items-center gap-[7px] text-caption text-[#637365] xl:flex">
                 {restaurant.delivery_offered ? "Pick-up & delivery" : "Pick-up"}
               </span>
               <OrderButton orderable={restaurant.is_orderable && restaurant.accepting_orders} />

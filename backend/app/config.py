@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     # meaningful. Empty means nobody can sign in to the super admin portal.
     ADMIN_USERS: str = ""
     # Signs platform-admin, restaurant staff and guest-customer session
-    # cookies. Rotating it signs every operator out, and drops every guest
-    # back to an anonymous browser. Signed-in customer sessions are Clerk's.
+    # cookies. Rotating it signs out every operator AND every customer, and
+    # drops every guest back to an anonymous browser.
     SESSION_SECRET: str = ""
     ADMIN_SESSION_TTL_MINUTES: int = 480
     # Restaurant staff sessions. Longer than an admin session because it has
@@ -88,6 +88,27 @@ class Settings(BaseSettings):
     # loses the pickup PIN and the tracking page with it. Nothing is
     # authenticated here, so it grants no more than the orders it created.
     GUEST_SESSION_TTL_MINUTES: int = 43200  # 30 days
+    # Signed-in customers (core/customer_auth.py). As long as a guest session
+    # on purpose: someone who made an account should not be signed out more
+    # often than someone who did not bother, and this cookie can be recovered
+    # by signing in again, which a guest's cannot.
+    CUSTOMER_SESSION_TTL_MINUTES: int = 43200  # 30 days
+
+    # Sign in with Google. Optional: email and password and guest ordering all
+    # work without it, and the button is simply not offered when it is unset.
+    #
+    # From the Google Cloud console, under APIs & Services > Credentials, as an
+    # "OAuth client ID" of type "Web application". The authorised redirect URI
+    # must be exactly the platform root's callback:
+    #
+    #   https://<ROOT_DOMAIN>/api/v1/customer/google/callback
+    #
+    # One URI, on the root domain, not one per restaurant. Google matches
+    # redirect URIs exactly and a platform with wildcard subdomains cannot
+    # register them all; core/google_oauth.py carries the storefront a
+    # customer came from through the `state` instead.
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    GOOGLE_OAUTH_CLIENT_SECRET: str = ""
     # How long an abandoned guest row is kept -- one that was created by
     # "continue as guest" and never reached an order. Comfortably longer than
     # the session above, so a guest who comes back to a live cookie still
@@ -155,6 +176,12 @@ class Settings(BaseSettings):
     # and {root_domain} are filled in. Development behind nginx:
     # https://{slug}.{root_domain}:8443
     STOREFRONT_URL_TEMPLATE: str = "https://{slug}.{root_domain}"
+    # The platform root -- the location picker, and "all locations" from a
+    # storefront header. A sibling of the template above rather than
+    # "https://" + ROOT_DOMAIN, because the scheme and port are deployment
+    # facts, not constants: development serves the edge on :8443, so a URL
+    # built without the port points at :443 and goes nowhere.
+    PLATFORM_URL_TEMPLATE: str = "https://{root_domain}"
 
     # --- Geocoding (delivery) ---------------------------------------------
     # Turning a customer's address into a distance from the restaurant, to
@@ -164,7 +191,23 @@ class Settings(BaseSettings):
     # Google's terms allow caching a result for about 30 days rather than
     # keeping it, so coordinates live in Redis with that TTL and only the
     # derived distance and fee are kept on an order.
+    # "google" or "nominatim".
+    #
+    # nominatim is OpenStreetMap's own geocoder: no key, no account, no card.
+    # Its usage policy is the cost instead -- roughly one request a second,
+    # and a User-Agent that identifies this deployment and how to reach whoever
+    # runs it. See services/geocoding.py, which enforces both.
+    #
+    # It is the right choice for a demo, a single location, or anyone who will
+    # not attach a card to a Google project. It is a worse geocoder: weaker on
+    # messy input, and no autocomplete at all, so checkout offers a plain
+    # address field rather than suggestions.
     GEOCODING_PROVIDER: str = "google"
+    # Who to contact about this deployment's geocoding traffic. Nominatim's
+    # policy asks for it and blocks traffic that identifies nobody, so with
+    # GEOCODING_PROVIDER=nominatim this is required rather than decorative.
+    # Falls back to EMAIL_FROM, which is already an address someone reads.
+    NOMINATIM_CONTACT: str = ""
     GOOGLE_MAPS_API_KEY: str = ""
     # Seconds. Google permits 30 days; shorter is always safe.
     GEOCODE_CACHE_TTL_SECONDS: int = 30 * 24 * 60 * 60

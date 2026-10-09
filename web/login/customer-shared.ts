@@ -1,5 +1,5 @@
 import { request } from "@/services/apiClient";
-import { clerkErrorCode, clerkErrorMessage, getClerk } from "@/services/clerk";
+import { clerkConfigured, clerkErrorCode, clerkErrorMessage, getClerk } from "@/services/clerk";
 import {
   rememberBrand,
   rememberedBrand,
@@ -50,13 +50,55 @@ export function showMessage(box: HTMLElement, message: string | null): void {
 }
 
 /** Load Clerk, or say on the page why sign-in cannot work right now. */
+/**
+ * Clerk, or null with the reason already on the page.
+ *
+ * The two failures are not the same thing and must not read the same way.
+ *
+ *   Not configured   This deployment has no publishable key. Nobody can sign
+ *                    in or create an account here, and no amount of reloading
+ *                    changes that -- so the page should stop offering it and
+ *                    say what still works. The deployment detail (which
+ *                    variable to set) goes to the console: it is an
+ *                    instruction to whoever runs the site, and a customer who
+ *                    reads "set CLERK_PUBLISHABLE_KEY on the web container"
+ *                    has been handed someone else's bug report.
+ *   Unreachable      Configured, but the script did not load -- offline, an
+ *                    extension, a bad moment. Reloading genuinely might work,
+ *                    so say so.
+ *
+ * Callers tell them apart with `clerkConfigured()` and lead with guest
+ * ordering in the first case.
+ */
+/**
+ * The shortest password the API will accept.
+ *
+ * Mirrors MIN_PASSWORD_LENGTH in backend/app/core/customer_auth.py, which is
+ * the authority -- this copy exists only so the form can say the rule before
+ * someone submits and gets refused. test_customer_accounts.py asserts the two
+ * agree, because a frontend that says "at least 10" against a backend that
+ * wants 12 is a form nobody can submit and no error that explains why.
+ *
+ * It was three separate literals before that test existed: one per login page.
+ */
+export const MIN_PASSWORD_LENGTH = 10;
+
+export { clerkConfigured };
+
 export async function loadClerk(errorBox: HTMLElement): Promise<ClerkInstance | null> {
+  if (!clerkConfigured()) {
+    // eslint-disable-next-line no-console -- for whoever deployed this, not the customer.
+    console.warn(
+      "Clerk is not configured: set CLERK_PUBLISHABLE_KEY on the web container " +
+        "(VITE_CLERK_PUBLISHABLE_KEY in development). Accounts and social " +
+        "sign-in are unavailable until it is set; guest ordering still works.",
+    );
+    return null;
+  }
   try {
     return await getClerk();
-  } catch (e) {
-    showMessage(errorBox, e instanceof Error && e.message.includes("VITE_CLERK")
-      ? e.message
-      : "Couldn't reach the sign-in service. Check your connection and reload.");
+  } catch {
+    showMessage(errorBox, "Couldn't reach the sign-in service. Check your connection and reload.");
     return null;
   }
 }
@@ -70,10 +112,6 @@ function userSettings(clerk: ClerkInstance) {
   } catch {
     return null;
   }
-}
-
-export function minPasswordLength(clerk: ClerkInstance): number {
-  return userSettings(clerk)?.passwordSettings?.min_length || 8;
 }
 
 /** Whether the instance collects first and last names at sign-up. Sending
@@ -257,9 +295,9 @@ export async function paintRestaurantName(
 
 /** The restaurant this address belongs to, read once however many parts of
  *  the page want it. */
-let pending: Promise<{ name: string; brand?: unknown }> | null = null;
+let pending: Promise<{ name: string; brand?: unknown; google_sign_in?: boolean }> | null = null;
 
-function restaurant(): Promise<{ name: string; brand?: unknown }> {
+function restaurant(): Promise<{ name: string; brand?: unknown; google_sign_in?: boolean }> {
   pending ??= request<{ name: string; brand?: unknown }>("/portal");
   return pending;
 }
@@ -368,4 +406,39 @@ export function wirePasswordPair(
  *  a pasted "123 456" still works. */
 export function readCode(input: HTMLInputElement): string {
   return input.value.replace(/\D/g, "").slice(0, 6);
+}
+
+/**
+ * Offer "Continue with Google", where it is configured.
+ *
+ * A plain link, not a fetch: the whole flow is redirects, and the API's
+ * /customer/google/start answers with a 302 to Google. Carrying `next` means
+ * the customer lands back where they pressed it rather than on the menu.
+ *
+ * Drawn only when the API says there is an OAuth client behind it. A button
+ * that 503s is worse than no button.
+ */
+export async function wireGoogleButton(section: HTMLElement, container: HTMLElement): Promise<void> {
+  let offered = false;
+  try {
+    offered = Boolean((await restaurant()).google_sign_in);
+  } catch {
+    return; // no portal, no button; the password form is unaffected
+  }
+  if (!offered) return;
+
+  const link = document.createElement("a");
+  link.className =
+    "btn-quiet flex w-full items-center justify-center gap-2.5 min-h-[46px]";
+  link.href = `/api/v1/customer/google/start?next=${encodeURIComponent(nextPath())}`;
+  link.innerHTML =
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18">' +
+    '<path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>' +
+    '<path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>' +
+    '<path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/>' +
+    '<path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>' +
+    "</svg><span>Continue with Google</span>";
+
+  container.replaceChildren(link);
+  section.hidden = false;
 }

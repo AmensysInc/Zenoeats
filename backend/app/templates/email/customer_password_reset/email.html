@@ -1,0 +1,28 @@
+{#-
+  Sent when someone asks to reset a customer password.
+
+  reset_url carries a signed token that expires in an hour and stops working
+  the moment any password change lands on the account -- including this one.
+  The link is the whole credential, so nothing else about the account is
+  repeated here: not the name, not what was ordered, not which restaurant.
+
+  Sent only to an address that has an account. Someone who did not ask for
+  this gets the last line, which is why it names no action they must take.
+-#}
+{% extends "_layout.html" %}
+{% import "_components.html" as ui %}
+
+{% block heading %}Reset your password{% endblock %}
+
+{% block body %}
+<p>Hi{% if name %} {{ name }}{% endif %},</p>
+<p>Somebody asked to reset the password for your Zenoeats account. Choose a new one here:</p>
+{{ ui.button(reset_url, "Choose a new password") }}
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">
+  This link works once and expires in {{ expires_in_minutes }} minutes.
+</p>
+<p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">
+  If you didn't ask for this, you can ignore this email — your password has
+  not changed and nobody can use the link without opening it.
+</p>
+{% endblock %}

@@ -73,9 +73,24 @@ def configuration_problems(settings: Settings) -> list[str]:
             "FIELD_ENCRYPTION_KEY is not a valid Fernet key (generate one with: make key)."
         )
 
-    for name in ("CLERK_JWKS_URL", "CLERK_ISSUER", "CLERK_SECRET_KEY"):
-        if not getattr(settings, name):
-            problems.append(f"{name} is not set; no customer can sign in.")
+    # Clerk is optional now and this is no longer "nobody can sign in": the
+    # API holds customer credentials itself (core/customer_auth.py), so email
+    # and password and guest ordering both work with none of these set. What
+    # is lost is the social sign-in Clerk brokers, so say that instead -- a
+    # warning that overstates what is broken gets ignored along with the ones
+    # that do not.
+    #
+    # Reported only when the set is half-filled, which is the configuration
+    # that genuinely fails: a publishable key on the page and no secret behind
+    # it means a Google button that leads nowhere.
+    clerk = {name: bool(getattr(settings, name)) for name in
+             ("CLERK_JWKS_URL", "CLERK_ISSUER", "CLERK_SECRET_KEY")}
+    if any(clerk.values()) and not all(clerk.values()):
+        missing = ", ".join(sorted(n for n, present in clerk.items() if not present))
+        problems.append(
+            f"Clerk is half-configured ({missing} missing); social sign-in will fail. "
+            "Set all three or none -- email, password and guest ordering need none of them."
+        )
 
     for name in ("STRIPE_SECRET_KEY", "STRIPE_CONNECT_WEBHOOK_SECRET"):
         value = getattr(settings, name)

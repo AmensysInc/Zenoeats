@@ -167,6 +167,12 @@ export default {
         "status-reveal": { from: { transform: "translateY(5px)", opacity: ".5" }, to: { transform: "none", opacity: "1" } },
         "hero-enter": { from: { transform: "translateY(10px)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
         pending: { "50%": { opacity: ".35" } },
+        // A dot that is live rather than printed: a ring expanding out
+        // from under it and fading, once every couple of seconds.
+        "pulse-ring": {
+          "0%": { transform: "scale(1)", opacity: ".55" },
+          "70%, 100%": { transform: "scale(2.6)", opacity: "0" },
+        },
       },
       animation: {
         sheet: "rise var(--ze-motion-sheet) var(--ze-ease) both",
@@ -178,6 +184,7 @@ export default {
         reveal: "status-reveal var(--ze-motion-pin) var(--ze-ease) both",
         hero: "hero-enter 520ms var(--ze-ease) both",
         pending: "pending 1.8s ease-in-out infinite",
+        "pulse-ring": "pulse-ring 2.2s var(--ze-ease) infinite",
       },
     },
   },

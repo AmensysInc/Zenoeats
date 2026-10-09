@@ -84,3 +84,50 @@ def extract_slug(host_header: str | None) -> str | None:
     if "." in label or not label or label in RESERVED_SLUGS:
         return None
     return label
+
+
+def platform_url_for(request) -> str:
+    """The platform root, as the browser making this request would reach it.
+
+    Derived from the request rather than from PLATFORM_URL_TEMPLATE, because
+    the template is a second source of truth that silently disagrees with how
+    the API is actually being reached. Development has two front doors --
+    nginx on https://<slug>.zenoeats.local:8443, and the Vite server on
+    http://<slug>.localhost:3000 for anyone without hosts entries -- and a
+    template pinned to one produced an "All locations" link that pointed at
+    the other, failing with ERR_SSL_UNRECOGNIZED_NAME_ALERT.
+
+    The browser has already told us the scheme and port it is using, so the
+    sibling host is the same two with the root domain in place of the
+    restaurant's. nginx forwards both (X-Forwarded-Proto / -Host), and the
+    plain Host header carries the port on the direct path.
+
+    The template still governs anywhere there is no request to read -- an
+    email, a worker -- where a configured absolute URL is the only option.
+    """
+    forwarded = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    _, _, port = forwarded.partition(":")
+    scheme = (
+        request.headers.get("x-forwarded-proto")
+        or getattr(getattr(request, "url", None), "scheme", None)
+        or "https"
+    ).split(",")[0].strip()
+
+    root = settings.ROOT_DOMAIN.strip().lower()
+    return f"{scheme}://{root}:{port}" if port else f"{scheme}://{root}"
+
+
+def storefront_url_for(request, slug: str) -> str:
+    """A restaurant's storefront, as the browser making this request reaches it.
+
+    The sibling of platform_url_for, and broken in the same way before it:
+    the location picker built these from STOREFRONT_URL_TEMPLATE, pinned to
+    https://<slug>.<root>:8443, so every card on the picker served at
+    http://localhost:3000 linked to a host nginx has no certificate for.
+    Clicking Jr's Corner answered ERR_SSL_UNRECOGNIZED_NAME_ALERT.
+
+    Scheme and port come from the request; only the leading label changes.
+    """
+    base = platform_url_for(request)
+    scheme, _, host_and_port = base.partition("://")
+    return f"{scheme}://{slug}.{host_and_port}"

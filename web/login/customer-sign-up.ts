@@ -1,6 +1,6 @@
+import { errorMessage, request } from "@/services/apiClient";
 import {
-  activateAndContinue, clerkErrorMessage, el, legalConsentEnabled, loadClerk, minPasswordLength,
-  namesEnabled,
+  MIN_PASSWORD_LENGTH, activateAndContinue, clerkErrorMessage, el, loadClerk, wireGoogleButton,
   nextPath, paintWordmarks, params, readCode, showMessage, wireSocialButtons, wirePasswordPair,
   withNext,
   type ClerkInstance,
@@ -46,6 +46,67 @@ const resendButton = el<HTMLButtonElement>("resend");
 el<HTMLAnchorElement>("sign-in").href = withNext("/account/sign-in");
 
 void paintWordmarks();
+
+// Offered when the API has an OAuth client; see wireGoogleButton.
+void wireGoogleButton(el("social-section"), el("social-buttons"));
+
+/**
+ * Creating an account, against our own API.
+ *
+ * At module scope and not inside start(), because this must work on a
+ * deployment with no identity provider: the API hashes the password with
+ * Argon2id and mints the session cookie itself
+ * (backend/app/core/customer_auth.py).
+ *
+ * The name and consent fields are always shown now. They used to appear only
+ * if Clerk's instance settings asked for them, which meant the fields this
+ * form actually submits were controlled by a third party's dashboard.
+ */
+el("name-field").hidden = false;
+
+let passwordsValid = false;
+const refresh = () => {
+  submitButton.disabled = !(
+    passwordsValid && emailInput.value.includes("@") && legalInput.checked
+  );
+};
+emailInput.addEventListener("input", refresh);
+legalInput.addEventListener("change", refresh);
+wirePasswordPair(
+  MIN_PASSWORD_LENGTH, passwordInput, confirmInput, el("length-hint"), el("match-hint"),
+  (valid) => {
+    passwordsValid = valid;
+    refresh();
+  },
+);
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showMessage(errorBox, null);
+  submitButton.disabled = true;
+  submitButton.textContent = "Creating account…";
+
+  try {
+    await request("/customer/register", {
+      method: "POST",
+      body: {
+        email: emailInput.value.trim(),
+        password: passwordInput.value,
+        full_name: nameInput.value.trim() || null,
+      },
+    });
+    // Registering signs them in, so the cookie is already set: a full
+    // navigation boots the app holding it.
+    window.location.replace(nextPath());
+    return;
+  } catch (e) {
+    // The API names the problem: an address already in use, a password under
+    // the minimum, a spent rate-limit budget.
+    showMessage(errorBox, errorMessage(e));
+  }
+  submitButton.textContent = "Create account";
+  refresh();
+});
 
 void loadClerk(errorBox).then((clerk) => {
   if (clerk) start(clerk);
@@ -133,53 +194,6 @@ function start(clerk: ClerkInstance): void {
     clerk, "sign-up", el("social-buttons"), el("social-section"), errorBox,
     () => legalInput.checked,
   );
-  const collectNames = namesEnabled(clerk);
-  el("name-field").hidden = !collectNames;
-
-  const wantsLegal = legalConsentEnabled(clerk);
-
-  let passwordsValid = false;
-  const refresh = () => {
-    submitButton.disabled = !(
-      passwordsValid && emailInput.value.includes("@") && legalInput.checked
-    );
-  };
-  emailInput.addEventListener("input", refresh);
-  legalInput.addEventListener("change", refresh);
-  wirePasswordPair(
-    minPasswordLength(clerk), passwordInput, confirmInput, el("length-hint"), el("match-hint"),
-    (valid) => {
-      passwordsValid = valid;
-      refresh();
-    },
-  );
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(errorBox, null);
-    submitButton.disabled = true;
-    submitButton.textContent = "Sending code…";
-
-    try {
-      const created = await signUp().create({
-        emailAddress: emailInput.value.trim(),
-        password: passwordInput.value,
-        ...(collectNames ? splitName(nameInput.value) : {}),
-        // Only where the instance collects it. Sending it to one that does
-        // not is an error, and the checkbox above was still required, so the
-        // agreement stands either way.
-        ...(wantsLegal ? { legalAccepted: true } : {}),
-      });
-      await advance(created);
-    } catch (e) {
-      // Clerk names the problem: a taken address, a breached password, a
-      // failed bot check.
-      showMessage(errorBox, clerkErrorMessage(e));
-    }
-    submitButton.textContent = "Create account";
-    refresh();
-  });
-
   continueForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     showMessage(errorBox, null);

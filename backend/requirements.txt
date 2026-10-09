@@ -9,7 +9,7 @@ python-multipart==0.0.31
 # Menu image uploads: checked, re-encoded to WebP and stripped of metadata
 # before they are stored. Built with WebP support in the published wheels.
 Pillow==12.3.0
-PyJWT[crypto]==2.14.0
+PyJWT[crypto]==2.15.0
 stripe==15.6.1
 celery==5.4.0
 redis==5.2.1

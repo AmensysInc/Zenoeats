@@ -109,10 +109,33 @@ def test_an_image_declaring_too_many_pixels_is_refused_from_its_header(monkeypat
 
 
 def test_a_large_photo_is_shrunk_to_the_longest_edge_keeping_its_shape():
+    edge = images.EDGE_BY_KIND["items"]
     out = images.process(encoded(size=(3200, 1600)))
 
     with Image.open(io.BytesIO(out)) as picture:
-        assert picture.size == (images.MAX_EDGE, images.MAX_EDGE // 2)
+        assert picture.size == (edge, edge // 2)
+
+
+@pytest.mark.parametrize("kind", list(images.ImageKind))
+def test_every_kind_is_stored_at_the_size_it_is_shown_at(kind):
+    """One stored size per image, so it has to be the right one per kind.
+
+    A category circle is 65 pixels across and a banner is the width of the
+    window. Storing both at the same edge meant the circle downloaded a
+    photograph fifteen times larger than it could use -- on the page a QR
+    code opens, on a phone, on restaurant wifi.
+    """
+    edge = images.EDGE_BY_KIND[kind.value]
+    out = images.process(encoded(size=(4000, 4000)), kind)
+
+    with Image.open(io.BytesIO(out)) as picture:
+        assert max(picture.size) == edge, f"{kind.value} stored at the wrong size"
+
+
+def test_a_thumbnail_kind_is_stored_smaller_than_a_hero_kind():
+    """The ordering is the point, and it is what a future edit could break."""
+    by_kind = images.EDGE_BY_KIND
+    assert by_kind["options"] <= by_kind["categories"] < by_kind["items"] < by_kind["banners"]
 
 
 def test_metadata_is_dropped_including_where_the_photo_was_taken():

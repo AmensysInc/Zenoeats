@@ -236,10 +236,13 @@ def test_email_sync_requires_own_verified_clerk_primary(shop, signed_in, monkeyp
         user = db.get(User, me)
         original_email, clerk_id = user.email, user.clerk_user_id
         user.full_name, user.phone, user.address = CONTACT.values()
+    # Unique per run: one address per customer is a database constraint, so a
+    # literal here would collide with the row the previous run left behind.
+    next_email = f"verified-next-{clerk_id}@example.com"
     signed_in(me)
     profile = None if case == "unavailable" else clerk_customers.ClerkProfile(
         clerk_user_id="someone_else" if case == "foreign" else clerk_id,
-        email="verified-next@example.com", email_verified=case != "unverified",
+        email=next_email, email_verified=case != "unverified",
         full_name="Provider name must not overwrite saved contact",
     )
     monkeypatch.setattr(clerk_customers, "fetch_profile", lambda asked: profile if asked == clerk_id else None)
@@ -247,5 +250,5 @@ def test_email_sync_requires_own_verified_clerk_primary(shop, signed_in, monkeyp
     assert response.status_code == status, response.text
     with system_session() as db:
         user = db.get(User, me)
-        assert user.email == ("verified-next@example.com" if case == "verified" else original_email)
+        assert user.email == (next_email if case == "verified" else original_email)
         assert (user.full_name, user.phone, user.address) == tuple(CONTACT.values())

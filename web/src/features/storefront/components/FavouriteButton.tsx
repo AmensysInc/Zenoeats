@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "@/components/common/icons";
+import { signInHref } from "../session";
 import {
   useCustomerSessionQuery,
   useFavouritesQuery,
@@ -24,11 +25,6 @@ export function useFavourites() {
 }
 
 /** Back to this page after signing in, so the heart is one more tap away. */
-function signInHref(): string {
-  const next = window.location.pathname + window.location.search;
-  return `/account/sign-in?next=${encodeURIComponent(next)}`;
-}
-
 export function FavouriteButton({
   itemId,
   name,

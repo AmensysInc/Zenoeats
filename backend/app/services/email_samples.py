@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Callable
 from types import SimpleNamespace
 
+from app.core import customer_auth
 from app.services import (
     account_emails, email_templates, notifications, order_emails, staff_emails,
 )
@@ -108,6 +109,20 @@ def samples() -> dict[str, Callable[[], tuple[str, str, str]]]:
         ),
         "account_closed/deleted_in_clerk": lambda: account_emails.compose(
             "account_closed", name=None, restaurant_name=None,
+        ),
+        "customer_password_reset/link": lambda: account_emails.compose(
+            "customer_password_reset", name="Sam",
+            reset_url=notifications.storefront_url(
+                "spicehouse", "/account/forgot-password?token=example-token"
+            ),
+            expires_in_minutes=customer_auth.RESET_TOKEN_TTL_MINUTES,
+        ),
+        "customer_password_reset/no_name": lambda: account_emails.compose(
+            "customer_password_reset", name=None,
+            reset_url=notifications.storefront_url(
+                "spicehouse", "/account/forgot-password?token=example-token"
+            ),
+            expires_in_minutes=customer_auth.RESET_TOKEN_TTL_MINUTES,
         ),
         "customer_code/verify": lambda: _code("verify"),
         "customer_code/reset": lambda: _code("reset"),

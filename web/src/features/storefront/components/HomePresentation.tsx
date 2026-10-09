@@ -233,10 +233,18 @@ export function CategoryShortcuts({ meals, severalPeriods, categories = {}, shor
   const seen = new Map<string, { order: number; target: string; label: string; photo: string | null }>();
   let combos: { target: string; photo: string | null } | null = null;
 
-  if (shortcuts) {
+  // Hand-picked shortcuts REPLACE the per-category row -- but only when there
+  // are some. `shortcuts` arrives as [] from any restaurant that has never
+  // opened the storefront editor, and an empty array is truthy, so the old
+  // `if (shortcuts)` took the hand-picked path with nothing in it: every
+  // category was skipped and the row rendered as a single lonely "Combos"
+  // chip. Length is the question, not existence.
+  const handPicked = shortcuts && shortcuts.length > 0 ? shortcuts : null;
+
+  if (handPicked) {
     const photos = new Map(meals.flatMap(categoriesOf).flatMap((c) => c.items.map((i) => [i.id, i.image_url] as const)));
-    const targets = shortcutTargets(meals, shortcuts);
-    shortcuts.forEach((s, order) => {
+    const targets = shortcutTargets(meals, handPicked);
+    handPicked.forEach((s, order) => {
       const photo = s.image_url ?? s.item_ids.map((id) => photos.get(id)).find(Boolean) ?? null;
       seen.set(s.id, { order, target: targets.get(s.id)!.target, label: s.label, photo });
     });
@@ -246,7 +254,7 @@ export function CategoryShortcuts({ meals, severalPeriods, categories = {}, shor
     if (meal.combos.length > 0 && !combos) {
       combos = { target: `combos-${meal.id}`, photo: comboPhoto(meal.combos) };
     }
-    if (shortcuts) continue;
+    if (handPicked) continue;
     for (const category of categoriesOf(meal)) {
       if (categories[category.itemTypeId]?.show_in_shortcuts === false) continue;
       const photo = categories[category.itemTypeId]?.image_url ?? category.items.find((i) => i.image_url)?.image_url ?? null;
@@ -267,8 +275,19 @@ export function CategoryShortcuts({ meals, severalPeriods, categories = {}, shor
       aria-label="Menu categories"
       className="no-scrollbar mt-4 flex items-stretch justify-start gap-[3px] overflow-x-auto border-b border-[rgb(var(--ze-shortcut-line))] pb-4 pt-[9px] sm:mt-5 sm:gap-1 lg:mt-7 lg:justify-around lg:gap-[9px] lg:px-2.5 lg:pb-5 lg:pt-[15px]"
     >
-      {entries.map((entry) => (
-        <Shortcut key={entry.target} label={entry.label} onClick={() => jumpTo(`heading-${entry.target}`)}>
+      {entries.map((entry, index) => (
+        // Each shortcut arrives a beat after the one before it, left to
+        // right, so the row reads as one movement rather than six things
+        // appearing at once. Capped at the eighth: the delay is a flourish on
+        // a short row and a wait on a long one, and a restaurant with twenty
+        // categories must not have the last of them blank for a second.
+        // The global prefers-reduced-motion rule collapses it to nothing.
+        <Shortcut
+          key={entry.target}
+          label={entry.label}
+          style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}
+          onClick={() => jumpTo(`heading-${entry.target}`)}
+        >
           <ShortcutThumb photo={entry.photo} label={entry.label} />
         </Shortcut>
       ))}
@@ -287,21 +306,32 @@ function Shortcut({
   label,
   onClick,
   children,
+  style,
 }: {
   label: string;
   onClick: () => void;
   children: ReactNode;
+  /** The entry delay; see the call site. */
+  style?: CSSProperties;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-w-[89px] flex-col items-center gap-2 rounded-[13px] px-2 pb-[11px] pt-[7px] text-[11px] font-[650] text-[rgb(var(--ze-shortcut-text))] transition-colors duration-color hover:bg-[rgb(var(--ze-shortcut-hover))] hover:text-brick sm:min-w-[95px] lg:min-w-[104px] lg:flex-1 lg:gap-[11px] lg:px-3 lg:text-caption"
+      style={style}
+      className="animate-rise group flex min-w-[89px] flex-col items-center gap-2 rounded-[13px] px-2 pb-[11px] pt-[7px] text-[11px] font-[650] text-[rgb(var(--ze-shortcut-text))] transition-colors duration-color hover:bg-[rgb(var(--ze-shortcut-hover))] hover:text-brick sm:min-w-[95px] lg:min-w-[104px] lg:flex-1 lg:gap-[11px] lg:px-3 lg:text-caption"
     >
       <span className="grid h-[54px] w-[54px] place-items-center overflow-hidden rounded-full border border-[rgb(var(--ze-shortcut-border))] bg-[rgb(var(--ze-shortcut-ground))] sm:h-[58px] sm:w-[58px] lg:h-[65px] lg:w-[65px]">
         {children}
       </span>
-      <span className="max-w-[120px] truncate">{label}</span>
+      {/* Two lines before it gives up, rather than one. A restaurant names its
+          own categories, so a long one is ordinary -- and "Not-so-secret me…"
+          on a single truncated line tells someone less than the two words that
+          would fit underneath it. The clamp still stops a sentence from
+          dragging the whole row taller. */}
+      <span className="line-clamp-2 max-w-[120px] text-balance leading-[1.25] [overflow-wrap:anywhere]">
+        {label}
+      </span>
     </button>
   );
 }

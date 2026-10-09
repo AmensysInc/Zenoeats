@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core import errors
 from app.core.auth import AuthError, ClerkPrincipal, verify_clerk_token
-from app.core import guest_auth, platform_auth, staff_auth
+from app.core import customer_auth, guest_auth, platform_auth, staff_auth
 from app.core.tenant import admin_host, extract_slug, host_of
 from app.db.session import AppSessionLocal, system_session
 from app.models import (
@@ -65,6 +65,27 @@ def get_current_user(
         return clerk_customers.customer_for_clerk_user(
             principal.clerk_user_id, token_email=principal.email
         )
+
+    # A customer account of our own (core/customer_auth.py). Above the guest
+    # cookie for the same reason the Clerk token is: a browser can hold both
+    # after someone starts as a guest and then signs in, and the one nobody
+    # authenticated must not shadow the one they did.
+    account_cookie = request.cookies.get(customer_auth.SESSION_COOKIE)
+    if account_cookie:
+        principal = customer_auth.verify_session(account_cookie)
+        if principal is not None:
+            with system_session() as session:
+                user = session.get(User, principal.user_id)
+                if (
+                    user is not None
+                    and user.kind == UserKind.CUSTOMER.value
+                    and user.deleted_at is None
+                    # Honours "sign out everywhere": a signature that is still
+                    # valid is not enough once the account has revoked.
+                    and not user.session_revoked(principal.issued_at)
+                ):
+                    session.expunge(user)
+                    return user
 
     cookie = request.cookies.get(guest_auth.SESSION_COOKIE)
     if cookie:

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { ErrorNote, Loading, Spinner, StatePage } from "@/components/common/Feedback";
+import { BackLink } from "@/components/common/BackLink";
 import { Icon } from "@/components/common/icons";
 import { MenuImage } from "@/components/common/MenuImage";
 import { itemAdded, selectCartCount } from "@/features/cart/cartSlice";
@@ -97,13 +98,7 @@ export function ProfilePage() {
       <CustomerHeader restaurant={portal.data} />
       <main className="mx-auto w-full max-w-[720px] px-5 pb-[70px] pt-3 sm:px-6 sm:pt-6 lg:max-w-[1040px]">
         <CustomerAccountBar />
-        <Link
-          to="/"
-          className="inline-flex min-h-[40px] items-center gap-2 text-caption text-muted hover:text-ink"
-        >
-          <Icon name="back" className="h-4 w-4" />
-          Back to the menu
-        </Link>
+        <BackLink />
 
         <div className="my-6 flex items-center justify-between gap-6 sm:my-9">
           <div className="min-w-0">

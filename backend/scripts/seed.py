@@ -1,27 +1,61 @@
-"""Seed a demo restaurant with a menu worth clicking around.
+"""Seed the platform: four locations, and a burger menu behind the open one.
 
-    Item types (the restaurant's own words, editable in the portal)
-      Food, Drinks, Sides, Sauces
+    Locations (the platform root at zenoeats.local:8443)
+      Jr's Corner    Dallas, TX        OPEN -> the "spicehouse" tenant
+      Big Apple      New York, NY      COMING_SOON
+      Rainforest     Portland, OR      COMING_SOON
+      Sunset Strip   Los Angeles, CA   COMING_SOON
 
-    Items                          type
-      Smash Burger, Crispy Chicken   Food    -> Veggies, Sauce add-ons
-                                       comes with lettuce and onion, free
-      Iced Tea, Lemonade             Drinks  -> Ice level (required)
-      Fries                          Sides
-      Garlic Aioli                   Sauces
+    Item types          Burgers, Fries, Shakes, Drinks
+    Meal period         All Day -- one board, every hour they are open
 
-    Meal periods
-      Lunch    serves all of them
-      Dinner   serves the food, the drinks and the fries
+    Items                        type      modifier groups
+      Double-Double              Burgers   Preparation, Extras
+      Cheeseburger               Burgers   Preparation, Extras
+      Hamburger                  Burgers   Preparation, Extras
+      Grilled Cheese             Burgers   Preparation, Extras
+      French Fries               Fries     Fry style
+      Special Fries              Fries     Fry style
+      Cheese Fries               Fries     Fry style
+      Shake                      Shakes    Flavour (required)
+      Root Beer Float            Shakes    --
+      Soft Drink                 Drinks    Size (required), Drink (required)
+      Coffee, Milk, Hot Cocoa    Drinks    --
 
-    Combo "Burger Meal"   sold during Lunch, 10% off
-      a food, a drink and a side, one of each, all required
+Special and Jr's Style stay modifiers rather than items of their own, because
+they are how a burger is ordered; as items somebody could order "Special"
+with no burger under it.
 
-Iced Tea deliberately appears in both periods as one item, because that is
-the arrangement the old shape could not express and the thing most worth
-seeing work: one price, one sold-out toggle, two places on the menu.
+Every item on the board has a photograph. An item added here without one
+shows a card with no picture beside cards that have them, which reads as a
+missing image rather than a design -- so ITEM_PHOTOS below should grow with
+this list.
 
-Run:  docker compose exec api python scripts/seed.py
+Groups are attached per item, not per type, so nothing nonsensical is offered:
+a Root Beer Float carries no shake flavour, and the Flying Dutchman -- which
+is already a preparation, having no bun to take off -- is offered extras but
+not Jr's Style.
+
+    Combos (All Day)    Double-Double Combo, Cheeseburger Combo,
+                        Hamburger Combo -- burger, fries and a drink, 5% off
+
+The menu mirrors In-N-Out's: its board items, their prices and their published
+calorie counts, plus the preparation names people order by -- renamed to
+this counter's own words: Special, Jr's Style, Well Done. That is the menu asked for, and item names,
+prices and calories are facts about a menu rather than anything to copy. None
+of their branding is here -- no logo, no palette, no trade dress -- and the
+restaurant is named Spice House, so nothing in this seed presents itself as
+In-N-Out. Swap prices for your own before taking a real order.
+
+The restaurant keeps the slug "spicehouse" and the name "Spice House" while
+the location on the front page is "Jr's Corner": a location owns its public
+name, which is the reason it is not the same row as its tenant.
+
+Re-running does nothing once the restaurant exists. To rebuild from scratch:
+
+    make fresh          # drops the volume, migrates, seeds
+
+Or by hand:  docker compose exec api python scripts/seed.py
 """
 
 import sys
@@ -29,16 +63,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 
 from app.db.base import utcnow  # noqa: E402
 from app.db.session import system_session, tenant_session  # noqa: E402
 from app.models import (  # noqa: E402
-    STARTER_ITEM_TYPES, Combo, ComboSlot, ComboSlotItem, DiscountKind, Item,
-    ItemIncludedOption, ItemModifierGroup, ItemType, Meal, MealItem, ModifierGroup,
-    ModifierGroupItemType, ModifierOption, Restaurant, RestaurantOrderCounter,
-    RestaurantPaymentAccount, RestaurantStatus, RestaurantUser, SelectionType,
-    StaffRole, StaffStatus, User, UserKind,
+    Combo, ComboSlot, ComboSlotItem, DeliveryZone, DiscountKind, Item,
+    ItemIncludedOption,
+    ItemModifierGroup, ItemType, Location, LocationStatus, Meal, MealItem,
+    ModifierGroup, ModifierGroupItemType, ModifierOption, Restaurant,
+    RestaurantOrderCounter, RestaurantPaymentAccount, RestaurantStatus,
+    RestaurantUser, SelectionType, StaffRole, StaffStatus, User, UserKind,
 )
 from app.core import staff_auth  # noqa: E402
 
@@ -47,6 +82,57 @@ OWNER_EMAIL = "owner@spicehouse.local"
 # Customers sign in through Clerk, so this row is only reachable with
 # AUTH_DEV_BYPASS=true, where the bearer token is read as a Clerk user id.
 DEV_CUSTOMER_CLERK_ID = "user_dev_customer"
+
+# The four on the front page. Only the first has a tenant behind it; the rest
+# are announcements, which is exactly why a location is not a restaurant row.
+LOCATIONS = [
+    {
+        "slug": "jrs-corner", "name": "Jr's Corner",
+        "city": "Ardmore", "region": "Oklahoma",
+        "address_line": "1500 Sam Noble Parkway, Ardmore, OK 73401-7154",
+        "blurb": "Open daily, 10:30am to 1:00am",
+        "status": LocationStatus.OPEN.value, "attach_restaurant": True,
+    },
+    {
+        "slug": "big-apple", "name": "Big Apple",
+        "city": "New York", "region": "New York",
+        "address_line": None,
+        "blurb": "Opening next spring",
+        "status": LocationStatus.COMING_SOON.value, "attach_restaurant": False,
+    },
+    {
+        "slug": "rainforest", "name": "Rainforest",
+        "city": "Portland", "region": "Oregon",
+        "address_line": None,
+        "blurb": "We are building the kitchen now",
+        "status": LocationStatus.COMING_SOON.value, "attach_restaurant": False,
+    },
+    {
+        "slug": "sunset-strip", "name": "Sunset Strip",
+        "city": "Los Angeles", "region": "California",
+        "address_line": None,
+        "blurb": "Signing the lease",
+        "status": LocationStatus.COMING_SOON.value, "attach_restaurant": False,
+    },
+]
+
+DISH_PREFIX = "Jr's "
+
+# Where Jr's Corner cooks from, in the pieces the restaurant row keeps and as
+# the single line delivery compares against. Kept together so the two cannot
+# disagree -- a mismatch silently switches delivery off.
+STREET = "1500 Sam Noble Parkway"
+CITY = "Ardmore"
+STATE = "OK"
+POSTCODE = "73401-7154"
+COUNTRY = "US"
+PICKUP_ADDRESS = f"{STREET}, {CITY}, {STATE}, {POSTCODE}, {COUNTRY}"
+
+# What it charges to deliver, by how far. Described by the outer edge of each
+# ring: under 2 miles is $2.99, out to 5 is $4.99, and nothing past that.
+DELIVERY_ZONES = [(2.0, 299), (5.0, 499)]
+
+ITEM_TYPES = ["Burgers", "Fries", "Shakes", "Drinks"]
 
 
 def main() -> None:
@@ -58,6 +144,7 @@ def main() -> None:
         ).first()
         if existing:
             print(f"Restaurant '{SLUG}' already exists ({existing.id}). Nothing to do.")
+            print("To rebuild from scratch, including the locations: make fresh")
             return
 
         restaurant = Restaurant(
@@ -67,9 +154,28 @@ def main() -> None:
             timezone="America/Chicago",
             currency="USD",
             tax_rate_bps=825,  # 8.25% flat. Replace with Stripe Tax for real.
-            tagline="Wood-fired burgers and cold drinks",
-            phone="+1 214 555 0100",
+            tagline="Burgers and fries, made to order",
+            phone="+1 (580) 226-7925",
             storefront_customization_enabled=True,
+            # Where it cooks from. The same street as the Jr's Corner
+            # location on the front page -- the location names the place, the
+            # restaurant row is what delivers from it.
+            address_line1=STREET,
+            address_city=CITY,
+            address_state=STATE,
+            address_postal_code=POSTCODE,
+            address_country=COUNTRY,
+            # Delivery needs an origin it still believes in:
+            # delivery_origin_is_current compares geocoded_address against
+            # the address above and refuses if they have drifted. Seeding the
+            # coordinates directly, with geocoded_address set to match, is
+            # what lets delivery work without a Google Maps key -- the key is
+            # still needed to price a *customer's* address, which is a
+            # different lookup. Coordinates are Greenville Ave, Dallas.
+            delivery_enabled=True,
+            latitude=34.18536,
+            longitude=-97.10801,
+            geocoded_address=PICKUP_ADDRESS,
         )
         session.add(restaurant)
         session.flush()
@@ -80,6 +186,21 @@ def main() -> None:
                 restaurant_id=rid, next_order_number=1001, updated_at=utcnow()
             )
         )
+
+        # The front page. Written here, in the system session, because
+        # `locations` is platform data: the app role may read it and only the
+        # system role may write it.
+        for order, spec in enumerate(LOCATIONS):
+            session.add(
+                Location(
+                    slug=spec["slug"], name=spec["name"],
+                    city=spec["city"], region=spec["region"],
+                    address_line=spec["address_line"], blurb=spec["blurb"],
+                    status=spec["status"],
+                    restaurant_id=rid if spec["attach_restaurant"] else None,
+                    sort_order=order,
+                )
+            )
 
         owner = User(
             kind=UserKind.STAFF.value,
@@ -119,54 +240,70 @@ def main() -> None:
             )
         )
 
-        # The vocabulary first: an item cannot be created without a type.
+        for max_miles, fee in DELIVERY_ZONES:
+            session.add(
+                DeliveryZone(restaurant_id=rid, max_miles=max_miles, fee_minor=fee)
+            )
+
+        # --- The vocabulary ------------------------------------------------
+        # An item cannot be created without a type, so these come first. Four
+        # headings, in the order the board reads them.
         types = {}
-        for order, name in enumerate(STARTER_ITEM_TYPES):
+        for order, name in enumerate(ITEM_TYPES):
             item_type = ItemType(restaurant_id=rid, name=name, sort_order=order)
             session.add(item_type)
             types[name] = item_type
         session.flush()
 
-        # One subcategory, so the demo menu shows what nesting looks like
-        # without pretending every menu wants it. Burgers sits under Food and
-        # Crispy Chicken stays on Food itself, which is the mixed case: the
-        # storefront reads Food, then the chicken, then a Burgers subheading.
-        burgers = ItemType(
-            restaurant_id=rid, name="Burgers",
-            parent_id=types["Food"].id, sort_order=0,
+        # One board, all day. The combos below hang off it.
+        all_day = Meal(restaurant_id=rid, name="All Day", sort_order=1)
+        session.add(all_day)
+        session.flush()
+
+        # --- Reusable modifier groups --------------------------------------
+        # How the patty is cooked and what it is wrapped in. Multi-select, and
+        # max 2, because Special with Jr's Style is a real order.
+        preparation = ModifierGroup(
+            restaurant_id=rid, name="Preparation",
+            selection_type=SelectionType.MULTI.value, is_required=False,
+            min_select=0, max_select=2,
         )
-        session.add(burgers)
-        session.flush()
-        types["Burgers"] = burgers
-
-        lunch = Meal(restaurant_id=rid, name="Lunch", sort_order=1)
-        dinner = Meal(restaurant_id=rid, name="Dinner", sort_order=2)
-        session.add_all([lunch, dinner])
-        session.flush()
-
-        # --- Reusable modifier groups -----------------------------------
-        veggies = ModifierGroup(
-            restaurant_id=rid, name="Veggies",
+        # What goes on it beyond what it comes with.
+        extras = ModifierGroup(
+            restaurant_id=rid, name="Extras",
             selection_type=SelectionType.MULTI.value, is_required=False,
             min_select=0, max_select=5,
         )
-        sauce_adds = ModifierGroup(
-            restaurant_id=rid, name="Sauce add-ons",
-            selection_type=SelectionType.MULTI.value, is_required=False,
-            min_select=0, max_select=3,
+        fry_style = ModifierGroup(
+            restaurant_id=rid, name="Fry style",
+            selection_type=SelectionType.SINGLE.value, is_required=False,
+            min_select=0, max_select=1,
         )
-        ice = ModifierGroup(
-            restaurant_id=rid, name="Ice level",
+        # Required: a shake has to be a flavour, and there is no sensible
+        # default to charge someone for.
+        flavour = ModifierGroup(
+            restaurant_id=rid, name="Flavour",
             selection_type=SelectionType.SINGLE.value, is_required=True,
             min_select=1, max_select=1,
         )
-        session.add_all([veggies, sauce_adds, ice])
+        drink_size = ModifierGroup(
+            restaurant_id=rid, name="Size",
+            selection_type=SelectionType.SINGLE.value, is_required=True,
+            min_select=1, max_select=1,
+        )
+        drink_choice = ModifierGroup(
+            restaurant_id=rid, name="Drink",
+            selection_type=SelectionType.SINGLE.value, is_required=True,
+            min_select=1, max_select=1,
+        )
+        session.add_all([preparation, extras, fry_style, flavour, drink_size, drink_choice])
         session.flush()
 
-        # Which types each group is offered for. No rows would mean every
-        # type, which is not what these three want.
+        # Which heading each group is offered under. No rows would mean every
+        # type, which would put fry styles on a shake.
         for group, type_name in [
-            (veggies, "Food"), (sauce_adds, "Food"), (ice, "Drinks"),
+            (preparation, "Burgers"), (extras, "Burgers"), (fry_style, "Fries"),
+            (flavour, "Shakes"), (drink_size, "Drinks"), (drink_choice, "Drinks"),
         ]:
             session.add(
                 ModifierGroupItemType(
@@ -175,131 +312,274 @@ def main() -> None:
                 )
             )
 
-        veggie_options = {}
-        for i, (name, delta) in enumerate([
-            ("Lettuce", 0), ("Tomato", 0), ("Red onion", 0),
-            ("Pickles", 0), ("Jalapenos", 50),
-        ]):
-            option = ModifierOption(restaurant_id=rid, group_id=veggies.id,
-                                    name=name, price_delta_minor=delta, sort_order=i)
-            session.add(option)
-            veggie_options[name] = option
+        def options(group, rows):
+            """Add a group's options in board order, keyed by name."""
+            made = {}
+            for i, (name, delta, cal) in enumerate(rows):
+                option = ModifierOption(
+                    restaurant_id=rid, group_id=group.id, name=name,
+                    price_delta_minor=delta, calories_delta=cal, sort_order=i,
+                )
+                session.add(option)
+                made[name] = option
+            return made
 
-        for i, (name, delta) in enumerate([
-            ("Garlic aioli", 75), ("Chipotle mayo", 75), ("House hot sauce", 50),
-        ]):
-            session.add(ModifierOption(restaurant_id=rid, group_id=sauce_adds.id,
-                                       name=name, price_delta_minor=delta, sort_order=i))
-
-        ice_options = {}
-        for i, name in enumerate(["Light", "Regular", "Heavy"]):
-            option = ModifierOption(restaurant_id=rid, group_id=ice.id, name=name,
-                                    price_delta_minor=0, sort_order=i)
-            session.add(option)
-            ice_options[name] = option
+        # Special is free and adds the mustard-fried patty, pickles, extra
+        # spread and grilled onions. Jr's Style swaps the bun for lettuce,
+        # which takes calories off -- hence the negative delta, the documented
+        # exception to non-negative money and calories.
+        options(preparation, [
+            ("Special", 0, 80),
+            ("Jr's Style", 0, -150),
+        ])
+        options(extras, [
+            ("Extra spread", 0, 60),
+            ("Grilled onions", 0, 10),
+            ("Whole grilled onions", 0, 15),
+            ("Chopped chillies", 0, 5),
+            ("Extra cheese slice", 60, 40),
+        ])
+        # How they are cooked, only. Cheese Fries and Special Fries are
+        # items of their own below rather than options here: the
+        # real menu sells them as dishes with their own prices and calories,
+        # and having them in both places would let someone order Special
+        # Special Fries.
+        options(fry_style, [
+            ("Well done", 0, 0),
+            ("Light", 0, 0),
+        ])
+        # Published shake calories: chocolate 590, vanilla and strawberry 690.
+        # Neapolitan is all three in one cup, so it lands between them.
+        flavour_options = options(flavour, [
+            ("Chocolate", 0, 0),
+            ("Vanilla", 0, 100),
+            ("Strawberry", 0, 100),
+            ("Neapolitan", 0, 60),
+        ])
+        size_options = options(drink_size, [
+            ("Small", 0, 0),
+            ("Medium", 35, 60),
+            ("Large", 65, 120),
+            ("Extra large", 95, 190),
+        ])
+        drink_options = options(drink_choice, [
+            ("Coca-Cola", 0, 0),
+            ("Diet Coke", 0, -190),
+            ("Dr Pepper", 0, 10),
+            ("7UP", 0, -10),
+            ("Root beer", 0, 20),
+            ("Iced tea", 0, -190),
+            ("Pink lemonade", 0, -20),
+            ("Light lemonade", 0, -170),
+            # Half iced tea, half lemonade: a drink rather than a dish, so it
+            # belongs in this list rather than as an item.
+            ("Arnold Palmer", 0, -105),
+        ])
         session.flush()
 
-        # --- Items -------------------------------------------------------
-        # Defined once, at the restaurant, and put on a period below.
-        food, drinks = types["Food"].id, types["Drinks"].id
-        sides, sauces = types["Sides"].id, types["Sauces"].id
+        # --- Items ---------------------------------------------------------
+        burgers = types["Burgers"].id
+        fries_type = types["Fries"].id
+        shakes = types["Shakes"].id
+        drinks = types["Drinks"].id
 
-        smash = Item(restaurant_id=rid, name="Smash Burger", item_type_id=burgers.id,
-                     description="Two seared patties, aged cheddar, house sauce.",
-                     base_price_minor=1095, currency="USD", sort_order=1)
-        crispy = Item(restaurant_id=rid, name="Crispy Chicken", item_type_id=food,
-                      description="Buttermilk-brined thigh, slaw, pickles.",
-                      base_price_minor=1195, currency="USD", sort_order=2)
-        tea = Item(restaurant_id=rid, name="Iced Tea", item_type_id=drinks,
-                   description="Brewed hourly. Unsweetened.",
-                   base_price_minor=350, currency="USD", sort_order=3)
-        lemonade = Item(restaurant_id=rid, name="Lemonade", item_type_id=drinks,
-                        description="Fresh-squeezed, not too sweet.",
-                        base_price_minor=425, currency="USD", sort_order=4)
-        fries = Item(restaurant_id=rid, name="Fries", item_type_id=sides,
-                     description="Skin on, salted.",
-                     base_price_minor=450, currency="USD", sort_order=5)
-        aioli = Item(restaurant_id=rid, name="Garlic Aioli", item_type_id=sauces,
-                     description="Two-ounce cup.",
-                     base_price_minor=100, currency="USD", sort_order=6)
-        session.add_all([smash, crispy, tea, lemonade, fries, aioli])
+        # Every dish is prefixed with the counter's name. A real menu board
+        # says "Double-Double" and lets the sign above the door do the
+        # branding, but this is the demo the platform is shown with, and the
+        # prefix is what the restaurant asked for. One constant so renaming
+        # the counter is one edit, not sixteen.
+        double = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Double-Double", item_type_id=burgers,
+            description="Two beef patties, two slices of American cheese, "
+                        "hand-leafed lettuce, tomato and spread.",
+            base_price_minor=590, calories=670, currency="USD", sort_order=1,
+        )
+        cheeseburger = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Cheeseburger", item_type_id=burgers,
+            description="One patty, American cheese, lettuce, tomato and spread.",
+            base_price_minor=360, calories=480, currency="USD", sort_order=2,
+        )
+        hamburger = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Hamburger", item_type_id=burgers,
+            description="One patty, lettuce, tomato and spread. No cheese.",
+            base_price_minor=310, calories=390, currency="USD", sort_order=3,
+        )
+        french_fries = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}French Fries", item_type_id=fries_type,
+            description="Whole potatoes, cut and fried to order.",
+            base_price_minor=245, calories=395, currency="USD", sort_order=4,
+        )
+        shake = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Shake", item_type_id=shakes,
+            description="Made with real ice cream.",
+            base_price_minor=340, calories=590, currency="USD", sort_order=5,
+        )
+        soft_drink = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Soft Drink", item_type_id=drinks,
+            description="Fountain drink, free refills in the dining room.",
+            base_price_minor=210, calories=200, currency="USD", sort_order=6,
+        )
+        coffee = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Coffee", item_type_id=drinks,
+            description="Freshly brewed.",
+            base_price_minor=140, calories=5, currency="USD", sort_order=7,
+        )
+        milk = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Milk", item_type_id=drinks,
+            description="Carton, 1% low fat.",
+            base_price_minor=120, calories=130, currency="USD", sort_order=8,
+        )
+        cocoa = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Hot Cocoa", item_type_id=drinks,
+            description="With marshmallows.",
+            base_price_minor=220, calories=170, currency="USD", sort_order=9,
+        )
+
+        # --- The rest of the board -------------------------------------------
+        # These were under a "Not-so-secret menu" heading of their own, which
+        # is how the real chain prints them. Dropped as a section: the label
+        # was the longest on the page and said nothing a customer needed, and
+        # a 3x3 is a burger wherever it is filed. The dishes stay, under the
+        # heading each one belongs to.
+        grilled_cheese = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Grilled Cheese", item_type_id=burgers,
+            description="Two slices of cheese, lettuce, tomato and spread. "
+                        "No meat.",
+            base_price_minor=310, calories=380, currency="USD", sort_order=12,
+        )
+        special_fries = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Special Fries", item_type_id=fries_type,
+            description="Fries with cheese, grilled onions and spread.",
+            base_price_minor=460, calories=750, currency="USD", sort_order=14,
+        )
+        cheese_fries = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Cheese Fries", item_type_id=fries_type,
+            description="Fries with two slices of melted cheese.",
+            base_price_minor=365, calories=400, currency="USD", sort_order=15,
+        )
+        root_beer_float = Item(
+            restaurant_id=rid, name=f"{DISH_PREFIX}Root Beer Float", item_type_id=shakes,
+            description="Root beer over vanilla ice cream.",
+            base_price_minor=340, calories=520, currency="USD", sort_order=16,
+        )
+
+        session.add_all([
+            double, cheeseburger, hamburger, french_fries, shake,
+            soft_drink, coffee, milk, cocoa,
+            grilled_cheese, special_fries, cheese_fries, root_beer_float,
+        ])
         session.flush()
 
         links = [
-            (smash, veggies, 0), (smash, sauce_adds, 1),
-            (crispy, veggies, 0), (crispy, sauce_adds, 1),
-            (tea, ice, 0), (lemonade, ice, 0),
+            (double, preparation, 0), (double, extras, 1),
+            (cheeseburger, preparation, 0), (cheeseburger, extras, 1),
+            (hamburger, preparation, 0), (hamburger, extras, 1),
+            (french_fries, fry_style, 0),
+            (shake, flavour, 0),
+            (soft_drink, drink_size, 0), (soft_drink, drink_choice, 1),
+            # A Grilled Cheese has no patty to fry Special, but it has a
+            # bun to take off, so Preparation still applies.
+            (grilled_cheese, preparation, 0), (grilled_cheese, extras, 1),
+            (special_fries, fry_style, 0),
+            (cheese_fries, fry_style, 0),
+            # Root Beer Float: no flavour group. It is not a shake.
         ]
         for item, group, order in links:
-            session.add(ItemModifierGroup(restaurant_id=rid, item_id=item.id,
-                                          group_id=group.id, sort_order=order))
+            session.add(
+                ItemModifierGroup(
+                    restaurant_id=rid, item_id=item.id, group_id=group.id,
+                    sort_order=order,
+                )
+            )
         session.flush()
 
-        # --- What each item comes with ------------------------------------
-        # Chosen for the customer and charged at nothing. A burger arrives
-        # with lettuce and onion on it; jalapenos are still 50c because the
-        # burger does not come with those.
+        # --- What each item comes with -------------------------------------
+        # Chosen for the customer and charged at nothing. A shake arrives as
+        # chocolate unless they say otherwise; a soft drink is a small Coke.
+        # The calories above already count these, so the deltas here are what
+        # make "Vanilla" read as +100 rather than the flavour's whole count.
         comes_with = [
-            (smash, [veggie_options["Lettuce"], veggie_options["Red onion"]]),
-            (crispy, [veggie_options["Lettuce"], veggie_options["Pickles"]]),
-            (tea, [ice_options["Regular"]]),
-            (lemonade, [ice_options["Regular"]]),
+            (shake, [flavour_options["Chocolate"]]),
+            (soft_drink, [size_options["Small"], drink_options["Coca-Cola"]]),
         ]
-        for item, options in comes_with:
-            for option in options:
+        for item, chosen in comes_with:
+            for option in chosen:
                 session.add(
-                    ItemIncludedOption(restaurant_id=rid, item_id=item.id,
-                                       option_id=option.id)
+                    ItemIncludedOption(
+                        restaurant_id=rid, item_id=item.id, option_id=option.id
+                    )
                 )
 
-        # --- What each period serves -------------------------------------
-        served = [
-            (lunch, [smash, crispy, tea, lemonade, fries, aioli]),
-            (dinner, [smash, crispy, tea, fries]),
+        # --- What the board serves ------------------------------------------
+        board = [
+            double, cheeseburger, hamburger, french_fries, shake,
+            soft_drink, coffee, milk, cocoa,
+            grilled_cheese, special_fries, cheese_fries, root_beer_float,
         ]
-        for meal, items in served:
-            for order, item in enumerate(items):
-                session.add(MealItem(restaurant_id=rid, meal_id=meal.id,
-                                     item_id=item.id, sort_order=order))
+        for order, item in enumerate(board):
+            session.add(
+                MealItem(
+                    restaurant_id=rid, meal_id=all_day.id, item_id=item.id,
+                    sort_order=order,
+                )
+            )
         session.flush()
 
-        # --- A combo ------------------------------------------------------
-        # Only items Lunch serves may be offered here, which is what the
-        # portal enforces too. 1000 basis points is 10% off what the three
-        # would cost separately.
-        #
-        # The food slot asks for Food and takes both the burger, which is
-        # filed under Food > Burgers, and the chicken, which sits on Food
-        # itself. A slot reads the top-level type, so subdividing the menu
-        # left this deal exactly as it was.
-        burger_meal = Combo(
-            restaurant_id=rid, meal_id=lunch.id, name="Burger Meal",
-            description="A burger, a drink and fries.",
-            discount_kind=DiscountKind.PERCENT.value, discount_value=1000,
-            sort_order=1,
-        )
-        session.add(burger_meal)
-        session.flush()
-
-        for order, (type_id, choices) in enumerate([
-            (food, [smash, crispy]),
-            (drinks, [tea, lemonade]),
-            (sides, [fries]),
+        # --- Combos ----------------------------------------------------------
+        # A burger, fries and a drink, the way the board sells them. 500 basis
+        # points is 5% off what the three would cost separately.
+        for order, (burger, label) in enumerate([
+            (double, f"{DISH_PREFIX}Double-Double Combo"),
+            (cheeseburger, f"{DISH_PREFIX}Cheeseburger Combo"),
+            (hamburger, f"{DISH_PREFIX}Hamburger Combo"),
         ]):
-            slot = ComboSlot(restaurant_id=rid, combo_id=burger_meal.id,
-                             item_type_id=type_id, sort_order=order)
-            session.add(slot)
+            combo = Combo(
+                restaurant_id=rid, meal_id=all_day.id, name=label,
+                description="With fries and a drink.",
+                discount_kind=DiscountKind.PERCENT.value, discount_value=500,
+                sort_order=order,
+            )
+            session.add(combo)
             session.flush()
-            for index, item in enumerate(choices):
-                session.add(ComboSlotItem(restaurant_id=rid, slot_id=slot.id,
-                                          item_id=item.id, sort_order=index))
+            # A slot reads a top-level type, so the burger slot is offered the
+            # one burger this combo is built around rather than all three.
+            for index, (type_id, choices) in enumerate([
+                (burgers, [burger]),
+                (fries_type, [french_fries]),
+                (drinks, [soft_drink, shake, coffee, milk, cocoa]),
+            ]):
+                slot = ComboSlot(
+                    restaurant_id=rid, combo_id=combo.id, item_type_id=type_id,
+                    sort_order=index,
+                )
+                session.add(slot)
+                session.flush()
+                for position, item in enumerate(choices):
+                    session.add(
+                        ComboSlotItem(
+                            restaurant_id=rid, slot_id=slot.id, item_id=item.id,
+                            sort_order=position,
+                        )
+                    )
 
-        seed_storefront(session, rid, [smash.id, crispy.id, fries.id])
+        card_photo = seed_storefront(
+            session, rid,
+            items_by_name={item.name: item for item in board},
+            collection_item_ids=[double.id, french_fries.id, shake.id],
+        )
 
-    print(f"Seeded '{SLUG}' ({rid})")
-    print("  Portal:  https://spicehouse.zenoeats.local:8443")
-    print("  Customer sign-in:  create an account (through Clerk) at")
-    print("                     https://spicehouse.zenoeats.local:8443/account/sign-up")
+    # The picker's card photo, on the platform row that owns it.
+    with system_session() as session:
+        for location in session.scalars(
+            select(Location).where(Location.restaurant_id == rid)
+        ):
+            location.image_path = card_photo
+
+    print(f"Seeded '{SLUG}' ({rid}) and {len(LOCATIONS)} locations")
+    print("  Platform root (locations):  https://zenoeats.local:8443")
+    print("  Jr's Corner storefront:     https://spicehouse.zenoeats.local:8443")
+    print("  Customer sign-in:  email and password, or guest -- both work now.")
+    print("                     No identity provider is configured or needed.")
     print(f"  Owner sign-in:     {OWNER_EMAIL} / {owner_password}  (temporary)")
     print("                     https://spicehouse.zenoeats.local:8443/manage/login")
     print("  Super admin:       from ADMIN_USERS in .env")
@@ -309,50 +589,108 @@ def main() -> None:
     print("  test-mode connected account before attempting a payment.")
 
 
+# Which photograph each part of the demo menu gets. Keyed by the names used
+# above, so adding an item without a photo is a missing entry here rather than
+# a silent fallback to something that looks like the wrong dish.
+ITEM_PHOTOS = {
+    f"{DISH_PREFIX}Double-Double": "item-double-double",
+    f"{DISH_PREFIX}Cheeseburger": "item-cheeseburger",
+    f"{DISH_PREFIX}Hamburger": "item-hamburger",
+    f"{DISH_PREFIX}French Fries": "item-fries",
+    f"{DISH_PREFIX}Shake": "item-shake",
+    f"{DISH_PREFIX}Soft Drink": "item-soft-drink",
+    f"{DISH_PREFIX}Coffee": "item-coffee",
+    f"{DISH_PREFIX}Milk": "item-milk",
+    f"{DISH_PREFIX}Hot Cocoa": "item-cocoa",
+    f"{DISH_PREFIX}Grilled Cheese": "item-grilled-cheese",
+    f"{DISH_PREFIX}Special Fries": "item-special-fries",
+    f"{DISH_PREFIX}Cheese Fries": "item-cheese-fries",
+    f"{DISH_PREFIX}Root Beer Float": "item-root-beer-float",
+}
 
-def seed_storefront(session, restaurant_id, item_ids):
-    """Offline demo illustrations, passed through the same image service.
+CATEGORY_PHOTOS = {
+    "Burgers": "cat-burgers",
+    "Fries": "cat-fries",
+    "Shakes": "cat-shakes",
+    "Drinks": "cat-drinks",
+}
 
-    No remote photograph is needed to seed a fresh database. These simple
-    food illustrations make the three slides and category images visible;
-    the restaurant replaces them with its own photography in the editor.
-    An existing demo is left alone by main(), including its saved branding.
+BANNERS = [
+    ("banner-burger", "Fresh from our kitchen", "Never frozen, cooked when you order."),
+    ("banner-fries", "Cut here, every day", "Whole potatoes, into the fryer, onto your tray."),
+    ("banner-shake", "Made with real ice cream", "Chocolate, vanilla, strawberry — or all three."),
+]
+
+
+def seed_storefront(session, restaurant_id, items_by_name, collection_item_ids):
+    """Give the demo restaurant real photography.
+
+    These are stock photographs committed under app/seed_assets (see the
+    README there for provenance and why they are not fetched at seed time).
+    Each one goes through the same image service a restaurant's own upload
+    does -- new_key, process, accept -- so there is one code path producing
+    what the browser gets, and a seeded storefront is indistinguishable in
+    shape from a real one.
     """
-    import io
-    from PIL import Image, ImageDraw
     from sqlalchemy import select
+
     from app.models import StorefrontBanner, StorefrontCollection, StorefrontCollectionItem
     from app.services import images
     from app.services.images import ImageKind
 
-    def picture(index, kind):
-        canvas = Image.new("RGB", (2400, 1100), ["#DED7B7", "#DCE4CC", "#E6CEB1"][index % 3])
-        draw = ImageDraw.Draw(canvas)
-        draw.ellipse((1300, 160, 2220, 1050), fill="#FFF8E4")
-        if index % 3 == 0:
-            draw.rounded_rectangle((1400, 460, 2080, 800), radius=160, fill="#BD702F")
-            draw.rectangle((1410, 590, 2070, 650), fill="#466136")
-            draw.rectangle((1410, 660, 2070, 720), fill="#623522")
-        elif index % 3 == 1:
-            draw.rounded_rectangle((1550, 340, 1980, 900), radius=65, fill="#AC5D2E")
-            draw.rectangle((1660, 160, 1690, 590), fill="#FAF8F2")
-        else:
-            for x in range(1480, 2020, 80):
-                draw.rounded_rectangle((x, 340, x + 50, 800), radius=15, fill="#E6AF42")
-            draw.polygon([(1450, 600), (2070, 600), (2000, 920), (1520, 920)], fill="#8B3826")
-        output = io.BytesIO(); canvas.save(output, "PNG")
+    assets = Path(__file__).resolve().parents[1] / "app" / "seed_assets"
+
+    def stored(name: str, kind: ImageKind) -> str:
+        """One asset, through the ordinary image pipeline."""
+        data = (assets / f"{name}.webp").read_bytes()
         key = images.new_key(restaurant_id, kind)
-        images.storage().save(key, images.process(output.getvalue(), kind))
+        images.storage().save(key, images.process(data, kind))
         return images.accept(key, restaurant_id, kind)
 
-    for n, headline in enumerate(("Fresh from our kitchen", "Something refreshing", "Make it a meal")):
-        session.add(StorefrontBanner(restaurant_id=restaurant_id, image_path=picture(n, ImageKind.BANNERS), headline=headline, subline="Made to order, ready to enjoy.", cta_label="Explore the menu", cta_target_kind="menu", sort_order=n))
-    for n, category in enumerate(session.scalars(select(ItemType).order_by(ItemType.sort_order, ItemType.id))):
-        category.image_path = picture(n, ImageKind.CATEGORIES)
-    collection = StorefrontCollection(restaurant_id=restaurant_id, title="House favourites", sort_order=0)
-    session.add(collection); session.flush()
-    for n, ident in enumerate(item_ids):
-        session.add(StorefrontCollectionItem(restaurant_id=restaurant_id, collection_id=collection.id, item_id=ident, sort_order=n))
+    for order, (asset, headline, subline) in enumerate(BANNERS):
+        session.add(
+            StorefrontBanner(
+                restaurant_id=restaurant_id,
+                image_path=stored(asset, ImageKind.BANNERS),
+                headline=headline, subline=subline,
+                cta_label="Explore the menu", cta_target_kind="menu",
+                sort_order=order,
+            )
+        )
+
+    for category in session.scalars(select(ItemType).order_by(ItemType.sort_order, ItemType.id)):
+        asset = CATEGORY_PHOTOS.get(category.name)
+        if asset:
+            category.image_path = stored(asset, ImageKind.CATEGORIES)
+
+    # Dish photographs. Only the items a photograph was chosen for: a burger
+    # picture on a carton of milk is worse than no picture at all, and the
+    # menu card is built to read well without one.
+    for name, asset in ITEM_PHOTOS.items():
+        item = items_by_name.get(name)
+        if item is not None:
+            item.image_path = stored(asset, ImageKind.ITEMS)
+
+    # The open location's card photo on the platform picker. Stored here,
+    # where the image service and its tenant key are in scope, and written on
+    # to the Location row by the caller: locations are platform rows and live
+    # in the system session, not this one.
+    card_photo = stored("hero-counter", ImageKind.BANNERS)
+
+    collection = StorefrontCollection(
+        restaurant_id=restaurant_id, title="House favourites", sort_order=0
+    )
+    session.add(collection)
+    session.flush()
+    for order, ident in enumerate(collection_item_ids):
+        session.add(
+            StorefrontCollectionItem(
+                restaurant_id=restaurant_id, collection_id=collection.id,
+                item_id=ident, sort_order=order,
+            )
+        )
+
+    return card_photo
 
 
 if __name__ == "__main__":

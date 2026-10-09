@@ -1,0 +1,12 @@
+{#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
+Hi{% if name %} {{ name }}{% endif %},
+
+Somebody asked to reset the password for your Zenoeats account. Choose a new
+one here:
+
+{{ reset_url }}
+
+This link works once and expires in {{ expires_in_minutes }} minutes.
+
+If you didn't ask for this, you can ignore this email -- your password has not
+changed and nobody can use the link without opening it.

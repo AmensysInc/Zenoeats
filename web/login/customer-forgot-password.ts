@@ -1,120 +1,148 @@
+import { errorMessage, request } from "@/services/apiClient";
 import {
-  activateAndContinue, clerkErrorMessage, el, loadClerk, minPasswordLength, paintWordmarks,
-  readCode, showMessage, wirePasswordPair, withNext, type ClerkInstance,
+  MIN_PASSWORD_LENGTH, el, paintWordmarks, params, showMessage, wirePasswordPair,
+  withNext,
 } from "./customer-shared";
 
 /**
- * Reset a forgotten password, through Clerk.
+ * Resetting a forgotten password, against our own API.
  *
- * Clerk emails a 6-digit code; the customer types it here with the new
- * password, and is signed in on this device once Clerk accepts both.
+ * One page, two states, decided by whether the URL carries a token:
+ *
+ *   no token    ask for the address, POST /customer/password/forgot
+ *   ?token=…    choose a new password, POST /customer/password/reset
+ *
+ * The token in the link IS the credential, which is why there is no code to
+ * type any more -- that belonged to Clerk, which emailed a six-digit code
+ * and held the password itself. The link is signed, expires in an hour, and
+ * stops working the moment any password change lands on the account
+ * (backend/app/core/customer_auth.py).
+ *
+ * Asking is deliberately uninformative. The API answers 204 whether or not
+ * the address has an account and so does this page, because a form that
+ * says "no account with that email" is a way to ask us who our customers
+ * are.
  */
 
+const errorBox = el<HTMLParagraphElement>("error");
+const emailSection = el<HTMLElement>("email-section");
 const emailForm = el<HTMLFormElement>("email-form");
 const emailInput = el<HTMLInputElement>("email");
-const emailButton = el<HTMLButtonElement>("email-submit");
+const emailSubmit = el<HTMLButtonElement>("email-submit");
+const resetSection = el<HTMLElement>("reset-section");
 const resetForm = el<HTMLFormElement>("reset-form");
-const codeInput = el<HTMLInputElement>("code");
 const passwordInput = el<HTMLInputElement>("password");
 const confirmInput = el<HTMLInputElement>("confirm");
-const resetButton = el<HTMLButtonElement>("reset-submit");
-const resendButton = el<HTMLButtonElement>("resend");
-const errorBox = el<HTMLParagraphElement>("error");
+const resetSubmit = el<HTMLButtonElement>("reset-submit");
 
 el<HTMLAnchorElement>("sign-in").href = withNext("/account/sign-in");
 
 void paintWordmarks();
 
-void loadClerk(errorBox).then((clerk) => {
-  if (clerk) start(clerk);
-});
+const token = params().get("token");
 
-function start(clerk: ClerkInstance): void {
-  emailButton.disabled = false;
-  let passwordsValid = false;
+if (token) {
+  showResetStep(token);
+} else {
+  showAskStep();
+}
 
-  wirePasswordPair(
-    minPasswordLength(clerk), passwordInput, confirmInput, el("length-hint"), el("match-hint"),
-    (valid) => {
-      passwordsValid = valid;
-      resetButton.disabled = !valid;
-    },
-  );
+/**
+ * Step one: which address?
+ *
+ * The confirmation replaces the form rather than sitting under it. Leaving a
+ * filled-in form beside "we've sent you a link" invites a second press, and
+ * the second link silently invalidates the first -- so someone who pressed
+ * twice would find the link in their inbox already dead.
+ */
+function showAskStep(): void {
+  resetSection.hidden = true;
+  emailSection.hidden = false;
 
-  async function sendCode(email: string): Promise<void> {
-    await clerk.client!.signIn.create({ strategy: "reset_password_email_code", identifier: email });
-  }
+  const refresh = () => {
+    emailSubmit.disabled = !emailInput.value.includes("@");
+  };
+  emailInput.addEventListener("input", refresh);
+  refresh();
 
   emailForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     showMessage(errorBox, null);
+    emailSubmit.disabled = true;
+    emailSubmit.textContent = "Sending…";
 
-    const email = emailInput.value.trim();
-    if (!email.includes("@")) {
-      showMessage(errorBox, "Enter your email address.");
-      return;
-    }
-
-    emailButton.disabled = true;
-    emailButton.textContent = "Sending…";
     try {
-      await sendCode(email);
-      el("sent-to").textContent = email;
-      el("email-section").hidden = true;
-      el("reset-section").hidden = false;
-      codeInput.focus();
+      await request("/customer/password/forgot", {
+        method: "POST",
+        body: { email: emailInput.value.trim() },
+      });
+      emailForm.hidden = true;
+      el("heading").textContent = "Check your email";
+      const intro = emailSection.querySelector<HTMLElement>(".auth-intro");
+      if (intro) {
+        // Deliberately not "we've sent you a link": we will not say whether
+        // there was an account to send one to.
+        intro.textContent =
+          "If there's an account for that address, a link to choose a new password " +
+          "is on its way. It works once and expires in an hour.";
+      }
     } catch (e) {
-      showMessage(errorBox, clerkErrorMessage(e));
-      emailButton.disabled = false;
-      emailButton.textContent = "Send code";
+      showMessage(errorBox, errorMessage(e));
+      emailSubmit.textContent = "Send the link";
+      refresh();
     }
   });
+}
+
+/** Step two: the new password, with the token from the link. */
+function showResetStep(resetToken: string): void {
+  emailSection.hidden = true;
+  resetSection.hidden = false;
+  el("heading").textContent = "Choose a new password";
+  el("resend-foot").hidden = true;
+
+  let passwordsValid = false;
+  const refresh = () => {
+    resetSubmit.disabled = !passwordsValid;
+  };
+  wirePasswordPair(
+    MIN_PASSWORD_LENGTH, passwordInput, confirmInput, el("length-hint"), el("match-hint"),
+    (valid) => {
+      passwordsValid = valid;
+      refresh();
+    },
+  );
+  refresh();
 
   resetForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     showMessage(errorBox, null);
-    const code = readCode(codeInput);
-    if (code.length !== 6) {
-      showMessage(errorBox, "Enter the 6-digit code from your email.");
+    resetSubmit.disabled = true;
+    resetSubmit.textContent = "Saving…";
+
+    try {
+      await request("/customer/password/reset", {
+        method: "POST",
+        body: { token: resetToken, password: passwordInput.value },
+      });
+    } catch (e) {
+      showMessage(errorBox, errorMessage(e));
+      resetSubmit.textContent = "Set password";
+      refresh();
       return;
     }
-    if (!passwordsValid) return;
 
-    resetButton.disabled = true;
-    resetButton.textContent = "Saving…";
-    try {
-      const attempt = await clerk.client!.signIn.attemptFirstFactor({
-        strategy: "reset_password_email_code",
-        code,
-        password: passwordInput.value,
-      });
-      if (attempt.status === "complete") {
-        await activateAndContinue(clerk, attempt.createdSessionId);
-        return;
-      }
-      showMessage(
-        errorBox,
-        "Your password was changed, but this account needs another sign-in step. Sign in to continue.",
-      );
-    } catch (e) {
-      showMessage(errorBox, clerkErrorMessage(e));
-    }
-    resetButton.textContent = "Set password";
-    resetButton.disabled = !passwordsValid;
-  });
-
-  resendButton.addEventListener("click", async () => {
-    showMessage(errorBox, null);
-    resendButton.disabled = true;
-    try {
-      await sendCode(emailInput.value.trim());
-      codeInput.value = "";
-      codeInput.focus();
-    } catch (e) {
-      showMessage(errorBox, clerkErrorMessage(e));
-    }
-    setTimeout(() => {
-      resendButton.disabled = false;
-    }, 15_000);
+    // The reset ends every session, this browser's included, so there is
+    // nothing to continue into: they sign in with the password they just
+    // chose, which also proves they remember it.
+    el("heading").textContent = "Password changed";
+    resetForm.hidden = true;
+    const intro = resetSection.querySelector<HTMLElement>(".auth-intro");
+    if (intro) intro.textContent = "Sign in with your new password to carry on.";
+    const link = document.createElement("a");
+    link.className = "btn-primary mt-5 w-full";
+    link.href = withNext("/account/sign-in");
+    link.textContent = "Sign in";
+    intro?.after(link);
   });
 }

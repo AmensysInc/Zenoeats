@@ -1,3 +1,6 @@
+import { useAppSelector } from "@/app/hooks";
+import { selectCartCount } from "@/features/cart/cartSlice";
+
 /**
  * The foot of every customer page.
  *
@@ -15,9 +18,26 @@
  * not try to resolve them.
  */
 export function CustomerFooter() {
+  // Only reserve room for the cart bar when there is a cart to review. The
+  // bar is fixed to the bottom of the viewport and was covering the allergen
+  // line -- the one thing here somebody with an allergy has to be able to
+  // read -- but reserving the space unconditionally left a band of nothing
+  // under every page that has no bar at all.
+  const count = useAppSelector(selectCartCount);
+
   return (
-    <footer className="mt-16 border-t border-hairline px-4 py-8 text-caption text-muted sm:px-6">
-      <div className="mx-auto max-w-[1100px] space-y-3">
+    // No top border and a small gap: the page above this already ends in a
+    // rule of its own, so a second line a few pixels below it read as two
+    // footers with a hole between them rather than one.
+    <footer
+      // The same container as the page above it -- width, gutters and
+      // all -- so this text starts on the same left edge as the address
+      // and the restaurant name, rather than on one of its own.
+      className={`mt-7 pt-6 text-caption text-muted ${
+        count > 0 ? "pb-[132px]" : "pb-8"
+      }`}
+    >
+      <div className="mx-auto w-full max-w-[1336px] space-y-3 px-[19px] sm:px-7 xl:px-10">
         <p>
           Allergies or intolerances? Food is prepared in kitchens that handle
           allergens, and cross-contact cannot be ruled out. Contact the

@@ -128,6 +128,7 @@ const cartSlice = createSlice({
               key,
               menu_item_id: item.id,
               name: item.name,
+              imageUrl: item.image_url ?? null,
               quantity,
               note,
               unitPreviewMinor,
@@ -183,6 +184,11 @@ const cartSlice = createSlice({
             line: {
               key,
               combo_id: combo.id,
+              // A deal has no photo of its own unless the restaurant took
+              // one, so borrow from the first chosen item that has one --
+              // the same rule the menu card follows.
+              imageUrl:
+                combo.image_url ?? chosen.find((c) => c.item.image_url)?.item.image_url ?? null,
               name: combo.name,
               quantity,
               note,
