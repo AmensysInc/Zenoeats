@@ -19,7 +19,14 @@ from app.core import customer_auth, guest_auth, staff_auth
 from app.db.session import system_session
 from app.models import UserKind
 
-HOST = "http://spicehouse.zenoeats.local"
+# The restaurant these tests order from, created by the fixture below.
+#
+# It used to be the seeded "spicehouse", which works on a developer's machine
+# and nowhere else: CI migrates an empty database and never seeds it, so every
+# endpoint that resolves a tenant answered RESTAURANT_NOT_FOUND. A test that
+# depends on seed data is a test that only passes where somebody has already
+# run `make seed`.
+_host: list[str] = []
 
 
 def _client():
@@ -27,7 +34,38 @@ def _client():
 
     from app.main import app
 
-    return TestClient(app, base_url=HOST)
+    return TestClient(app, base_url=f"http://{_host[0]}")
+
+
+@pytest.fixture(autouse=True)
+def storefront():
+    """An active restaurant for the Host header to resolve to.
+
+    Autouse, because every test in this file either orders from a restaurant
+    or signs in on one's storefront. Its own slug per run, so a leftover row
+    from a previous run cannot be picked up instead.
+    """
+    import uuid as _uuid
+
+    from app.db.session import system_session, tenant_session
+    from app.models import Restaurant, RestaurantStatus
+
+    slug = f"accounts-{_uuid.uuid4().hex[:8]}"
+    with system_session() as session:
+        restaurant = Restaurant(
+            slug=slug, name="Accounts Test", status=RestaurantStatus.ACTIVE.value,
+            timezone="UTC", currency="USD",
+        )
+        session.add(restaurant)
+        session.flush()
+        rid = restaurant.id
+
+    _host.append(f"{slug}.zenoeats.local")
+    yield slug
+    _host.pop()
+
+    with tenant_session(rid) as session:
+        session.execute(text("DELETE FROM restaurants WHERE id = :r"), {"r": rid})
 
 
 def _address() -> str:
@@ -244,7 +282,9 @@ def test_a_customer_cookie_does_not_open_a_staff_or_admin_session():
 
     # And through the API, not only the verifier.
     staff = _client()
-    staff.cookies.set(staff_auth.SESSION_COOKIE, token, domain="spicehouse.zenoeats.local")
+    # The host the fixture made, or the cookie is never sent and this
+    # passes for the wrong reason.
+    staff.cookies.set(staff_auth.SESSION_COOKIE, token, domain=_host[0])
     assert staff.get("/api/v1/restaurant/me").status_code == 401
 
 
