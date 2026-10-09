@@ -92,6 +92,17 @@ migrate:
 seed:
 	cd backend && ../$(PY) scripts/seed.py
 
+.PHONY: import-menu
+import-menu: ## Load a menu onto an existing restaurant:  make import-menu slug=jrs-corner file=menus/jrs-corner.json
+	@test -n "$(slug)" || (echo 'Usage: make import-menu slug=<restaurant-slug> file=<menu.json>' && exit 1)
+	@test -n "$(file)" || (echo 'Usage: make import-menu slug=<restaurant-slug> file=<menu.json>' && exit 1)
+	cd $(BACKEND) && ../$(PY) scripts/import_menu.py $(slug) $(file)
+
+.PHONY: export-menu
+export-menu: ## Write a restaurant's menu to stdout as JSON:  make export-menu slug=jrs-corner
+	@test -n "$(slug)" || (echo 'Usage: make export-menu slug=<restaurant-slug>' && exit 1)
+	cd $(BACKEND) && ../$(PY) scripts/export_menu.py $(slug)
+
 test:
 	cd backend && ../$(PY) -m pytest tests/ -q
 

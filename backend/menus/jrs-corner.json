@@ -1,0 +1,567 @@
+{
+  "restaurant": {
+    "slug": "spicehouse",
+    "name": "Spice House"
+  },
+  "item_types": [
+    {
+      "name": "Burgers",
+      "parent": null,
+      "sort_order": 0,
+      "photo": "cat-burgers"
+    },
+    {
+      "name": "Fries",
+      "parent": null,
+      "sort_order": 1,
+      "photo": "cat-fries"
+    },
+    {
+      "name": "Shakes",
+      "parent": null,
+      "sort_order": 2,
+      "photo": "cat-shakes"
+    },
+    {
+      "name": "Drinks",
+      "parent": null,
+      "sort_order": 3,
+      "photo": "cat-drinks"
+    }
+  ],
+  "modifier_groups": [
+    {
+      "name": "Drink",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Drinks"
+      ],
+      "options": [
+        {
+          "name": "Coca-Cola",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "Diet Coke",
+          "price_delta_minor": 0,
+          "calories_delta": -190,
+          "sort_order": 1
+        },
+        {
+          "name": "Dr Pepper",
+          "price_delta_minor": 0,
+          "calories_delta": 10,
+          "sort_order": 2
+        },
+        {
+          "name": "7UP",
+          "price_delta_minor": 0,
+          "calories_delta": -10,
+          "sort_order": 3
+        },
+        {
+          "name": "Root beer",
+          "price_delta_minor": 0,
+          "calories_delta": 20,
+          "sort_order": 4
+        },
+        {
+          "name": "Iced tea",
+          "price_delta_minor": 0,
+          "calories_delta": -190,
+          "sort_order": 5
+        },
+        {
+          "name": "Pink lemonade",
+          "price_delta_minor": 0,
+          "calories_delta": -20,
+          "sort_order": 6
+        },
+        {
+          "name": "Light lemonade",
+          "price_delta_minor": 0,
+          "calories_delta": -170,
+          "sort_order": 7
+        },
+        {
+          "name": "Arnold Palmer",
+          "price_delta_minor": 0,
+          "calories_delta": -105,
+          "sort_order": 8
+        }
+      ]
+    },
+    {
+      "name": "Extras",
+      "selection_type": "MULTI",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 5,
+      "offered_on": [
+        "Burgers"
+      ],
+      "options": [
+        {
+          "name": "Extra spread",
+          "price_delta_minor": 0,
+          "calories_delta": 60,
+          "sort_order": 0
+        },
+        {
+          "name": "Grilled onions",
+          "price_delta_minor": 0,
+          "calories_delta": 10,
+          "sort_order": 1
+        },
+        {
+          "name": "Whole grilled onions",
+          "price_delta_minor": 0,
+          "calories_delta": 15,
+          "sort_order": 2
+        },
+        {
+          "name": "Chopped chillies",
+          "price_delta_minor": 0,
+          "calories_delta": 5,
+          "sort_order": 3
+        },
+        {
+          "name": "Extra cheese slice",
+          "price_delta_minor": 60,
+          "calories_delta": 40,
+          "sort_order": 4
+        }
+      ]
+    },
+    {
+      "name": "Flavour",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Shakes"
+      ],
+      "options": [
+        {
+          "name": "Chocolate",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "Vanilla",
+          "price_delta_minor": 0,
+          "calories_delta": 100,
+          "sort_order": 1
+        },
+        {
+          "name": "Strawberry",
+          "price_delta_minor": 0,
+          "calories_delta": 100,
+          "sort_order": 2
+        },
+        {
+          "name": "Neapolitan",
+          "price_delta_minor": 0,
+          "calories_delta": 60,
+          "sort_order": 3
+        }
+      ]
+    },
+    {
+      "name": "Fry style",
+      "selection_type": "SINGLE",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 1,
+      "offered_on": [
+        "Fries"
+      ],
+      "options": [
+        {
+          "name": "Well done",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "Light",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Preparation",
+      "selection_type": "MULTI",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 2,
+      "offered_on": [
+        "Burgers"
+      ],
+      "options": [
+        {
+          "name": "Special",
+          "price_delta_minor": 0,
+          "calories_delta": 80,
+          "sort_order": 0
+        },
+        {
+          "name": "Jr's Style",
+          "price_delta_minor": 0,
+          "calories_delta": -150,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Size",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Drinks"
+      ],
+      "options": [
+        {
+          "name": "Small",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "Medium",
+          "price_delta_minor": 35,
+          "calories_delta": 60,
+          "sort_order": 1
+        },
+        {
+          "name": "Large",
+          "price_delta_minor": 65,
+          "calories_delta": 120,
+          "sort_order": 2
+        },
+        {
+          "name": "Extra large",
+          "price_delta_minor": 95,
+          "calories_delta": 190,
+          "sort_order": 3
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "name": "Jr's Double-Double",
+      "item_type": "Burgers",
+      "description": "Two beef patties, two slices of American cheese, hand-leafed lettuce, tomato and spread.",
+      "price_minor": 590,
+      "calories": 670,
+      "currency": "USD",
+      "sort_order": 1,
+      "photo": "item-double-double",
+      "modifier_groups": [
+        "Preparation",
+        "Extras"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Cheeseburger",
+      "item_type": "Burgers",
+      "description": "One patty, American cheese, lettuce, tomato and spread.",
+      "price_minor": 360,
+      "calories": 480,
+      "currency": "USD",
+      "sort_order": 2,
+      "photo": "item-cheeseburger",
+      "modifier_groups": [
+        "Preparation",
+        "Extras"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Hamburger",
+      "item_type": "Burgers",
+      "description": "One patty, lettuce, tomato and spread. No cheese.",
+      "price_minor": 310,
+      "calories": 390,
+      "currency": "USD",
+      "sort_order": 3,
+      "photo": "item-hamburger",
+      "modifier_groups": [
+        "Preparation",
+        "Extras"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's French Fries",
+      "item_type": "Fries",
+      "description": "Whole potatoes, cut and fried to order.",
+      "price_minor": 245,
+      "calories": 395,
+      "currency": "USD",
+      "sort_order": 4,
+      "photo": "item-fries",
+      "modifier_groups": [
+        "Fry style"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Shake",
+      "item_type": "Shakes",
+      "description": "Made with real ice cream.",
+      "price_minor": 340,
+      "calories": 590,
+      "currency": "USD",
+      "sort_order": 5,
+      "photo": "item-shake",
+      "modifier_groups": [
+        "Flavour"
+      ],
+      "comes_with": [
+        "Chocolate"
+      ]
+    },
+    {
+      "name": "Jr's Soft Drink",
+      "item_type": "Drinks",
+      "description": "Fountain drink, free refills in the dining room.",
+      "price_minor": 210,
+      "calories": 200,
+      "currency": "USD",
+      "sort_order": 6,
+      "photo": "item-soft-drink",
+      "modifier_groups": [
+        "Size",
+        "Drink"
+      ],
+      "comes_with": [
+        "Small",
+        "Coca-Cola"
+      ]
+    },
+    {
+      "name": "Jr's Coffee",
+      "item_type": "Drinks",
+      "description": "Freshly brewed.",
+      "price_minor": 140,
+      "calories": 5,
+      "currency": "USD",
+      "sort_order": 7,
+      "photo": "item-coffee",
+      "modifier_groups": [],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Milk",
+      "item_type": "Drinks",
+      "description": "Carton, 1% low fat.",
+      "price_minor": 120,
+      "calories": 130,
+      "currency": "USD",
+      "sort_order": 8,
+      "photo": "item-milk",
+      "modifier_groups": [],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Hot Cocoa",
+      "item_type": "Drinks",
+      "description": "With marshmallows.",
+      "price_minor": 220,
+      "calories": 170,
+      "currency": "USD",
+      "sort_order": 9,
+      "photo": "item-cocoa",
+      "modifier_groups": [],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Grilled Cheese",
+      "item_type": "Burgers",
+      "description": "Two slices of cheese, lettuce, tomato and spread. No meat.",
+      "price_minor": 310,
+      "calories": 380,
+      "currency": "USD",
+      "sort_order": 12,
+      "photo": "item-grilled-cheese",
+      "modifier_groups": [
+        "Preparation",
+        "Extras"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Special Fries",
+      "item_type": "Fries",
+      "description": "Fries with cheese, grilled onions and spread.",
+      "price_minor": 460,
+      "calories": 750,
+      "currency": "USD",
+      "sort_order": 14,
+      "photo": "item-special-fries",
+      "modifier_groups": [
+        "Fry style"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Cheese Fries",
+      "item_type": "Fries",
+      "description": "Fries with two slices of melted cheese.",
+      "price_minor": 365,
+      "calories": 400,
+      "currency": "USD",
+      "sort_order": 15,
+      "photo": "item-cheese-fries",
+      "modifier_groups": [
+        "Fry style"
+      ],
+      "comes_with": []
+    },
+    {
+      "name": "Jr's Root Beer Float",
+      "item_type": "Shakes",
+      "description": "Root beer over vanilla ice cream.",
+      "price_minor": 340,
+      "calories": 520,
+      "currency": "USD",
+      "sort_order": 16,
+      "photo": "item-root-beer-float",
+      "modifier_groups": [],
+      "comes_with": []
+    }
+  ],
+  "meals": [
+    {
+      "name": "All Day",
+      "sort_order": 1,
+      "items": [
+        "Jr's Double-Double",
+        "Jr's Cheeseburger",
+        "Jr's Hamburger",
+        "Jr's French Fries",
+        "Jr's Shake",
+        "Jr's Soft Drink",
+        "Jr's Coffee",
+        "Jr's Milk",
+        "Jr's Hot Cocoa",
+        "Jr's Grilled Cheese",
+        "Jr's Special Fries",
+        "Jr's Cheese Fries",
+        "Jr's Root Beer Float"
+      ]
+    }
+  ],
+  "combos": [
+    {
+      "name": "Jr's Double-Double Combo",
+      "meal": "All Day",
+      "description": "With fries and a drink.",
+      "discount_kind": "PERCENT",
+      "discount_value": 500,
+      "sort_order": 0,
+      "slots": [
+        {
+          "item_type": "Burgers",
+          "choices": [
+            "Jr's Double-Double"
+          ]
+        },
+        {
+          "item_type": "Fries",
+          "choices": [
+            "Jr's French Fries"
+          ]
+        },
+        {
+          "item_type": "Drinks",
+          "choices": [
+            "Jr's Soft Drink",
+            "Jr's Shake",
+            "Jr's Coffee",
+            "Jr's Milk",
+            "Jr's Hot Cocoa"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jr's Cheeseburger Combo",
+      "meal": "All Day",
+      "description": "With fries and a drink.",
+      "discount_kind": "PERCENT",
+      "discount_value": 500,
+      "sort_order": 1,
+      "slots": [
+        {
+          "item_type": "Burgers",
+          "choices": [
+            "Jr's Cheeseburger"
+          ]
+        },
+        {
+          "item_type": "Fries",
+          "choices": [
+            "Jr's French Fries"
+          ]
+        },
+        {
+          "item_type": "Drinks",
+          "choices": [
+            "Jr's Soft Drink",
+            "Jr's Shake",
+            "Jr's Coffee",
+            "Jr's Milk",
+            "Jr's Hot Cocoa"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Jr's Hamburger Combo",
+      "meal": "All Day",
+      "description": "With fries and a drink.",
+      "discount_kind": "PERCENT",
+      "discount_value": 500,
+      "sort_order": 2,
+      "slots": [
+        {
+          "item_type": "Burgers",
+          "choices": [
+            "Jr's Hamburger"
+          ]
+        },
+        {
+          "item_type": "Fries",
+          "choices": [
+            "Jr's French Fries"
+          ]
+        },
+        {
+          "item_type": "Drinks",
+          "choices": [
+            "Jr's Soft Drink",
+            "Jr's Shake",
+            "Jr's Coffee",
+            "Jr's Milk",
+            "Jr's Hot Cocoa"
+          ]
+        }
+      ]
+    }
+  ]
+}
