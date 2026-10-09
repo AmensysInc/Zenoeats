@@ -114,6 +114,7 @@ export const api = createApi({
     "Restaurant",
     "AdminOrder",
     "AdminReport",
+    "RestaurantLogin",
     "Portal",
     "Menu",
     "Item",
