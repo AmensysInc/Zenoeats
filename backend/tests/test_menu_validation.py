@@ -270,3 +270,73 @@ def test_a_deleted_combo_no_longer_holds_its_types_back(manager):
                         json={"parent_id": types["Food"]})
     assert res.status_code == 200, res.text
     assert res.json()["parent_id"] == types["Food"]
+
+
+# ------------------------------------------------------ fixed-price combos ---
+
+def _meal_with_sides(client, types):
+    lunch = client.post("/api/v1/restaurant/meals", json={"name": "Lunch"}).json()["id"]
+    ids = {}
+    for name, type_name, price in (
+        ("Double Cheese", "Food", 589), ("French Fries", "Sides", 259),
+        ("Cheese Fries", "Sides", 439),
+    ):
+        ids[name] = client.post(
+            "/api/v1/restaurant/items",
+            json={"name": name, "item_type_id": types[type_name], "base_price_minor": price,
+                  "meal_ids": [lunch]},
+        ).json()["id"]
+    return lunch, ids
+
+
+def test_a_fixed_price_combo_keeps_its_price_and_upcharges(manager):
+    types = _types(manager)
+    lunch, ids = _meal_with_sides(manager, types)
+    res = manager.post("/api/v1/restaurant/combos", json={
+        "meal_id": lunch, "name": "Double Cheese Combo",
+        "discount_kind": "FIXED_PRICE", "discount_value": 899,
+        "slots": [
+            {"item_type_id": types["Food"], "item_ids": [ids["Double Cheese"]]},
+            {"item_type_id": types["Sides"],
+             "item_ids": [ids["French Fries"], ids["Cheese Fries"]],
+             "upcharges": {ids["Cheese Fries"]: 100}},
+        ],
+    })
+    assert res.status_code == 201, res.text
+
+    [combo] = manager.get("/api/v1/restaurant/combos").json()
+    assert (combo["discount_kind"], combo["discount_value"]) == ("FIXED_PRICE", 899)
+    sides = combo["slots"][1]
+    assert sides["upcharges"] == {ids["Cheese Fries"]: 100}  # only the dearer one
+
+    # Editing the slots without upcharges clears them, as any slot edit does.
+    res = manager.patch(f"/api/v1/restaurant/combos/{combo['id']}", json={"slots": [
+        {"item_type_id": types["Food"], "item_ids": [ids["Double Cheese"]]},
+        {"item_type_id": types["Sides"], "item_ids": [ids["French Fries"], ids["Cheese Fries"]]},
+    ]})
+    assert res.status_code == 200, res.text
+    assert res.json()["slots"][1]["upcharges"] == {}
+
+
+@pytest.mark.parametrize("change, says", [
+    ({"discount_kind": "FIXED_PRICE", "discount_value": 0}, "price"),
+    ({"discount_kind": "FIXED_PRICE", "discount_value": 899,
+      "upcharge_on": "Double Cheese"}, "does not offer"),
+    ({"discount_kind": "FIXED_PRICE", "discount_value": 899,
+      "upcharge_amount": -50}, "negative"),
+])
+def test_a_fixed_price_combo_that_makes_no_sense_is_refused(manager, change, says):
+    types = _types(manager)
+    lunch, ids = _meal_with_sides(manager, types)
+    upcharge_on = ids[change.pop("upcharge_on", "Cheese Fries")]
+    amount = change.pop("upcharge_amount", 100)
+    res = manager.post("/api/v1/restaurant/combos", json={
+        "meal_id": lunch, "name": "Bad Combo", **change,
+        "slots": [
+            {"item_type_id": types["Food"], "item_ids": [ids["Double Cheese"]]},
+            {"item_type_id": types["Sides"], "item_ids": [ids["Cheese Fries"]],
+             "upcharges": {upcharge_on: amount}},
+        ],
+    })
+    assert res.status_code == 422, res.text
+    assert says in _message(res)

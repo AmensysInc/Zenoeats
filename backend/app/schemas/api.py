@@ -129,6 +129,9 @@ class ComboSlotOut(BaseModel):
     item_type_id: UUID
     label: str
     items: list[ItemOut]
+    # Item id -> what choosing it adds to a FIXED_PRICE combo, in minor units.
+    # Only the dishes that cost extra; absent means nothing on top.
+    upcharges: dict[UUID, int] = Field(default_factory=dict)
 
 
 class ComboOut(BaseModel):

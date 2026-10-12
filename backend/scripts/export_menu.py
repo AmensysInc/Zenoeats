@@ -158,6 +158,13 @@ def export(slug: str) -> dict:
                                 for si in slot_items
                                 if si.slot_id == s.id and si.item_id in by_item_id
                             ],
+                            # Only the dearer choices of a FIXED_PRICE combo.
+                            "upcharges": {
+                                by_item_id[si.item_id].name: si.upcharge_minor
+                                for si in slot_items
+                                if si.slot_id == s.id and si.item_id in by_item_id
+                                and si.upcharge_minor
+                            },
                         }
                         for s in slots
                         if s.combo_id == c.id

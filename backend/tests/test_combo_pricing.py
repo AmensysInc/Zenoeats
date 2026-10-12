@@ -58,6 +58,22 @@ def test_nothing_is_taken_off_an_empty_total():
     assert combo_discount_minor("PERCENT", 5000, 0) == 0
 
 
+def test_a_fixed_price_takes_off_whatever_brings_the_parts_down_to_it():
+    # Jr's Double Cheese meal: $5.89 + $2.59 + $1.59 = $10.07, sold for $8.99.
+    assert combo_discount_minor("FIXED_PRICE", 899, 1007) == 108
+
+
+def test_a_fixed_price_adds_the_extras_on_top():
+    # Cheese fries ($4.39) for fries, a dollar more: $11.87 of food for $9.99.
+    assert combo_discount_minor("FIXED_PRICE", 899, 1187, extras_minor=100) == 188
+
+
+def test_a_fixed_price_above_the_parts_takes_nothing_and_adds_nothing():
+    """A set price higher than the food bought separately is a mistake to
+    absorb. The customer pays what the parts cost, never more."""
+    assert combo_discount_minor("FIXED_PRICE", 1500, 1007) == 0
+
+
 # --- the whole combo, through price_cart -----------------------------------
 
 
@@ -141,17 +157,19 @@ class FakeItem:
 
 
 class FakeChoice:
-    def __init__(self, item):
+    def __init__(self, item, upcharge=0):
         self.item_id = item.id
         self.item = item
+        self.upcharge_minor = upcharge
 
 
 class FakeSlot:
-    def __init__(self, item_type, items):
+    def __init__(self, item_type, items, upcharges=None):
         self.id = uuid.uuid4()
         self.item_type = item_type
         self.item_type_id = item_type.id
-        self.choices = [FakeChoice(i) for i in items]
+        upcharges = upcharges or {}
+        self.choices = [FakeChoice(i, upcharges.get(i.name, 0)) for i in items]
 
 
 class FakeCombo:
@@ -492,3 +510,71 @@ def test_an_item_on_no_meal_period_is_not_sold_on_its_own():
         price_cart(FakeSession([retired], None), FakeRestaurant(), [line], [])
     assert caught.value.code == "ITEM_UNAVAILABLE"
     assert caught.value.detail["message"] == "Seasonal Pie is no longer on the menu."
+
+
+# --- fixed-price combos, through price_cart --------------------------------
+
+
+@pytest.fixture
+def jrs_meal():
+    """Jr's Double Cheese meal at $8.99, cheese fries a dollar more."""
+    large = FakeOption("Large", 60)
+    size = FakeGroup("Size", [large])
+    burger = FakeItem("Double Cheese Burger", 589)
+    fries = FakeItem("French Fries", 259, SIDES)
+    cheese_fries = FakeItem("Cheese Fries", 439, SIDES)
+    drink = FakeItem("Soft Drink", 159, DRINKS, groups=[size])
+    combo = FakeCombo(
+        "Double Cheese Combo",
+        [
+            FakeSlot(FOOD, [burger]),
+            FakeSlot(SIDES, [fries, cheese_fries], upcharges={"Cheese Fries": 100}),
+            FakeSlot(DRINKS, [drink]),
+        ],
+        kind="FIXED_PRICE",
+        value=899,
+    )
+    return combo, burger, fries, cheese_fries, drink, large
+
+
+def _fixed(jrs_meal, side, drink_options=()):
+    from app.services.pricing import price_cart
+
+    combo, burger, fries, cheese_fries, drink, _large = jrs_meal
+    raw = {
+        "combo_id": str(combo.id),
+        "quantity": 1,
+        "selections": [
+            {"slot_id": str(combo.slots[0].id), "menu_item_id": str(burger.id)},
+            {"slot_id": str(combo.slots[1].id), "menu_item_id": str(side.id)},
+            {
+                "slot_id": str(combo.slots[2].id),
+                "menu_item_id": str(drink.id),
+                "modifiers": [{"option_id": str(o.id), "quantity": 1} for o in drink_options],
+            },
+        ],
+    }
+    session = FakeSession([burger, fries, cheese_fries, drink], combo)
+    return price_cart(session, FakeRestaurant(), [], [raw])
+
+
+def test_a_fixed_price_combo_costs_its_price(jrs_meal):
+    _combo, _burger, fries, *_ = jrs_meal
+    cart = _fixed(jrs_meal, fries)
+    assert cart.subtotal_minor == 1007  # the parts, as the receipt lists them
+    assert cart.total_minor == 899
+
+
+def test_a_dearer_choice_costs_its_upcharge_not_its_price_difference(jrs_meal):
+    """Cheese fries are $1.80 more on their own and a dollar more in the meal."""
+    _combo, _burger, _fries, cheese_fries, *_ = jrs_meal
+    cart = _fixed(jrs_meal, cheese_fries)
+    assert cart.subtotal_minor == 1187
+    assert cart.total_minor == 999
+
+
+def test_an_option_inside_a_fixed_price_combo_costs_what_it_does_outside(jrs_meal):
+    """A large drink is its size difference in a meal as well."""
+    _combo, _burger, fries, _cheese_fries, _drink, large = jrs_meal
+    cart = _fixed(jrs_meal, fries, drink_options=[large])
+    assert cart.total_minor == 959

@@ -75,8 +75,18 @@ function persist(state: CartState): void {
  *  the percentage once, and never take off more than the food costs. A
  *  preview that disagreed with the receipt would look like a price change at
  *  checkout, which is the one thing this app refuses to do quietly. */
-export function comboPreviewMinor(combo: Combo, itemsSubtotalMinor: number): number {
+export function comboPreviewMinor(
+  combo: Combo,
+  itemsSubtotalMinor: number,
+  /** FIXED_PRICE only: the chosen dishes' upcharges plus what their options
+   *  added, which go on top of the set price. */
+  extrasMinor = 0,
+): number {
   if (itemsSubtotalMinor <= 0) return 0;
+  if (combo.discount_kind === "FIXED_PRICE") {
+    // Never more than the same food bought separately.
+    return Math.min(itemsSubtotalMinor, Math.max(0, combo.discount_value + extrasMinor));
+  }
   let off = 0;
   if (combo.discount_kind === "PERCENT") {
     off = Math.round((itemsSubtotalMinor * combo.discount_value) / 10000);
@@ -84,6 +94,19 @@ export function comboPreviewMinor(combo: Combo, itemsSubtotalMinor: number): num
     off = Math.max(0, combo.discount_value);
   }
   return Math.max(0, itemsSubtotalMinor - Math.min(off, itemsSubtotalMinor));
+}
+
+/** What a FIXED_PRICE combo adds to its set price for these choices: each
+ *  dish's upcharge, and what its options cost. The server sums the same. */
+export function comboExtrasMinor(
+  combo: Combo,
+  chosen: { slotId: string; item: Item; selected: Selection }[],
+): number {
+  return chosen.reduce((sum, c) => {
+    const unit = Math.max(0, c.item.base_price_minor + modifierDelta(c.item, c.selected));
+    const slot = combo.slots.find((s) => s.id === c.slotId);
+    return sum + unit - c.item.base_price_minor + (slot?.upcharges?.[c.item.id] ?? 0);
+  }, 0);
 }
 
 const cartSlice = createSlice({
@@ -168,6 +191,7 @@ const cartSlice = createSlice({
           (sum, c) => sum + Math.max(0, c.item.base_price_minor + modifierDelta(c.item, c.selected)),
           0,
         );
+        const extras = comboExtrasMinor(combo, chosen);
 
         // Every choice and every option is in the key, so two differently
         // built deals stay two rows and two identical ones merge.
@@ -192,7 +216,7 @@ const cartSlice = createSlice({
               name: combo.name,
               quantity,
               note,
-              unitPreviewMinor: comboPreviewMinor(combo, itemsSubtotal),
+              unitPreviewMinor: comboPreviewMinor(combo, itemsSubtotal, extras),
               selections,
             } satisfies CartComboLine,
           },

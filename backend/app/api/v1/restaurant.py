@@ -1041,13 +1041,18 @@ class ComboSlotIn(BaseModel):
 
     item_type_id: UUID
     item_ids: list[UUID] = Field(min_length=1)
+    # What choosing a dish adds to a FIXED_PRICE combo, by item id, in minor
+    # units. Absent means nothing extra. Kept beside item_ids rather than
+    # replacing it so a builder that knows nothing of upcharges still works.
+    upcharges: dict[UUID, int] = Field(default_factory=dict)
 
 
 class ComboIn(BaseModel):
     """A new combo.
 
     The discount is a kind and a value read according to it: basis points for
-    PERCENT, minor units for AMOUNT, ignored for NONE. Validated in
+    PERCENT, minor units for AMOUNT, the combo's own price in minor units for
+    FIXED_PRICE, ignored for NONE. Validated in
     _combo_discount below rather than here, because the bound on the value
     depends on the kind and a field cannot see its sibling.
     """
@@ -1502,6 +1507,10 @@ def _combo_discount(kind: DiscountKind, value: int) -> tuple[str, int]:
     elif kind == DiscountKind.AMOUNT:
         if value < 0:
             raise errors.validation_error("A discount cannot be negative.")
+    elif kind == DiscountKind.FIXED_PRICE:
+        # A meal for nothing is a typo, not a promotion.
+        if value <= 0:
+            raise errors.validation_error("Enter the combo's price, like 8.99.")
     else:
         # NONE carries no value. Storing whatever was typed before the kind
         # was changed would resurrect it if the kind changed back.
@@ -1565,6 +1574,12 @@ def _set_combo_slots(
         db.add(slot)
         db.flush()
 
+        unknown = set(slot_in.upcharges) - set(slot_in.item_ids)
+        if unknown:
+            raise errors.validation_error("An upcharge is for a dish the slot does not offer.")
+        if any(amount < 0 for amount in slot_in.upcharges.values()):
+            raise errors.validation_error("An upcharge cannot be negative.")
+
         for index, item_id in enumerate(dict.fromkeys(slot_in.item_ids)):
             item = db.get(Item, item_id)
             if item is None or item.deleted_at is not None:
@@ -1585,6 +1600,7 @@ def _set_combo_slots(
                 ComboSlotItem(
                     restaurant_id=restaurant.id, slot_id=slot.id,
                     item_id=item.id, sort_order=index,
+                    upcharge_minor=slot_in.upcharges.get(item.id, 0),
                 )
             )
     db.flush()
@@ -1607,6 +1623,11 @@ def _combo_out(combo: Combo) -> dict:
                 "id": str(slot.id),
                 "item_type_id": str(slot.item_type_id),
                 "item_ids": [str(choice.item_id) for choice in slot.choices],
+                "upcharges": {
+                    str(choice.item_id): choice.upcharge_minor
+                    for choice in slot.choices
+                    if choice.upcharge_minor
+                },
             }
             for slot in combo.slots
         ],
@@ -1716,6 +1737,9 @@ def update_combo(
         )
 
     db.flush()
+    # The new slots were added as rows, not through the relationship, so it
+    # still holds the old ones until it is read again.
+    db.expire(combo, ["slots"])
     return _combo_out(combo)
 
 
