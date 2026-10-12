@@ -469,20 +469,6 @@ const UPLOAD_TIMEOUT_MS = 60_000;
  * nothing on screen changes until the item or option holding the key is
  * saved, and that save invalidates what it should.
  */
-/** Store the picture at a URL instead of uploading a file.
- *
- *  Answers exactly what uploadImage answers, because what gets stored is the
- *  same thing: our own re-encoded WebP under our own key. The link is where
- *  the picture came from, not where it lives -- the storefront never depends
- *  on somebody else's server staying up. */
-export function imageFromUrl(kind: ImageKind, url: string) {
-  return request<UploadedImage>(`/restaurant/images/from-url?kind=${kind}`, {
-    method: "POST",
-    body: JSON.stringify({ url }),
-    timeoutMs: UPLOAD_TIMEOUT_MS,
-  });
-}
-
 export function uploadImage(kind: ImageKind, file: Blob, filename: string) {
   const body = new FormData();
   body.append("file", file, filename);

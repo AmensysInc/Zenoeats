@@ -94,10 +94,6 @@ EXPECTED = {
     # Reports are managers alone: takings are not a support question.
     ("GET", "/restaurant/reports"): MANAGERS,
     ("POST", "/restaurant/images"): STOREFRONT,
-    # Linking a picture instead of uploading one is MANAGERS, not STOREFRONT:
-    # it makes the server fetch an address the caller chose, which is not a
-    # power the role that works on restaurants from outside should hold.
-    ("POST", "/restaurant/images/from-url"): MANAGERS,
     # The coupons dashboard, in its own module. Read by managers and support
     # -- "why did this customer get a discount" needs the rows -- and written
     # by managers alone: inventing a discount is the restaurant's call.

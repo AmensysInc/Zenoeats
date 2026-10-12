@@ -39,9 +39,7 @@ from app.schemas.api import (
     ChangePasswordIn, MenuOut, StaffInviteOut, StaffLoginIn, StaffMeOut,
     StaffPasswordResetOut, known_timezone,
 )
-from app.services import (
-    geocoding, image_fetch, images, restaurant_profile, stripe_service, tracking, storefront,
-)
+from app.services import geocoding, images, restaurant_profile, stripe_service, tracking, storefront
 from app.services import email as email_service
 from app.services import order_emails, staff_emails
 from app.schemas.storefront import ThemePatch, CategoryPatch, BannersIn, CollectionsIn, MapPatch, ShortcutsIn
@@ -1192,53 +1190,6 @@ def upload_image(
     images.storage().save(key, picture)
     log.info("stored %s image %s (%d bytes)", kind.value, key, len(picture))
     return {"image_path": key, "image_url": images.image_url(key)}
-
-
-class ImageLinkIn(BaseModel):
-    """A URL to fetch a picture from."""
-
-    url: str = Field(min_length=8, max_length=2000)
-
-
-@router.post(
-    "/images/from-url",
-    status_code=201,
-    # The same budget as an upload, and the same reason: generous for
-    # somebody filling in a menu, a wall against a script. Tighter would
-    # punish the manager pasting in twenty dish photos from their own site.
-    dependencies=[Depends(per_staff_user("image_upload", limit=60, window_seconds=600))],
-)
-def store_image_from_url(
-    kind: ImageKind,
-    body: ImageLinkIn,
-    restaurant: Restaurant = Depends(current_restaurant_staff),
-    # MANAGE, where the upload beside it is STOREFRONT -- so IT support can
-    # upload a banner and cannot paste a link. They look like the same
-    # capability and are not: this one makes *our server* issue a request to
-    # an address somebody else chose, and the role that works on restaurants
-    # from outside is the last one that should have it. The restaurant's own
-    # admin and manager keep it, and support keeps the upload it already had.
-    _=Depends(MANAGE),
-):
-    """Store the picture at a URL, and say where it is.
-
-    The upload endpoint above with a different source. Most of the
-    photography a small restaurant has is already on the web -- its own site,
-    a photographer's gallery -- and downloading a file in order to upload it
-    is two steps and a Downloads folder in between.
-
-    What is stored is our own re-encoded WebP under our own key, never the
-    remote file: a link is where the picture came from, not where it lives.
-    See services/image_fetch for that and for what it refuses to fetch, which
-    is the interesting half -- an endpoint that requests a caller's URL can
-    be asked for things the caller could not reach by itself.
-
-    Answers exactly what the upload answers, so every picker in the portal
-    already knows how to read it.
-    """
-    if kind in (ImageKind.BANNERS, ImageKind.CATEGORIES):
-        storefront.require_enabled(restaurant)
-    return image_fetch.fetch(body.url, kind, restaurant.id)
 
 
 @router.get("/menu", response_model=MenuOut)
