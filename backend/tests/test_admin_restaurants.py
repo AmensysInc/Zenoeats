@@ -415,3 +415,35 @@ def test_logins_for_a_restaurant_that_does_not_exist_is_a_404(admin_user):
     with pytest.raises(errors.ApiError) as missing:
         list_restaurant_logins(uuid.uuid4(), admin=admin_user)
     assert missing.value.status_code == 404
+
+
+def test_the_front_page_lists_only_restaurants_that_are_live(admin_user, cleanup, monkeypatch):
+    """A draft or suspended restaurant is not on zenoeats.com; activating it
+    puts it there, and suspending takes it off again."""
+    from fastapi.testclient import TestClient
+
+    from app.api.v1.admin import activate_restaurant, suspend_restaurant
+    from app.core import ratelimit
+    from app.main import app
+
+    monkeypatch.setattr(ratelimit, "_consume", lambda *a, **k: None)
+    root = TestClient(app, base_url="http://zenoeats.local")
+
+    def listed(slug):
+        res = root.get("/api/v1/locations")
+        assert res.status_code == 200, res.text
+        return [loc for loc in res.json()["locations"] if loc["slug"] == slug]
+
+    restaurant = _create(admin_user, cleanup)
+    assert listed(restaurant.slug) == []
+
+    activate_restaurant(restaurant.id, admin=admin_user)
+    [card] = listed(restaurant.slug)
+    assert card["status"] == "OPEN"
+
+    suspend_restaurant(restaurant.id, admin=admin_user)
+    assert listed(restaurant.slug) == []
+    assert _location(restaurant.id)[0]["status"] == "OPEN"  # kept, just not shown
+
+    activate_restaurant(restaurant.id, admin=admin_user)
+    assert len(listed(restaurant.slug)) == 1

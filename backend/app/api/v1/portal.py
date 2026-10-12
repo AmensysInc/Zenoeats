@@ -14,7 +14,9 @@ from app.core import google_oauth
 from app.core.tenant import platform_url_for, storefront_url_for
 from app.core.ratelimit import per_ip
 from app.db.session import system_session
-from app.models import Location, LocationStatus, Restaurant, RestaurantPaymentAccount
+from app.models import (
+    Location, LocationStatus, Restaurant, RestaurantPaymentAccount, RestaurantStatus,
+)
 from app.schemas.api import BrandOut, LocationOut, LocationsOut, MenuOut, PortalOut
 from app.services import delivery, images, storefront
 from app.services.menu import load_menu
@@ -95,12 +97,27 @@ def get_locations(request: Request):
 
     HIDDEN rows are dropped. A location pulled before opening keeps its row
     for the audit trail, but it is not something to show a customer.
+
+    So is a location whose restaurant is not live -- a draft still being set
+    up, or one suspended. The front page lists the stores that are open for
+    business, and one appears the moment the admin activates it (activation
+    makes or opens its location; see admin.activate_restaurant). A restaurant
+    that is live but has paused orders stays, shown as unavailable: that is
+    a closed door, not a store that is not there. Locations with no
+    restaurant behind them are announcements and are still listed.
     """
     with system_session() as session:
         rows = session.execute(
             select(Location, Restaurant)
             .outerjoin(Restaurant, Location.restaurant_id == Restaurant.id)
             .where(Location.status != LocationStatus.HIDDEN.value)
+            .where(
+                Location.restaurant_id.is_(None)
+                | (
+                    (Restaurant.status == RestaurantStatus.ACTIVE.value)
+                    & Restaurant.deleted_at.is_(None)
+                )
+            )
             .order_by(Location.sort_order, Location.name)
         ).all()
 

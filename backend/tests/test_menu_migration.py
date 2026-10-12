@@ -288,7 +288,7 @@ def test_every_photograph_the_snapshot_names_exists(images):
 
 # ---------------------------------------------------- the platform picker ---
 #
-# These start by clearing the four rows, because a development database has
+# These start by clearing the rows this revision writes, because a development database has
 # them from seed.py and CI has nothing: a test that only holds in one of
 # those two worlds is not a gate, it is a coincidence. The deletes roll back
 # with everything else.
@@ -331,9 +331,32 @@ def test_it_fills_the_platform_picker(conn, empty_picker, targeted, images):
     assert open_card.restaurant_id == rid
     assert (images / open_card.image_path).is_file()
 
-    # The other three are honest about not being open.
-    assert _location(conn, "big-apple").status == "COMING_SOON"
-    assert _location(conn, "big-apple").restaurant_id is None
+    # No placeholder cities on a real front page.
+    assert [spec["slug"] for spec in mod.LOCATIONS] == ["jrs-corner"]
+
+
+def test_a_store_that_already_has_a_card_gets_no_second_one(conn, empty_picker, targeted, images):
+    """Production: Jr's Corner was activated before this ran, and activation
+    gave it a card under its own slug. Loading the menu must not add another."""
+    slug, rid = targeted
+    with owner_reads(conn):
+        conn.execute(
+            text(
+                "INSERT INTO locations (slug, name, city, status, restaurant_id) "
+                "VALUES (:s, 'Jr''s Corner', 'Ardmore', 'OPEN', :r)"
+            ),
+            {"s": slug, "r": rid},
+        )
+
+    mod._apply(conn)
+
+    assert _location(conn, "jrs-corner") is None
+    with owner_reads(conn):
+        cards = conn.execute(
+            text("SELECT slug, image_path FROM locations WHERE restaurant_id = :r"), {"r": rid}
+        ).all()
+    assert [card.slug for card in cards] == [slug]
+    assert cards[0].image_path  # it still gets the card photograph
 
 
 def test_a_location_with_no_tenant_behind_it_is_listed_as_coming_soon(
