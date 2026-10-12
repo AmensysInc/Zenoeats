@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer,
-    SmallInteger, String, Text, UniqueConstraint,
+    SmallInteger, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -116,6 +116,11 @@ class Order(Base, TimestampMixin):
         UniqueConstraint("restaurant_id", "order_number", name="uq_order_number_per_restaurant"),
         CheckConstraint("subtotal_minor >= 0", name="ck_order_subtotal"),
         CheckConstraint("discount_minor >= 0", name="ck_order_discount"),
+        CheckConstraint("coupon_discount_minor >= 0", name="ck_order_coupon_discount"),
+        # The coupon's share cannot exceed the discount it is part of.
+        CheckConstraint(
+            "coupon_discount_minor <= discount_minor", name="ck_order_coupon_within_discount"
+        ),
         CheckConstraint("tax_minor >= 0", name="ck_order_tax"),
         CheckConstraint("total_minor >= 0", name="ck_order_total"),
         CheckConstraint("delivery_fee_minor >= 0", name="ck_order_delivery_fee"),
@@ -160,6 +165,28 @@ class Order(Base, TimestampMixin):
     tax_calculation_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tax_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tax_reversed_amount_minor: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+
+    # The coupon this order used, if any, and what it took off.
+    #
+    # Three columns rather than one join, for the reason every other money
+    # field here is a snapshot: coupon_code is what the customer typed and
+    # what the receipt says, and it stays readable after the coupon is
+    # retired, renamed or soft-deleted. coupon_discount_minor is the coupon's
+    # own share of discount_minor -- the rest is what the combos took off --
+    # so the two can be shown as separate lines without re-pricing a cart
+    # that may no longer price the same way.
+    #
+    # coupon_id is kept as well, because it is what redemptions are counted
+    # from: "how many people have used this" is a question about rows, and
+    # counting them by code would conflate a retired coupon with a new one
+    # created under the same code.
+    coupon_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupons.id"), nullable=True, index=True
+    )
+    coupon_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    coupon_discount_minor: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0
     )
 
@@ -208,6 +235,113 @@ class Order(Base, TimestampMixin):
     items: Mapped[list["OrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+
+
+class Coupon(Base, TimestampMixin):
+    """A code a customer types at checkout to pay less.
+
+    The restaurant's own promotion, not the platform's: every row belongs to
+    one tenant, and two restaurants may both run WELCOME10 without either
+    knowing. The code is stored as it will be compared -- upper case, no
+    spaces -- because a customer typing "welcome10" on a phone keyboard has
+    typed the same coupon, and a case-sensitive lookup would tell them
+    otherwise.
+
+    WHAT IT TAKES OFF. discount_kind and discount_value are read exactly as a
+    combo's are (catalog.DiscountKind): PERCENT is basis points, AMOUNT is
+    minor units. They are the same two words a manager already knows from the
+    combo builder, and the same helper prices both.
+
+    max_discount_minor is the one thing a combo has no use for. "20% off"
+    with no ceiling is a different offer on a $10 order and on a $400 office
+    lunch, and the ceiling is the only way to write the first without
+    promising the second.
+
+    WHAT LIMITS IT. Four independent limits, each nullable, because a real
+    promotion uses some and not others:
+
+      starts_at / ends_at    when it works at all
+      min_subtotal_minor     the spend it needs
+      max_redemptions        how many orders may ever use it
+      max_per_customer       how many of those may be one person's
+
+    Redemptions are counted from the orders that carry the coupon rather than
+    kept as a number here. A counter would be a second truth about something
+    the orders already know, and the two would part company the first time an
+    order was cancelled -- see services/coupons.py, which counts them.
+
+    IT IS NEVER HARD-DELETED while an order points at it. Taking a coupon off
+    the dashboard is a soft delete: the orders it discounted keep their own
+    snapshot of the code and the amount, and the row stays so a manager asking
+    "what was WELCOME10?" six months later gets an answer.
+    """
+
+    __tablename__ = "coupons"
+    __table_args__ = (
+        # Per tenant, and only among the live ones: a code that was retired
+        # may be created again, which is how a seasonal promotion comes back.
+        Index(
+            "uq_coupon_code_per_restaurant",
+            "restaurant_id", "code",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        CheckConstraint(
+            "discount_kind IN ('PERCENT', 'AMOUNT')", name="ck_coupon_discount_kind"
+        ),
+        # NONE is a valid DiscountKind for a combo and meaningless here: a
+        # coupon that takes nothing off is not a coupon, it is a code that
+        # tells the customer their total is unchanged.
+        CheckConstraint("discount_value > 0", name="ck_coupon_discount_positive"),
+        CheckConstraint(
+            "discount_kind <> 'PERCENT' OR discount_value <= 10000",
+            name="ck_coupon_percent_within_range",
+        ),
+        CheckConstraint("min_subtotal_minor >= 0", name="ck_coupon_min_subtotal"),
+        CheckConstraint(
+            "max_discount_minor IS NULL OR max_discount_minor > 0",
+            name="ck_coupon_max_discount",
+        ),
+        CheckConstraint(
+            "max_redemptions IS NULL OR max_redemptions > 0",
+            name="ck_coupon_max_redemptions",
+        ),
+        CheckConstraint(
+            "max_per_customer IS NULL OR max_per_customer > 0",
+            name="ck_coupon_max_per_customer",
+        ),
+        # A window that closes before it opens can never be used, and is
+        # always a typo rather than an intention.
+        CheckConstraint(
+            "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
+            name="ck_coupon_window",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    # What the promotion is for, in the manager's words. Shown on the
+    # dashboard and to the customer when the code is accepted, so "Student
+    # Tuesdays" reads back instead of "STU10".
+    description: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    discount_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    discount_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_discount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    min_subtotal_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_redemptions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_per_customer: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Off without being deleted: a promotion paused at lunchtime and resumed
+    # on Friday keeps its code, its limits and its history.
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class OrderItem(Base):

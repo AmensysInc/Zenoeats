@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { Icon, PhotoIcon } from "@/components/common/icons";
 import { errorMessage } from "@/services/apiClient";
 import { shrinkForUpload } from "@/utils/image";
-import { uploadImage, type ImageKind, type UploadedImage } from "../restaurantApi";
+import { imageFromUrl, uploadImage, type ImageKind, type UploadedImage } from "../restaurantApi";
 
 /** The photo a form is holding: a key to save and a URL to preview, or both
  *  null when there is none. */
@@ -120,16 +120,22 @@ export function ImagePicker({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  // The link field, shown only when asked for. Most photos are files on the
+  // phone that took them; a link is the other case, not the common one.
+  const [linking, setLinking] = useState(false);
+  const [link, setLink] = useState("");
   const off = disabled || busy;
 
-  async function upload(file: File) {
+  /** One wrapper around both ways a photo arrives, so the form is held, the
+   *  error is shown and the draft is handed over identically either way. */
+  async function store(get: () => Promise<UploadedImage>) {
     setBusy(true);
     onBusyChange?.(true);
     try {
-      const photo = await shrinkForUpload(file, kind === "banners" ? 2800 : undefined);
-      const stored = await uploadImage(kind, photo.blob, photo.filename);
-      onChange(imageDraft(stored));
+      onChange(imageDraft(await get()));
       onError(null);
+      setLinking(false);
+      setLink("");
     } catch (e) {
       onError(errorMessage(e));
     } finally {
@@ -138,6 +144,24 @@ export function ImagePicker({
       // Cleared so choosing the same file again, after a failure, still fires.
       if (input.current) input.current.value = "";
     }
+  }
+
+  function upload(file: File) {
+    return store(async () => {
+      // Shrunk in the browser first: a 12 MP phone photo is refused by the
+      // server's 8 MB ceiling, and resizing it here is faster than finding
+      // that out over a restaurant's uplink.
+      const photo = await shrinkForUpload(file, kind === "banners" ? 2800 : undefined);
+      return uploadImage(kind, photo.blob, photo.filename);
+    });
+  }
+
+  function fromLink() {
+    const url = link.trim();
+    if (!url) return;
+    // No shrinking: the server fetches and re-encodes it, so the browser
+    // never holds the file at all.
+    return store(() => imageFromUrl(kind, url));
   }
 
   const fileInput = (
@@ -229,6 +253,68 @@ export function ImagePicker({
             remove photo
           </button>
         )}
+
+        {/* The other way a photo arrives. Most of the photography a small
+            restaurant has is already on the web -- its own site, a
+            photographer's gallery -- and downloading a file in order to
+            upload it is two steps and a Downloads folder in between.
+
+            What gets stored is still our own re-encoded file under our own
+            key: the link is a source, not a store, so the storefront never
+            depends on somebody else's server staying up. */}
+        {linking ? (
+          <div className="mt-1 flex w-full max-w-[42ch] flex-col gap-2">
+            <div className="flex gap-2">
+              <input
+                className="field"
+                type="url"
+                inputMode="url"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    // Inside somebody's form: without this, Enter saves the
+                    // row and the link is lost unused.
+                    e.preventDefault();
+                    void fromLink();
+                  }
+                }}
+                placeholder="https://…/photo.jpg"
+                aria-label={`Link to a photo of ${label}`}
+                disabled={off}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="btn-quiet shrink-0"
+                disabled={off || !link.trim()}
+                onClick={() => void fromLink()}
+              >
+                {busy ? "Fetching…" : "Use"}
+              </button>
+            </div>
+            <button
+              type="button"
+              className="link self-start"
+              onClick={() => {
+                setLinking(false);
+                setLink("");
+              }}
+            >
+              cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="link min-h-[32px]"
+            disabled={off}
+            onClick={() => setLinking(true)}
+          >
+            or paste a link
+          </button>
+        )}
+
         {/* Before choosing, not after: the point is to pick a photo that
             fits, and once it is uploaded the crop has already happened. */}
         <span className="max-w-[40ch] text-caption text-ink">{guide.size}</span>

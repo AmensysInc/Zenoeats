@@ -19,6 +19,7 @@ from app.models import (
     Combo, ComboSlot, ComboSlotItem, DiscountKind, Item, ItemModifierGroup,
     ModifierGroup, ModifierOption, Restaurant, SelectionType,
 )
+from app.services.coupons import AppliedCoupon
 from app.services.tax import TaxLine, TaxService
 
 
@@ -68,6 +69,11 @@ class PricedCart:
     # Tax; None under a flat rate. Carried onto the order so the sale can be
     # recorded against exactly the numbers the customer was charged.
     tax_calculation_id: str | None = None
+    # The coupon that was applied, if any. Its discount is already inside
+    # discount_minor -- this is the part of it the code is responsible for, so
+    # a receipt can show the meal deals and the code as separate lines, and
+    # the order can record which coupon it was.
+    coupon: "AppliedCoupon | None" = None
 
 
 def price_cart(
@@ -76,6 +82,7 @@ def price_cart(
     raw_lines: list[dict],
     raw_combos: list[dict] | None = None,
     delivery_fee_minor: int = 0,
+    coupon: AppliedCoupon | None = None,
 ) -> PricedCart:
     """Validate and price a cart. Raises ApiError on any invalid input.
 
@@ -89,6 +96,16 @@ def price_cart(
     exactly as if ordered alone, and the saving comes off the cart as a
     discount -- so the subtotal is still what the food costs, and what the
     combo took off is a number a receipt can show and a manager can check.
+
+    `coupon` is already priced, by services/coupons.py, against a subtotal
+    this function is about to work out for itself -- which sounds circular
+    and is not: the caller prices the cart once to learn the subtotal, asks
+    whether the code is good for it, and prices it again with the answer.
+    That is one round trip more than passing a code in here would be, and it
+    keeps two decisions apart that fail differently. A bad coupon is a
+    sentence shown beside a text field; a bad cart is a refusal to sell. This
+    function has never had an opinion about who is ordering, and a coupon's
+    per-customer limit would have given it one.
     """
     raw_combos = raw_combos or []
     if not raw_lines and not raw_combos:
@@ -201,6 +218,17 @@ def price_cart(
     # comes to, and a negative subtotal is not a thing that can be charged.
     discount = min(discount, subtotal)
 
+    # The coupon comes off what is left after the meal deals, never off the
+    # original subtotal: a cart whose combos already took $4 off cannot have
+    # 20% of a price nobody is being charged taken off as well. It is also
+    # capped again here rather than trusted -- it was priced against a
+    # subtotal from a moment ago, and an item that sold out in between would
+    # make this cart cheaper than that one.
+    coupon_discount = 0
+    if coupon is not None:
+        coupon_discount = min(coupon.discount_minor, max(subtotal - discount, 0))
+        discount += coupon_discount
+
     taxable_base = max(subtotal - discount, 0)
     # The fee is priced by services/delivery.py from the restaurant's own
     # rings. It never reaches here from the browser: what a customer sends is
@@ -230,6 +258,18 @@ def price_cart(
         delivery_fee_minor=fee,
         lines=priced_lines,
         tax_calculation_id=tax_result.calculation_id,
+        # Reported with the amount it actually took off, which the cap above
+        # may have reduced. What the order stores has to be what was charged.
+        coupon=(
+            AppliedCoupon(
+                coupon_id=coupon.coupon_id,
+                code=coupon.code,
+                label=coupon.label,
+                discount_minor=coupon_discount,
+            )
+            if coupon is not None and coupon_discount > 0
+            else None
+        ),
     )
 
 

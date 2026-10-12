@@ -284,6 +284,10 @@ class QuoteIn(BaseModel):
     # names. Ignored for a collection.
     fulfillment_type: FulfillmentChoice = "PICKUP"
     delivery_address: str | None = Field(default=None, max_length=300)
+    # A promotion code, as typed. Normalised server-side, and a bad one does
+    # not fail the quote -- the rest of the cart still has a price, and the
+    # page still has to show it. See QuoteOut.coupon_error.
+    coupon_code: str | None = Field(default=None, max_length=32)
 
 
 def _collapse(value: str) -> str:
@@ -353,6 +357,12 @@ class CreateOrderIn(BaseModel):
     @classmethod
     def _guest_receipt(cls, value: str | None) -> str | None:
         return GuestSessionIn._plausible_address(value) if value is not None else None
+
+    # The code the customer applied. Checked again here, against this
+    # customer and this cart -- unlike the quote, a code that does not work
+    # at this point is an error, because the alternative is silently charging
+    # full price to somebody who believed they had a discount.
+    coupon_code: str | None = Field(default=None, max_length=32)
 
     # A delivery goes to contact.address: one address, typed once. Priced
     # again here from that address, whatever the quote said.
@@ -427,6 +437,10 @@ class CustomerSessionOut(BaseModel):
 class AmountsOut(BaseModel):
     subtotal_minor: int
     discount_minor: int
+    # The coupon's share of discount_minor; the rest is what meal deals took
+    # off. Defaulted for the same reason delivery_fee_minor is: a stored
+    # idempotent replay from before coupons existed still reads back.
+    coupon_discount_minor: int = 0
     # Zero on a collection. Defaulted so an idempotent replay stored before
     # delivery existed still reads back.
     delivery_fee_minor: int = 0
@@ -434,11 +448,28 @@ class AmountsOut(BaseModel):
     total_minor: int
 
 
+class CouponAppliedOut(BaseModel):
+    """The code that worked, as the checkout line shows it."""
+
+    code: str
+    # The manager's name for the promotion, when they gave it one, so the
+    # line can read "Student Tuesdays" rather than only "STU10".
+    label: str | None = None
+    discount_minor: int
+
+
 class QuoteOut(BaseModel):
     currency: str
     amounts: AmountsOut
     # How far, for a delivery. Null on a collection.
     delivery_miles: float | None = None
+    # The coupon, if one was sent and worked.
+    coupon: CouponAppliedOut | None = None
+    # Why it did not, if one was sent and did not. A quote with a bad code is
+    # still a quote: the cart has a price, the customer has to see it, and the
+    # reason belongs beside the field they typed in rather than in place of
+    # the order summary. So this is a message and not a 422.
+    coupon_error: str | None = None
 
 
 class OrderModifierOut(BaseModel):
@@ -506,6 +537,9 @@ class OrderOut(BaseModel):
     fulfillment_type: str
     currency: str
     amounts: AmountsOut
+    # What the customer typed, kept on the order. Null on an order that used
+    # no code; still readable after the coupon itself is retired.
+    coupon_code: str | None = None
     items: list[OrderItemOut]
     # Only ever returned to the owning customer or authorized staff, and only
     # once the order is paid.

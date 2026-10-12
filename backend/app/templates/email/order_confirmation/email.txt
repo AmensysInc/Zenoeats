@@ -9,7 +9,7 @@ Hi{% if customer_name %} {{ customer_name }}{% endif %},
 
   Subtotal: {{ amounts.subtotal }}
 {% if amounts.discount %}
-  Discount: {{ amounts.discount }}
+  Discount{% if amounts.discount_code %} ({{ amounts.discount_code }}){% endif %}: {{ amounts.discount }}
 {% endif %}
 {% if amounts.delivery_fee %}
   Delivery fee: {{ amounts.delivery_fee }}

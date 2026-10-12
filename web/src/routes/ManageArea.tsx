@@ -4,6 +4,7 @@ import { KitchenBoardPage } from "@/pages/manage/KitchenBoardPage";
 import { DeliveriesPage } from "@/pages/manage/DeliveriesPage";
 import { StockPage } from "@/pages/manage/StockPage";
 import { MenuPage } from "@/pages/manage/MenuPage";
+import { CouponsPage } from "@/pages/manage/CouponsPage";
 import { StaffPage } from "@/pages/manage/StaffPage";
 import { ReportsPage } from "@/pages/manage/ReportsPage";
 import { ManageStorefrontPage } from "@/pages/manage/ManageStorefrontPage";
@@ -53,6 +54,10 @@ export default function ManageArea() {
       <Route
         path="menu"
         element={<RequireStaff roles={MENU_VIEW_ROLES}><MenuPage /></RequireStaff>}
+      />
+      <Route
+        path="coupons"
+        element={<RequireStaff roles={MENU_VIEW_ROLES}><CouponsPage /></RequireStaff>}
       />
       <Route
         path="staff"

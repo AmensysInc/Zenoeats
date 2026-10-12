@@ -393,6 +393,8 @@ _PURGE_ORDER = [
     # Before orders: a payment points at the order it paid for.
     "payments",
     "orders",
+    # After orders, which point at the coupon they used.
+    "coupons",
     "combo_slot_items",
     "combo_slots",
     "combos",

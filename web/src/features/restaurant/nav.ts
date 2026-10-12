@@ -39,6 +39,10 @@ export const MANAGE_NAV: ManageNavItem[] = [
   { href: "/manage/stock", label: "Stock", icon: "stock", roles: FLOOR_VIEW_ROLES },
   { href: "/manage/menu", label: "Menu", icon: "menu", roles: MENU_VIEW_ROLES },
   { href: "/manage/staff", label: "Staff", icon: "team", roles: ADMIN_ROLES },
+  // Grouped with the menu rather than with reports: a coupon is something
+  // the restaurant sells with, and the people who edit the menu are the
+  // people who run promotions. Same role list, for the same reason.
+  { href: "/manage/coupons", label: "Coupons", icon: "tag", roles: MENU_VIEW_ROLES },
   { href: "/manage/reports", label: "Reports", icon: "report", roles: MANAGER_ROLES },
   { href: "/manage/storefront", label: "Storefront", icon: "store", roles: STOREFRONT_ROLES },
   { href: "/manage/settings", label: "Settings", icon: "edit", roles: SETTINGS_ROLES },

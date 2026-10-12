@@ -27,6 +27,9 @@ def _order(**overrides):
         id=uuid.uuid4(), order_number=1042, currency="USD", items=[item],
         subtotal_minor=2400, discount_minor=240, tax_minor=178, total_minor=2338,
         fulfillment_type="PICKUP", delivery_fee_minor=0,
+        # The discount above came from a code. None would be the other case,
+        # and the receipt line reads correctly either way.
+        coupon_code="SAVE10",
     )
     values.update(overrides)
     return SimpleNamespace(**values)

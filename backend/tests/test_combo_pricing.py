@@ -172,6 +172,9 @@ class FakeRestaurant:
         self.currency = "USD"
         self.tax_mode = "FLAT"
         self.tax_rate_bps = 0  # tax has its own tests; keep the sums readable
+        # Read by the tax service whenever a cart carries a delivery fee.
+        # No combo test passes one; test_coupons.py does.
+        self.delivery_fee_taxable = False
 
 
 class FakeSession:

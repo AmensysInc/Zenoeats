@@ -184,6 +184,10 @@ def order_amounts(order: Order) -> dict:
     return {
         "subtotal": money(order.subtotal_minor, order.currency),
         "discount": money(-order.discount_minor, order.currency) if order.discount_minor else None,
+        # The code the customer typed, so the receipt says which promotion
+        # the discount came from. None on an order that used no code, and on
+        # every order placed before coupons existed.
+        "discount_code": order.coupon_code,
         # Without its fee a delivery's figures would not add up to its total.
         "delivery_fee": (
             money(order.delivery_fee_minor, order.currency) if order.delivery_fee_minor else None

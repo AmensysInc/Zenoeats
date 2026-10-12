@@ -28,6 +28,60 @@ export type StaffMe = {
  *  bands, the first covering everything up to its edge and each one after it
  *  covering the gap from the previous edge to its own. Beyond the last ring is
  *  no delivery, not free delivery. */
+/** A promotion code, as the dashboard shows it.
+ *
+ *  `discount_kind` is read the way a combo's is: PERCENT is basis points
+ *  (1000 = 10%), AMOUNT is minor units (500 = $5.00). Every limit is nullable
+ *  because a real promotion uses some and not others -- a launch offer has an
+ *  end date and no cap, a referral code has a cap of one per customer and no
+ *  end date at all. */
+export type Coupon = {
+  id: string;
+  code: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  /** A ceiling, for a percentage only: 20% off is a different offer on a $10
+   *  order and on a $400 office lunch. */
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  max_redemptions: number | null;
+  max_per_customer: number | null;
+  is_active: boolean;
+  /** Counted from the orders that used it, so a cancelled order is not one. */
+  redemptions: number;
+  /** What those orders took off in total -- the number that says whether a
+   *  promotion was worth running. */
+  discounted_minor: number;
+  created_at: string;
+};
+
+export type CouponList = {
+  /** What every amount in these coupons is denominated in. */
+  currency: string;
+  coupons: Coupon[];
+};
+
+export type CouponDraft = {
+  code: string;
+  description?: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  max_redemptions?: number | null;
+  max_per_customer?: number | null;
+  is_active?: boolean;
+};
+
+/** An edit. The code is absent on purpose: customers have been given it, so a
+ *  new code is a new coupon and the old one gets retired. */
+export type CouponPatch = Partial<Omit<CouponDraft, "code">>;
+
 export type DeliveryZone = {
   id: string;
   max_miles: number;
@@ -415,6 +469,20 @@ const UPLOAD_TIMEOUT_MS = 60_000;
  * nothing on screen changes until the item or option holding the key is
  * saved, and that save invalidates what it should.
  */
+/** Store the picture at a URL instead of uploading a file.
+ *
+ *  Answers exactly what uploadImage answers, because what gets stored is the
+ *  same thing: our own re-encoded WebP under our own key. The link is where
+ *  the picture came from, not where it lives -- the storefront never depends
+ *  on somebody else's server staying up. */
+export function imageFromUrl(kind: ImageKind, url: string) {
+  return request<UploadedImage>(`/restaurant/images/from-url?kind=${kind}`, {
+    method: "POST",
+    body: JSON.stringify({ url }),
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+}
+
 export function uploadImage(kind: ImageKind, file: Blob, filename: string) {
   const body = new FormData();
   body.append("file", file, filename);
@@ -514,6 +582,40 @@ export const restaurantApi = api.injectEndpoints({
     changeStaffEmail: build.mutation<void, { email: string; current_password: string }>({
       query: (body) => ({ url: "/restaurant/change-email", method: "POST", body }),
       invalidatesTags: ["Session"],
+    }),
+
+    // --- coupons ---------------------------------------------------------
+    //
+    // Read by admin, manager and IT support; written by the first two. The
+    // API decides that -- these are here so the screen can offer what the
+    // role can actually do rather than buttons that answer 403.
+
+    // An envelope, because the screen needs the currency too and a manager
+    // cannot read /restaurant/profile (that is admin and IT support only).
+    coupons: build.query<CouponList, void>({
+      query: () => ({ url: "/restaurant/coupons" }),
+      providesTags: ["Coupon"],
+    }),
+
+    createCoupon: build.mutation<Coupon, CouponDraft>({
+      query: (body) => ({ url: "/restaurant/coupons", method: "POST", body }),
+      invalidatesTags: ["Coupon"],
+    }),
+
+    updateCoupon: build.mutation<Coupon, { id: string; patch: CouponPatch }>({
+      query: ({ id, patch }) => ({
+        url: `/restaurant/coupons/${id}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: ["Coupon"],
+    }),
+
+    // Soft, and the code becomes free again: orders that used it keep their
+    // own snapshot, so a receipt from last month still reads the same.
+    retireCoupon: build.mutation<void, string>({
+      query: (id) => ({ url: `/restaurant/coupons/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Coupon"],
     }),
 
     deliverySettings: build.query<DeliverySettings, void>({
@@ -1107,4 +1209,8 @@ export const {
   useLocateRestaurantMutation,
   useSetDeliverySettingsMutation,
   useSetDeliveryZonesMutation,
+  useCouponsQuery,
+  useCreateCouponMutation,
+  useUpdateCouponMutation,
+  useRetireCouponMutation,
 } = restaurantApi;

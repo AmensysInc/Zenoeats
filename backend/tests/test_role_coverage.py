@@ -94,6 +94,17 @@ EXPECTED = {
     # Reports are managers alone: takings are not a support question.
     ("GET", "/restaurant/reports"): MANAGERS,
     ("POST", "/restaurant/images"): STOREFRONT,
+    # Linking a picture instead of uploading one is MANAGERS, not STOREFRONT:
+    # it makes the server fetch an address the caller chose, which is not a
+    # power the role that works on restaurants from outside should hold.
+    ("POST", "/restaurant/images/from-url"): MANAGERS,
+    # The coupons dashboard, in its own module. Read by managers and support
+    # -- "why did this customer get a discount" needs the rows -- and written
+    # by managers alone: inventing a discount is the restaurant's call.
+    ("GET", "/restaurant/coupons"): MENU_READ,
+    ("POST", "/restaurant/coupons"): MANAGERS,
+    ("PATCH", "/restaurant/coupons/{coupon_id}"): MANAGERS,
+    ("DELETE", "/restaurant/coupons/{coupon_id}"): MANAGERS,
     ("GET", "/restaurant/menu"): MENU_READ,
     ("POST", "/restaurant/meals"): MANAGERS,
     ("PATCH", "/restaurant/meals/{meal_id}"): MANAGERS,
@@ -165,12 +176,23 @@ def _calls(dependant):
 
 
 def _endpoints():
-    from app.api.v1.restaurant import router
+    """Every staff endpoint, from every module that serves one.
 
-    for route in router.routes:
-        if isinstance(route, APIRoute):
-            for method in route.methods:
-                yield (method, route.path), list(_calls(route.dependant))
+    Plural because this walked one router and the portal now has two: the
+    coupons dashboard is its own module (restaurant.py is four and a half
+    thousand lines). A gate that checks one file is a gate that a new file
+    walks straight past -- so every router mounted under /restaurant belongs
+    in this list, and a third one has to be added here before its endpoints
+    are covered.
+    """
+    from app.api.v1.coupons import router as coupons_router
+    from app.api.v1.restaurant import router as restaurant_router
+
+    for router in (restaurant_router, coupons_router):
+        for route in router.routes:
+            if isinstance(route, APIRoute):
+                for method in route.methods:
+                    yield (method, route.path), list(_calls(route.dependant))
 
 
 def test_every_endpoint_has_exactly_the_roles_it_is_meant_to():
