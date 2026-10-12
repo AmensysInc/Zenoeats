@@ -32,8 +32,8 @@ class LocationStatus(str, enum.Enum):
     Only OPEN is orderable, and only then if the restaurant behind it is
     itself ACTIVE -- the two are separate gates on purpose. A location stays
     OPEN while its restaurant is suspended for a billing problem, and the
-    picker reports it as unavailable without the platform forgetting that the
-    location exists.
+    picker leaves it off the front page without the platform forgetting that
+    the location exists; reactivating puts it back.
     """
 
     OPEN = "OPEN"

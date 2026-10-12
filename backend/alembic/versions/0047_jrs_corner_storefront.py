@@ -9,7 +9,7 @@ that ships empty.
 
 So the content travels the way the schema does -- `alembic upgrade head`,
 the step the deploy already runs with the api image (see ci.yml, "Say what
-was published"). After it, zenoeats.com lists the four locations and the
+was published"). After it, zenoeats.com lists Jr's Corner and the
 store behind Jr's Corner has its headings, its dishes, its modifier groups,
 its combos, its home banners and its photography.
 
@@ -101,7 +101,9 @@ ASSETS = Path(__file__).resolve().parents[2] / "app" / "seed_assets"
 # seeded so far, while a tenant onboarded by hand for the one real store is
 # the likelier `jrs-corner`. Whichever exists gets the menu; normally that is
 # exactly one of them, and on a database with neither this does nothing.
-TARGET_SLUGS = ("spicehouse", "jrs-corner")
+# "jrs" first: it is the slug Jr's Corner was onboarded under in production.
+# The other two are what development databases and seed.py use.
+TARGET_SLUGS = ("jrs", "spicehouse", "jrs-corner")
 
 # The home page's rotating hero. Not in the menu file -- a banner is
 # storefront decoration rather than something anybody orders -- and small
@@ -122,8 +124,8 @@ LOCATION_CARD = "hero-counter"
 
 # The platform front page. 0044 built the table and left it empty, so the
 # only thing that has ever filled it is seed.py -- which means a production
-# database gets the picker with nothing in it, and zenoeats.com opens on four
-# missing cards. These are the four, and this is platform data rather than
+# database gets the picker with nothing in it, and zenoeats.com opens on no
+# cards at all. This is the one, and it is platform data rather than
 # any restaurant's: the door says "Jr's Corner", the tenant it opens is
 # Spice House.
 #
@@ -141,24 +143,9 @@ LOCATIONS = [
         "blurb": "Open daily, 10:30am to 1:00am",
         "status": "OPEN", "attach": True,
     },
-    {
-        "slug": "big-apple", "name": "Big Apple",
-        "city": "New York", "region": "New York",
-        "address_line": None, "blurb": "Opening next spring",
-        "status": "COMING_SOON", "attach": False,
-    },
-    {
-        "slug": "rainforest", "name": "Rainforest",
-        "city": "Portland", "region": "Oregon",
-        "address_line": None, "blurb": "We are building the kitchen now",
-        "status": "COMING_SOON", "attach": False,
-    },
-    {
-        "slug": "sunset-strip", "name": "Sunset Strip",
-        "city": "Los Angeles", "region": "California",
-        "address_line": None, "blurb": "Signing the lease",
-        "status": "COMING_SOON", "attach": False,
-    },
+    # Only the one real store. Placeholder cities are seed.py's business: a
+    # production front page lists the places a customer can actually order
+    # from, and every other restaurant gets its card when it is activated.
 ]
 
 # Every table touched below. FORCE ROW LEVEL SECURITY has to come off around
@@ -303,7 +290,7 @@ def _named(conn, restaurant_id, table: str) -> dict:
 
 
 def _locations(conn, restaurant_id) -> dict:
-    """The four cards on the platform front page.
+    """Jr's Corner's card on the platform front page.
 
     Matched by slug, which is what the URL already uses and what the unique
     constraint is on. Two things are deliberately one-way:
@@ -319,6 +306,13 @@ def _locations(conn, restaurant_id) -> dict:
     """
     counts = {"created": 0, "updated": 0}
     for order, spec in enumerate(LOCATIONS):
+        # Activating a restaurant already gives it a card of its own, under its
+        # own slug. A second one here would show the same store twice.
+        if spec["attach"] and restaurant_id is not None and conn.execute(
+            text("SELECT 1 FROM locations WHERE restaurant_id = :r AND slug <> :s LIMIT 1"),
+            {"r": restaurant_id, "s": spec["slug"]},
+        ).first():
+            continue
         existing = conn.execute(
             text("SELECT id, restaurant_id FROM locations WHERE slug = :s"),
             {"s": spec["slug"]},
@@ -781,7 +775,7 @@ def _apply(conn) -> None:
         targets = [found[slug] for slug in TARGET_SLUGS if slug in found]
 
         # The front page first, and whether or not there is a tenant behind
-        # it: four cards that say where this is going beat an empty picker,
+        # it: a card that says where this is going beats an empty picker,
         # and the menu below needs the location row to exist before it can
         # put a photograph on its card.
         counts = _locations(conn, targets[0].id if targets else None)
