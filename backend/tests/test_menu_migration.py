@@ -411,3 +411,43 @@ def test_an_open_location_is_never_closed_or_re_pointed(conn, store, monkeypatch
     row = _location(conn, "jrs-corner")
     assert row.status == "OPEN"
     assert row.restaurant_id == live
+
+
+def test_a_menu_the_owner_has_worked_on_is_left_alone(conn, targeted, images):
+    """Production, 12 October: the owner had deleted some dishes and renamed
+    others, and matching by name brought the deleted ones back, duplicated the
+    renamed ones and reset prices. A restaurant with any menu -- deleted dishes
+    included -- is not touched."""
+    _, rid = targeted
+    with owner_reads(conn):
+        type_id = conn.execute(
+            text("INSERT INTO item_types (id, restaurant_id, name) "
+                 "VALUES (gen_random_uuid(), :r, 'Burgers') RETURNING id"),
+            {"r": rid},
+        ).scalar_one()
+        conn.execute(
+            text("INSERT INTO menu_items (id, restaurant_id, item_type_id, name, base_price_minor, "
+                 "currency, deleted_at) VALUES (gen_random_uuid(), :r, :t, :n, 999, 'USD', now())"),
+            {"r": rid, "t": type_id, "n": MENU["items"][0]["name"]},
+        )
+        conn.execute(
+            text("INSERT INTO menu_items (id, restaurant_id, item_type_id, name, base_price_minor, "
+                 "currency) VALUES (gen_random_uuid(), :r, :t, 'Renamed By The Owner', 777, 'USD')"),
+            {"r": rid, "t": type_id},
+        )
+
+    mod._apply(conn)
+
+    with owner_reads(conn):
+        names = conn.execute(
+            text("SELECT name, base_price_minor, deleted_at IS NOT NULL FROM menu_items "
+                 "WHERE restaurant_id = :r ORDER BY name"),
+            {"r": rid},
+        ).all()
+        assert _count(conn, "modifier_groups", rid) == 0
+        assert _count(conn, "storefront_banners", rid) == 0
+    assert sorted(names) == sorted([
+        (MENU["items"][0]["name"], 999, True),
+        ("Renamed By The Owner", 777, False),
+    ])
+    assert list(images.rglob("*.webp")) == []
