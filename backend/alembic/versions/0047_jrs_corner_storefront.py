@@ -799,6 +799,18 @@ def _apply(conn) -> None:
         menu = json.loads(SNAPSHOT.read_text())
         photos = Photos()
         for target in targets:
+            # Only into a restaurant that has never had a menu. Matching by
+            # name cannot tell a dish the owner deleted or renamed from one
+            # that is missing, so on a menu somebody has worked on it brings
+            # deleted dishes back, duplicates renamed ones and resets edited
+            # prices. Deleted rows count: a menu emptied on purpose is still
+            # the owner's menu. Updating a live menu is import_menu.py's job.
+            if conn.execute(
+                text("SELECT 1 FROM menu_items WHERE restaurant_id = :r LIMIT 1"),
+                {"r": target.id},
+            ).first():
+                print(f"0047: {target.name} ({target.slug}) already has a menu; left alone")
+                continue
             print(f"0047: loading the Jr's Corner menu into {target.name} ({target.slug})")
             counts = _load(conn, target.id, menu, photos)
             print(f"0047:   {counts['created']} created, {counts['updated']} updated")
