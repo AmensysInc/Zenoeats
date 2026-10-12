@@ -328,12 +328,23 @@ export type BuilderCombo = {
   /** The deal's own photo: the key that is saved, and the URL that shows it. */
   image_path: string | null;
   image_url: string | null;
-  slots: { id: string; item_type_id: string; item_ids: string[] }[];
+  slots: {
+    id: string;
+    item_type_id: string;
+    item_ids: string[];
+    /** Item id -> upcharge in a FIXED_PRICE combo; only the non-zero ones. */
+    upcharges?: Record<string, number>;
+  }[];
 };
 
 /** A slot as it is sent. One per kind, and never empty: a kind with nothing
  *  ticked is a kind the combo does not include. */
-export type ComboSlotDraft = { item_type_id: string; item_ids: string[] };
+export type ComboSlotDraft = {
+  item_type_id: string;
+  item_ids: string[];
+  /** Item id -> what choosing it adds to a FIXED_PRICE combo. */
+  upcharges?: Record<string, number>;
+};
 
 /** An item as the sold-out screen needs it, and nothing more. */
 export type StockItem = {

@@ -12,6 +12,7 @@ import {
   type Selection,
 } from "../modifiers";
 import { ModifierGroups } from "./ModifierGroups";
+import { comboExtrasMinor, comboPreviewMinor } from "../cartSlice";
 
 /** What one slot has been filled with, if anything yet. */
 type SlotChoice = { item: Item; selected: Selection };
@@ -92,15 +93,15 @@ export function ComboSheet({
   );
 
   // The same arithmetic the server runs, so the preview and the receipt
-  // agree: round the percentage once, never take off more than the food.
-  const rawDiscount =
-    combo.discount_kind === "PERCENT"
-      ? Math.round((itemsSubtotal * combo.discount_value) / 10000)
-      : combo.discount_kind === "AMOUNT"
-        ? Math.max(0, combo.discount_value)
-        : 0;
-  const discount = Math.min(rawDiscount, itemsSubtotal);
-  const unit = Math.max(0, itemsSubtotal - discount);
+  // agree: round the percentage once, never take off more than the food,
+  // and a set price plus its upcharges and options for a fixed-price deal.
+  const fixedPrice = combo.discount_kind === "FIXED_PRICE";
+  const extras = comboExtrasMinor(
+    combo,
+    filled.map(({ slot, choice }) => ({ slotId: slot.id, item: choice.item, selected: choice.selected })),
+  );
+  const unit = comboPreviewMinor(combo, itemsSubtotal, extras);
+  const discount = Math.max(0, itemsSubtotal - unit);
 
   const ready = emptySlots.length === 0 && unanswered.length === 0;
 
@@ -198,6 +199,7 @@ export function ComboSheet({
               </legend>
               {slot.items.map((item) => {
                 const checked = choice?.item.id === item.id;
+                const upcharge = slot.upcharges?.[item.id] ?? 0;
                 return (
                   <label
                     key={item.id}
@@ -230,8 +232,14 @@ export function ComboSheet({
                         </span>
                       )}
                     </span>
+                    {/* In a fixed-price deal the dish's own price is not what
+                        it costs here; only what it adds to the deal is. */}
                     <span className="tnum ml-auto whitespace-nowrap text-caption">
-                      {money(item.base_price_minor, currency)}
+                      {fixedPrice
+                        ? upcharge > 0
+                          ? signedMoney(upcharge, currency)
+                          : ""
+                        : money(item.base_price_minor, currency)}
                     </span>
                   </label>
                 );
@@ -271,6 +279,9 @@ export function ComboSheet({
 
 /** What the deal saves, in the words the customer reads on the menu too. */
 export function savingLabel(combo: Combo, currency: string): string {
+  if (combo.discount_kind === "FIXED_PRICE" && combo.discount_value > 0) {
+    return money(combo.discount_value, currency);
+  }
   if (combo.discount_kind === "PERCENT" && combo.discount_value > 0) {
     // Basis points, so 1250 is 12.5%. Trailing zeros are dropped: "10% off"
     // rather than "10.0% off".

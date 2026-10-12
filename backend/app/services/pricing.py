@@ -370,7 +370,9 @@ def _validate_modifiers(item: Item, raw_modifiers: list[dict]) -> list[PricedMod
     return selected
 
 
-def combo_discount_minor(kind: str, value: int, items_subtotal_minor: int) -> int:
+def combo_discount_minor(
+    kind: str, value: int, items_subtotal_minor: int, extras_minor: int = 0
+) -> int:
     """What one combo takes off the items it holds.
 
     Never more than the items came to. A flat amount set above the price of a
@@ -379,9 +381,19 @@ def combo_discount_minor(kind: str, value: int, items_subtotal_minor: int) -> in
 
     PERCENT goes through the same basis-point helper as tax, so a discount and
     a tax rate round the same way -- HALF_UP, on Decimal, never a float.
+
+    FIXED_PRICE is expressed as a discount too, so the order, the receipt and
+    the reports keep one shape: the items at their own prices, and what the
+    deal took off. The deal costs `value` plus `extras_minor` -- the chosen
+    dishes' upcharges and what their options added. Never more than the same
+    food bought separately, so a set price above the parts takes nothing off
+    rather than adding to the bill.
     """
     if items_subtotal_minor <= 0:
         return 0
+    if kind == DiscountKind.FIXED_PRICE.value:
+        price = max(0, value + extras_minor)
+        return max(0, items_subtotal_minor - price)
     if kind == DiscountKind.PERCENT.value:
         return min(apply_rate_bps(items_subtotal_minor, value), items_subtotal_minor)
     if kind == DiscountKind.AMOUNT.value:
@@ -462,6 +474,10 @@ def _price_combo(
 
     lines: list[PricedLine] = []
     items_subtotal = 0
+    # What a FIXED_PRICE combo adds to its set price: each chosen dish's
+    # upcharge, and whatever its options cost (a large drink is its size
+    # difference inside a meal as it is outside one).
+    extras = 0
 
     for slot in combo.slots:
         selection = chosen.get(slot.id)
@@ -509,6 +525,9 @@ def _price_combo(
             unit_price = 0
 
         items_subtotal += unit_price
+        extras += unit_price - item.base_price_minor + next(
+            (choice.upcharge_minor for choice in slot.choices if choice.item_id == item.id), 0
+        )
         lines.append(
             PricedLine(
                 menu_item_id=item.id,
@@ -537,6 +556,6 @@ def _price_combo(
     # Rounding the total of ten combos gives a different answer from ten
     # rounded combos, and the receipt shows the per-combo figure.
     discount_each = combo_discount_minor(
-        combo.discount_kind, combo.discount_value, items_subtotal
+        combo.discount_kind, combo.discount_value, items_subtotal, extras
     )
     return lines, discount_each * quantity

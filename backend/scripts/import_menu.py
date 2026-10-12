@@ -264,8 +264,11 @@ def load(slug: str, path: Path) -> None:
                 db.flush()
                 for position, choice in enumerate(slot_spec.get("choices", [])):
                     if choice in items:
-                        db.add(ComboSlotItem(restaurant_id=rid, slot_id=slot.id,
-                                             item_id=items[choice].id, sort_order=position))
+                        db.add(ComboSlotItem(
+                            restaurant_id=rid, slot_id=slot.id,
+                            item_id=items[choice].id, sort_order=position,
+                            upcharge_minor=slot_spec.get("upcharges", {}).get(choice, 0),
+                        ))
 
         # --- what the file did not mention -----------------------------------
         named = {spec["name"] for spec in menu.get("items", [])}

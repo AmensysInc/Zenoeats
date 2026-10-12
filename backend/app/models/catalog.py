@@ -155,6 +155,8 @@ class DiscountKind(str, enum.Enum):
       NONE     value ignored
       PERCENT  value is basis points, 1250 = 12.5%, as tax_rate_bps is
       AMOUNT   value is minor units off the total
+      FIXED_PRICE  value is what the combo costs, in minor units, before
+               each choice's upcharge and the options chosen (0050)
 
     Basis points rather than whole percent because that is already the
     vocabulary for a rate here, and it is the difference between being able
@@ -164,6 +166,7 @@ class DiscountKind(str, enum.Enum):
     NONE = "NONE"
     PERCENT = "PERCENT"
     AMOUNT = "AMOUNT"
+    FIXED_PRICE = "FIXED_PRICE"
 
 
 # Ordering, and why every menu relationship below carries a tiebreaker.
@@ -482,7 +485,8 @@ class Combo(Base, TimestampMixin):
     __tablename__ = "combos"
     __table_args__ = (
         CheckConstraint(
-            "discount_kind IN ('NONE','PERCENT','AMOUNT')", name="ck_combo_discount_kind"
+            "discount_kind IN ('NONE','PERCENT','AMOUNT','FIXED_PRICE')",
+            name="ck_combo_discount_kind",
         ),
         CheckConstraint("discount_value >= 0", name="ck_combo_discount_non_negative"),
         # A percentage over 100 is not a discount, it is the restaurant paying
@@ -506,7 +510,8 @@ class Combo(Base, TimestampMixin):
     discount_kind: Mapped[str] = mapped_column(
         String(16), nullable=False, default=DiscountKind.NONE.value
     )
-    # Basis points when PERCENT, minor units when AMOUNT. See DiscountKind.
+    # Basis points when PERCENT, minor units when AMOUNT, the combo's own price
+    # when FIXED_PRICE. See DiscountKind.
     discount_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -579,6 +584,7 @@ class ComboSlotItem(Base, TimestampMixin):
     __tablename__ = "combo_slot_items"
     __table_args__ = (
         UniqueConstraint("slot_id", "item_id", name="uq_combo_slot_item"),
+        CheckConstraint("upcharge_minor >= 0", name="ck_combo_slot_item_upcharge_non_negative"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -592,6 +598,12 @@ class ComboSlotItem(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("menu_items.id"), nullable=False, index=True
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # What choosing this dish adds to a FIXED_PRICE combo: cheese fries a
+    # dollar more in the burger meal. Ignored by the other kinds, where the
+    # price difference between the dishes already does it.
+    upcharge_minor: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     slot: Mapped["ComboSlot"] = relationship(back_populates="choices")
     item: Mapped["Item"] = relationship()

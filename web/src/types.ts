@@ -70,11 +70,15 @@ export type ComboSlot = {
   item_type_id: string;
   label: string;
   items: Item[];
+  /** Item id -> what choosing it adds to a FIXED_PRICE combo. Only the dearer
+   *  choices; absent means nothing extra. */
+  upcharges?: Record<string, number>;
 };
 
-/** How a combo is cheaper than its parts. PERCENT carries basis points,
- *  1250 being 12.5%; AMOUNT carries minor units. */
-export type DiscountKind = "NONE" | "PERCENT" | "AMOUNT";
+/** How a combo is priced from its parts. PERCENT carries basis points,
+ *  1250 being 12.5%; AMOUNT carries minor units off; FIXED_PRICE carries the
+ *  combo's own price, before upcharges and options. */
+export type DiscountKind = "NONE" | "PERCENT" | "AMOUNT" | "FIXED_PRICE";
 
 /** A meal deal: one item from each slot, sold together for less.
  *

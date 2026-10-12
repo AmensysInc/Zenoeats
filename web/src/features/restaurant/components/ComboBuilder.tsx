@@ -282,6 +282,9 @@ type Draft = {
   /** Ticked items, keyed by item type id. A type with none is not part of
    *  the combo. */
   picked: Record<string, string[]>;
+  /** Fixed-price combos only: what choosing an item adds, typed as "1.00",
+   *  keyed by item id. Blank means nothing extra. */
+  upcharges: Record<string, string>;
   /** The deal's own photo. Uploaded as it is chosen, attached on save, so
    *  cancelling the form leaves the menu as it was. */
   image: ImageDraft;
@@ -289,13 +292,19 @@ type Draft = {
 
 function seed(combo: BuilderCombo | undefined, meals: Meal[]): Draft {
   const picked: Record<string, string[]> = {};
-  for (const slot of combo?.slots ?? []) picked[slot.item_type_id] = [...slot.item_ids];
+  const upcharges: Record<string, string> = {};
+  for (const slot of combo?.slots ?? []) {
+    picked[slot.item_type_id] = [...slot.item_ids];
+    for (const [itemId, minor] of Object.entries(slot.upcharges ?? {})) {
+      upcharges[itemId] = minorToDeltaInput(minor);
+    }
+  }
 
   return {
     mealId: combo?.meal_id ?? meals[0]?.id ?? "",
     name: combo?.name ?? "",
     description: combo?.description ?? "",
-    discountKind: combo?.discount_kind ?? "PERCENT",
+    discountKind: combo?.discount_kind ?? "FIXED_PRICE",
     image: combo?.image_path ? { path: combo.image_path, url: combo.image_url } : NO_IMAGE,
     discountInput: !combo || combo.discount_kind === "NONE"
       ? ""
@@ -303,6 +312,7 @@ function seed(combo: BuilderCombo | undefined, meals: Meal[]): Draft {
         ? String(combo.discount_value / 100)
         : minorToDeltaInput(combo.discount_value),
     picked,
+    upcharges,
   };
 }
 
@@ -400,6 +410,26 @@ function ComboForm({
       }))
       .filter((slot) => slot.item_ids.length > 0);
 
+    // Upcharges only mean something on a fixed-price deal; on the other kinds
+    // the dishes' own price difference already does the job.
+    if (draft.discountKind === "FIXED_PRICE") {
+      for (const slot of slots) {
+        const charged: Record<string, number> = {};
+        for (const id of slot.item_ids) {
+          const typed = (draft.upcharges[id] ?? "").trim();
+          if (!typed) continue;
+          const minor = deltaToMinor(typed);
+          if (minor === null || minor < 0) {
+            const name = items.find((item) => item.id === id)?.name ?? "an item";
+            onError(`Enter the extra for ${name} as a plain amount, like 1.00.`);
+            return;
+          }
+          if (minor > 0) charged[id] = minor;
+        }
+        slot.upcharges = charged;
+      }
+    }
+
     if (!slots.length) {
       onError("Tick the items this combo includes. Each type ticked becomes a choice.");
       return;
@@ -419,7 +449,9 @@ function ComboForm({
         onError(
           draft.discountKind === "PERCENT"
             ? "Enter the discount as a percentage, like 10."
-            : "Enter the discount as an amount, like 1.50.",
+            : draft.discountKind === "FIXED_PRICE"
+              ? "Enter the combo's price, like 8.99."
+              : "Enter the discount as an amount, like 1.50.",
         );
         return;
       }
@@ -431,6 +463,13 @@ function ComboForm({
         }
         // Basis points, so 12.5% is 1250 and nothing is lost to a float.
         discountValue = Math.round(percent * 100);
+      } else if (draft.discountKind === "FIXED_PRICE") {
+        const minor = deltaToMinor(typed);
+        if (minor === null || minor <= 0) {
+          onError("Enter the combo's price as a plain amount, like 8.99.");
+          return;
+        }
+        discountValue = minor;
       } else {
         const minor = deltaToMinor(typed);
         if (minor === null || minor < 0) {
@@ -538,13 +577,14 @@ function ComboForm({
         </label>
 
         <label className="block">
-          <span className="label">Discount</span>
+          <span className="label">Pricing</span>
           <select
             className="field mt-[7px]"
             value={draft.discountKind}
             disabled={saving}
             onChange={(e) => setDraft((d) => ({ ...d, discountKind: e.target.value as DiscountKind }))}
           >
+            <option value="FIXED_PRICE">Fixed price</option>
             <option value="PERCENT">Percentage off</option>
             <option value="AMOUNT">Amount off</option>
             <option value="NONE">No discount</option>
@@ -554,12 +594,22 @@ function ComboForm({
         {draft.discountKind !== "NONE" && (
           <label className="block">
             <span className="label">
-              {draft.discountKind === "PERCENT" ? "Percent off the total" : "Amount off the total"}
+              {draft.discountKind === "PERCENT"
+                ? "Percent off the total"
+                : draft.discountKind === "FIXED_PRICE"
+                  ? "Combo price"
+                  : "Amount off the total"}
             </span>
             <input
               className="field tnum mt-[7px]"
               inputMode="decimal"
-              placeholder={draft.discountKind === "PERCENT" ? "10" : "1.50"}
+              placeholder={
+                draft.discountKind === "PERCENT"
+                  ? "10"
+                  : draft.discountKind === "FIXED_PRICE"
+                    ? "8.99"
+                    : "1.50"
+              }
               value={draft.discountInput}
               disabled={saving}
               onChange={(e) => setDraft((d) => ({ ...d, discountInput: e.target.value }))}
@@ -622,6 +672,19 @@ function ComboForm({
         )}
       </fieldset>
 
+      {draft.discountKind === "FIXED_PRICE" && (
+        <UpchargeFields
+          headings={headings}
+          picked={draft.picked}
+          items={servedHere}
+          upcharges={draft.upcharges}
+          disabled={saving}
+          onChange={(itemId, value) =>
+            setDraft((d) => ({ ...d, upcharges: { ...d.upcharges, [itemId]: value } }))
+          }
+        />
+      )}
+
       <div className="flex flex-wrap items-center gap-4">
         <button type="submit" className="btn-primary" disabled={saving || uploading > 0}>
           {saving && <Spinner />}
@@ -640,8 +703,71 @@ function ComboForm({
   );
 }
 
+/**
+ * What each ticked item adds to a fixed-price combo. Blank is nothing extra:
+ * the usual dish in each slot. A dearer swap -- cheese fries for fries --
+ * gets the amount the counter would charge for it inside the meal.
+ */
+function UpchargeFields({
+  headings,
+  picked,
+  items,
+  upcharges,
+  disabled,
+  onChange,
+}: {
+  headings: ItemTypeRow[];
+  picked: Record<string, string[]>;
+  items: LibraryItem[];
+  upcharges: Record<string, string>;
+  disabled: boolean;
+  onChange: (itemId: string, value: string) => void;
+}) {
+  const rows = headings.flatMap((type) =>
+    (picked[type.id] ?? [])
+      .map((id) => items.find((item) => item.id === id))
+      .filter((item): item is LibraryItem => item !== undefined)
+      .map((item) => ({ type, item })),
+  );
+  if (!rows.length) return null;
+
+  return (
+    <fieldset>
+      <legend className="mb-1 text-sm font-semibold">Extra charge in this combo</legend>
+      <p className="max-w-prose text-caption text-muted">
+        Leave blank for the usual choices. For a dearer swap, enter what it adds to the combo
+        price, like 1.00 for cheese fries. Sizes and options still add their own price.
+      </p>
+      <div className="mt-3 grid grid-cols-1 gap-x-[18px] gap-y-3 sm:grid-cols-2">
+        {rows.map(({ type, item }) => (
+          <label key={item.id} className="flex items-center gap-3">
+            <span className="min-w-0 flex-1 text-sm">
+              {item.name}
+              <span className="block text-caption text-muted">
+                {type.name} · {money(item.base_price_minor, item.currency)} on its own
+              </span>
+            </span>
+            <input
+              className="field tnum w-[96px]"
+              inputMode="decimal"
+              placeholder="0.00"
+              aria-label={`Extra charge for ${item.name}`}
+              value={upcharges[item.id] ?? ""}
+              disabled={disabled}
+              onChange={(e) => onChange(item.id, e.target.value)}
+            />
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /** How the saving reads in the list. */
 function savingWords(combo: BuilderCombo): string {
+  if (combo.discount_kind === "FIXED_PRICE" && combo.discount_value > 0) {
+    return `${money(combo.discount_value)} fixed price`;
+  }
   if (combo.discount_kind === "PERCENT" && combo.discount_value > 0) {
     return `${Number((combo.discount_value / 100).toFixed(2))}% off`;
   }

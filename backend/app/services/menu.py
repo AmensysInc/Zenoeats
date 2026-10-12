@@ -282,6 +282,11 @@ def _combos_by_meal(
                     # in its vocabulary rather than a translated one.
                     label=slot.item_type.name if slot.item_type else "Choice",
                     items=items,
+                    upcharges={
+                        choice.item_id: choice.upcharge_minor
+                        for choice in slot.choices
+                        if choice.upcharge_minor
+                    },
                 )
             )
 
