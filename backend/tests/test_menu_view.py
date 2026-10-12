@@ -76,10 +76,11 @@ class FakeMeal:
 class FakeChoice:
     """A combo_slot_items row. A slot reaches its items only through these."""
 
-    def __init__(self, item):
+    def __init__(self, item, upcharge=0):
         self.id = uuid.uuid4()
         self.item_id = item.id
         self.item = item
+        self.upcharge_minor = upcharge
 
 
 class FakeSlot:
