@@ -184,6 +184,12 @@ export function RestaurantRow({
               <Link className={action} to={`/admin/restaurants/${r.id}/orders`}>
                 Orders
               </Link>
+              {/* Promotions are the platform's to run, so this is the only
+                  way to one: the restaurant's own portal has no coupon
+                  screen and no endpoint behind one. */}
+              <Link className={action} to={`/admin/restaurants/${r.id}/coupons`}>
+                Coupons
+              </Link>
               {/* The API refuses to delete an ACTIVE restaurant. Hiding the
                   button avoids offering a certain 409. */}
               {r.status !== "ACTIVE" && !confirmingDelete && (

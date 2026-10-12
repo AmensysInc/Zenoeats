@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import require_admin_host, require_same_origin
 from app.api.v1 import (
-    admin, customer, customer_accounts, orders, portal, restaurant, webhooks,
+    admin, coupons, customer, customer_accounts, orders, portal, restaurant, webhooks,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -32,6 +32,14 @@ api_router.include_router(
 api_router.include_router(restaurant.router, dependencies=[Depends(require_same_origin)])
 api_router.include_router(
     admin.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
+)
+# Coupons are the platform's to create, not a tenant's, so this is the admin
+# router by every measure except which file it lives in -- same prefix, same
+# host pin, same origin pin. Mounted after admin.router and with the same two
+# dependencies, because a coupon endpoint reachable from a restaurant's own
+# hostname would be a coupon endpoint a restaurant could call.
+api_router.include_router(
+    coupons.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
 )
 
 # Stripe signs its webhooks and calls them server to server; there is no

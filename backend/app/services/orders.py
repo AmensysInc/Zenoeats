@@ -114,6 +114,12 @@ def create_pending_order(
         tax_minor=cart.tax_minor,
         total_minor=cart.total_minor,
         tax_calculation_id=cart.tax_calculation_id,
+        # The coupon, from the cart that was priced with it. Read off the
+        # PricedCart rather than taken as an argument, so what the order
+        # records is by construction the discount the total already includes.
+        coupon_id=cart.coupon.coupon_id if cart.coupon else None,
+        coupon_code=cart.coupon.code if cart.coupon else None,
+        coupon_discount_minor=cart.coupon.discount_minor if cart.coupon else 0,
         customer_note=customer_note,
         contact_name=contact_name,
         contact_phone=contact_phone,

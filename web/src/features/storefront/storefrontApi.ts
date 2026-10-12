@@ -1,8 +1,5 @@
 import { api } from "@/services/api";
-import type {
-  Amounts, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Order, OrderSummary,
-  PlatformLocation, Portal,
-} from "@/types";
+import type { Amounts, AppliedCoupon, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Order, OrderSummary, PlatformLocation, Portal } from "@/types";
 
 export type QuoteItem = {
   menu_item_id: string;
@@ -76,7 +73,17 @@ export const storefrontApi = api.injectEndpoints({
     /** Authoritative pricing. Whatever the cart showed locally is a guess
      *  until the server answers. Creates nothing. */
     quote: build.mutation<
-      { currency: string; amounts: Amounts; delivery_miles: number | null },
+      {
+        currency: string;
+        amounts: Amounts;
+        delivery_miles: number | null;
+        /** The code, if one was sent and worked. */
+        coupon: AppliedCoupon | null;
+        /** Why it did not, if one was sent and did not. A bad code is not an
+         *  error here: the cart still has a price and the page still has to
+         *  show it, so the reason comes back beside it. */
+        coupon_error: string | null;
+      },
       {
         items: QuoteItem[];
         combos: QuoteCombo[];
@@ -84,6 +91,7 @@ export const storefrontApi = api.injectEndpoints({
          *  fee. */
         fulfillment_type?: FulfillmentType;
         delivery_address?: string;
+        coupon_code?: string;
       }
     >({
       query: (body) => ({ url: "/orders/quote", method: "POST", body }),
@@ -100,6 +108,10 @@ export const storefrontApi = api.injectEndpoints({
         /** A delivery goes to contact.address. */
         fulfillment_type: FulfillmentType;
         expected_total_minor: number;
+        /** Checked again server-side against this customer and this cart. A
+         *  code that no longer works refuses the order rather than quietly
+         *  charging full price. */
+        coupon_code?: string;
         idempotencyKey: string;
       }
     >({

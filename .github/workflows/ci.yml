@@ -313,6 +313,13 @@ jobs:
             echo "Migrate with the same api image before rolling out:"
             echo
             echo '```'
-            echo "docker run --rm --env-file <prod.env> $IMAGE_BASE/api:${{ github.sha }} alembic upgrade head"
+            echo "docker run --rm --env-file <prod.env> \\"
+            echo "  -e IMAGES_DIR=/srv/images -v <host images folder>:/srv/images \\"
+            echo "  $IMAGE_BASE/api:${{ github.sha }} alembic upgrade head"
             echo '```'
+            echo
+            echo "The images mount is there because migrations install content as well as"
+            echo "schema: 0047 loads the Jr's Corner menu and writes its photographs as"
+            echo "files. Without the mount the menu still loads and the photos are left"
+            echo "unset -- the migration prints which happened."
           } >> "$GITHUB_STEP_SUMMARY"

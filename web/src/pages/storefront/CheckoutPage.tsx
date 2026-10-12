@@ -28,7 +28,7 @@ import {
   contactInputId,
 } from "@/features/storefront/contact";
 import type { PaymentHandoff } from "./PaymentPage";
-import type { Amounts, Contact, FulfillmentType } from "@/types";
+import type { Amounts, AppliedCoupon, Contact, FulfillmentType } from "@/types";
 import { readCheckoutDraft, saveCheckoutDraft } from "@/features/storefront/checkoutDraft";
 import { loadGooglePlaces, type PlacesAutocomplete } from "@/services/googleMaps";
 import { BackLink } from "@/components/common/BackLink";
@@ -101,6 +101,15 @@ export function CheckoutPage() {
   const combos = useAppSelector(selectCartCombos);
 
   const [amounts, setAmounts] = useState<Amounts | null>(null);
+  // Three pieces of coupon state, because they answer different questions.
+  // `couponDraft` is what is in the text field. `appliedCode` is what the
+  // quote is being priced with -- separate, so typing does not re-price the
+  // cart on every keystroke and a code is only tried when it is submitted.
+  // `coupon` is the server's answer: what it is worth on this cart.
+  const [couponDraft, setCouponDraft] = useState("");
+  const [appliedCode, setAppliedCode] = useState<string | null>(null);
+  const [coupon, setCoupon] = useState<AppliedCoupon | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("PICKUP");
@@ -263,6 +272,7 @@ export function CheckoutPage() {
       ...(priceDelivery
         ? { fulfillment_type: "DELIVERY" as const, delivery_address: settledAddress }
         : {}),
+      ...(appliedCode ? { coupon_code: appliedCode } : {}),
     });
     request.unwrap()
       .then((q) => {
@@ -273,6 +283,15 @@ export function CheckoutPage() {
         setAddressProblem(null);
         setProblemCode(null);
         setError(null);
+        // Re-read on every quote, not only when the code is submitted: a
+        // coupon with a minimum spend stops working the moment an item is
+        // removed from the cart, and the summary has to say so then rather
+        // than at the payment screen.
+        setCoupon(q.coupon);
+        setCouponError(q.coupon_error);
+        // A code that has stopped working is not still applied. Dropping it
+        // here is what keeps the next quote, and the order, honest.
+        if (q.coupon_error) setAppliedCode(null);
       })
       .catch((e) => {
         if (!alive) return;
@@ -291,7 +310,7 @@ export function CheckoutPage() {
       alive = false;
       request.abort();
     };
-  }, [payload, comboPayload, cartSignature, empty, quote, priceDelivery, settledAddress, retry, delivering, contact.address]);
+  }, [payload, comboPayload, cartSignature, empty, quote, priceDelivery, settledAddress, retry, delivering, contact.address, appliedCode]);
 
   // The total on screen is for exactly what is being ordered: this choice,
   // and for a delivery this address as typed, not as it was a moment ago.
@@ -335,6 +354,7 @@ export function CheckoutPage() {
         },
         fulfillment_type: fulfillment,
         expected_total_minor: amounts.total_minor,
+        ...(appliedCode ? { coupon_code: appliedCode } : {}),
       };
       const key = attemptKeyFor(JSON.stringify(body));
 
@@ -368,6 +388,14 @@ export function CheckoutPage() {
         setPricedFor(null);
         setRetry(n => n + 1);
         setError("Prices changed while you were ordering. Check the refreshed total before continuing.");
+      } else if (e instanceof ApiError && e.code === "COUPON_REFUSED") {
+        // Between the quote and the button, the code stopped working -- its
+        // last redemption went to somebody else, or its window closed. Said
+        // beside the field, and taken off, so the next press charges the
+        // price actually on screen.
+        setAppliedCode(null);
+        setCoupon(null);
+        setCouponError(e.message);
       } else if (e instanceof ApiError && e.code === "ITEM_UNAVAILABLE") {
         setError("Something in your cart just sold out. Remove it and try again.");
       } else if (e instanceof ApiError && ADDRESS_PROBLEMS.has(e.code ?? "")) {
@@ -566,10 +594,24 @@ export function CheckoutPage() {
                 aria-busy={quoting}
               >
                 <Row label="Subtotal" value={money(amounts.subtotal_minor, currency)} />
-                {amounts.discount_minor > 0 && (
+                {/* Two lines rather than one, when both are at work. What a
+                    meal deal takes off is a property of the food; what a code
+                    takes off is something the customer did. Shown as one
+                    "Discount" they would have to work out which was which. */}
+                {amounts.discount_minor - amounts.coupon_discount_minor > 0 && (
                   <Row
-                    label="Discount"
-                    value={`−${money(amounts.discount_minor, currency)}`}
+                    label={amounts.coupon_discount_minor > 0 ? "Meal deals" : "Discount"}
+                    value={`−${money(
+                      amounts.discount_minor - amounts.coupon_discount_minor,
+                      currency,
+                    )}`}
+                    valueClass="text-brick"
+                  />
+                )}
+                {amounts.coupon_discount_minor > 0 && coupon && (
+                  <Row
+                    label={coupon.label ? `${coupon.label} (${coupon.code})` : coupon.code}
+                    value={`−${money(amounts.coupon_discount_minor, currency)}`}
                     valueClass="text-brick"
                   />
                 )}
@@ -609,7 +651,34 @@ export function CheckoutPage() {
               </p>
             )}
 
-            <label className={`block ${amounts ? "" : "mt-6"}`}>
+            <CouponField
+              draft={couponDraft}
+              applied={coupon}
+              error={couponError}
+              busy={quoting}
+              onDraft={(value) => {
+                setCouponDraft(value);
+                // The old refusal was about the old code.
+                if (couponError) setCouponError(null);
+              }}
+              onApply={() => {
+                const code = couponDraft.trim().toUpperCase();
+                if (!code) return;
+                setCouponError(null);
+                // Re-pricing happens in the quote effect, which this is a
+                // dependency of: one path to a total, whether the change was
+                // a code, an address or an item.
+                setAppliedCode(code);
+              }}
+              onRemove={() => {
+                setAppliedCode(null);
+                setCoupon(null);
+                setCouponDraft("");
+                setCouponError(null);
+              }}
+            />
+
+            <label className="mt-5 block">
               <span className="label">Anything else?</span>
               <textarea
                 className="field mt-[7px]"
@@ -807,6 +876,120 @@ function DeliveryStatus({
   return (
     <div className="mt-5 border-t border-hairline pt-4" role="status" aria-live="polite">
       {body}
+    </div>
+  );
+}
+
+/**
+ * The promotion code field.
+ *
+ * Collapsed to a link until it is wanted. A text box labelled "Promo code" on
+ * every checkout is a question asked of every customer, most of whom do not
+ * have one -- and the ones who went looking for a code are the ones who will
+ * find the link.
+ *
+ * Once a code is in effect the field is replaced by what it did, with a way
+ * to take it off. There is nothing to edit at that point: a different code is
+ * removing this one and applying that one, and an editable field holding an
+ * already-applied code invites a customer to change it and wonder why the
+ * total did not move.
+ *
+ * The refusal sits under the field rather than at the top of the page,
+ * because it is about the thing they just typed -- and the order summary
+ * above it is still correct, which is the whole reason a bad code is not an
+ * error here.
+ */
+function CouponField({
+  draft,
+  applied,
+  error,
+  busy,
+  onDraft,
+  onApply,
+  onRemove,
+}: {
+  draft: string;
+  applied: AppliedCoupon | null;
+  error: string | null;
+  busy: boolean;
+  onDraft: (value: string) => void;
+  onApply: () => void;
+  onRemove: () => void;
+}) {
+  // Opened by the customer, or already open because something was typed or
+  // refused -- a message under a field that has collapsed says nothing.
+  const [open, setOpen] = useState(false);
+
+  if (applied) {
+    return (
+      <div className="animate-rise mt-5 flex items-center justify-between gap-4 rounded-[12px] border border-hairline bg-[rgb(var(--ze-shortcut-ground))] px-4 py-3">
+        <p className="min-w-0">
+          <span className="font-mono text-[13px] font-bold tracking-[.5px]">{applied.code}</span>
+          <span className="ml-2 text-caption text-muted">
+            {applied.label ? applied.label : "applied"}
+          </span>
+        </p>
+        <button type="button" className="btn-quiet shrink-0" onClick={onRemove}>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
+  if (!open && !draft && !error) {
+    return (
+      <button type="button" className="btn-quiet mt-5 px-0" onClick={() => setOpen(true)}>
+        Have a promo code?
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-5">
+      {/* Above the field, not under it.
+          A refusal under an input is read after the eye has already moved
+          on to the next control -- and on a phone the on-screen keyboard
+          covers it outright while the field is focused, which is exactly
+          when it appears. Above, it is the first thing between the total and
+          the box they are about to retype in. */}
+      {error && (
+        <p id="coupon-error" role="alert" className="note-error animate-rise mb-3">
+          {error}
+        </p>
+      )}
+      <label className="block">
+        <span className="label">Promo code</span>
+        <div className="mt-[7px] flex gap-2">
+          <input
+            className="field font-mono uppercase"
+            value={draft}
+            onChange={(e) => onDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                // Inside the checkout form: without this, Enter submits the
+                // page and starts a payment with an unapplied code.
+                e.preventDefault();
+                onApply();
+              }
+            }}
+            placeholder="WELCOME10"
+            maxLength={32}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "coupon-error" : undefined}
+          />
+          <button
+            type="button"
+            className="btn-quiet shrink-0"
+            disabled={busy || !draft.trim()}
+            onClick={onApply}
+          >
+            Apply
+          </button>
+        </div>
+      </label>
     </div>
   );
 }

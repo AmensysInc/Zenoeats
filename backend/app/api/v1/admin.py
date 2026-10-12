@@ -393,6 +393,11 @@ _PURGE_ORDER = [
     # Before orders: a payment points at the order it paid for.
     "payments",
     "orders",
+    # After orders, which point at the coupon they used. The scope rows go
+    # first: they name both the coupon and a heading, and the headings are
+    # deleted further down.
+    "coupon_item_types",
+    "coupons",
     "combo_slot_items",
     "combo_slots",
     "combos",

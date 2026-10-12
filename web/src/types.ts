@@ -283,10 +283,22 @@ export type CartComboLine = {
 export type Amounts = {
   subtotal_minor: number;
   discount_minor: number;
+  /** The coupon's share of discount_minor; the rest is what meal deals took
+   *  off. Zero when no code was applied, so the two can be shown as separate
+   *  lines without the customer having to work out which was which. */
+  coupon_discount_minor: number;
   /** Zero on a collection. */
   delivery_fee_minor: number;
   tax_minor: number;
   total_minor: number;
+};
+
+/** A promotion code that worked, as the summary line shows it. */
+export type AppliedCoupon = {
+  code: string;
+  /** The restaurant's name for the promotion, when it gave it one. */
+  label: string | null;
+  discount_minor: number;
 };
 
 /** One line of a placed order.

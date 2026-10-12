@@ -165,12 +165,21 @@ def _calls(dependant):
 
 
 def _endpoints():
-    from app.api.v1.restaurant import router
+    """Every staff endpoint, from every module that serves one.
 
-    for route in router.routes:
-        if isinstance(route, APIRoute):
-            for method in route.methods:
-                yield (method, route.path), list(_calls(route.dependant))
+    A list of routers rather than the one, because this gate walked
+    restaurant.py alone and a second module serving /restaurant would have
+    walked straight past it -- which nearly happened. There is one again
+    today; the list is what makes adding the next one an edit here rather
+    than an endpoint nobody checked.
+    """
+    from app.api.v1.restaurant import router as restaurant_router
+
+    for router in (restaurant_router,):
+        for route in router.routes:
+            if isinstance(route, APIRoute):
+                for method in route.methods:
+                    yield (method, route.path), list(_calls(route.dependant))
 
 
 def test_every_endpoint_has_exactly_the_roles_it_is_meant_to():

@@ -33,17 +33,19 @@ from app.models import (
     PaymentStatus, Restaurant, RestaurantPaymentAccount, User, UserKind,
 )
 from app.schemas.api import (
-    AmountsOut, CreateOrderIn, CustomerSessionOut, DriverLocationOut, GuestSessionIn,
+    AmountsOut, CouponAppliedOut, CreateOrderIn, CustomerSessionOut, DriverLocationOut,
+    GuestSessionIn,
     GuestSessionOut, MapPointOut, OrderItemOut, OrderModifierOut, OrderOut, PaymentIntentOut,
     QuoteIn, QuoteOut, TrackingOut, TrackingStepOut,
 )
 from app.core.tenant import extract_slug
 from app.services import (
-    account_emails, clerk_customers, customer_profile, delivery, guest_customers,
+    account_emails, clerk_customers, coupons, customer_profile, delivery, guest_customers,
     stripe_service, terms, tracking,
 )
 from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
 from app.services.pricing import price_cart
+from app.services.tax import allocate_discount
 from app.workers.tasks import reconcile_payment_intent
 
 log = logging.getLogger(__name__)
@@ -84,10 +86,14 @@ def _serialize(
         amounts=AmountsOut(
             subtotal_minor=order.subtotal_minor,
             discount_minor=order.discount_minor,
+            coupon_discount_minor=order.coupon_discount_minor,
             delivery_fee_minor=order.delivery_fee_minor,
             tax_minor=order.tax_minor,
             total_minor=order.total_minor,
         ),
+        # The order's own snapshot, not the coupon's row: it still reads
+        # correctly after the promotion has been retired.
+        coupon_code=order.coupon_code,
         items=[
             OrderItemOut(
                 name=i.name_snapshot,
@@ -130,6 +136,13 @@ def _serialize(
 def quote_cart(
     body: QuoteIn,
     restaurant: Restaurant = Depends(current_restaurant),
+    # Optional, and only for the coupon: a quote has never needed to know who
+    # is asking, and browsing a menu still does not. But a coupon limited to
+    # one use per customer has to be refused on the page rather than at the
+    # payment screen, and that question cannot be answered without a name.
+    # Anonymous is a real answer here -- such a coupon simply passes the
+    # quote and is checked for real when the order is created.
+    user: User | None = Depends(optional_current_user),
     db: Session = TenantDb,
 ):
     """Authoritative pricing preview. Creates nothing.
@@ -141,17 +154,80 @@ def quote_cart(
     fee = None
     if body.fulfillment_type == "DELIVERY":
         fee = delivery.quote(db, restaurant, body.delivery_address or "")
-    cart = price_cart(
-        db,
-        restaurant,
-        [line.model_dump() for line in body.items],
-        [combo.model_dump() for combo in body.combos],
-        delivery_fee_minor=fee.fee_minor if fee else 0,
-    )
+
+    lines = [line.model_dump() for line in body.items]
+    combos = [combo.model_dump() for combo in body.combos]
+
+    def priced(applied=None):
+        return price_cart(
+            db, restaurant, lines, combos,
+            delivery_fee_minor=fee.fee_minor if fee else 0,
+            coupon=applied,
+        )
+
+    cart = priced()
+    applied = None
+    refusal = None
+
+    if body.coupon_code:
+        # Priced twice on purpose. The first pass is what the coupon's
+        # minimum spend is measured against and what a percentage is taken
+        # from; the second is the cart the customer is quoted. Deciding both
+        # in one pass would mean pricing a cart against a subtotal it did not
+        # have yet.
+        #
+        # No lock: this writes nothing, and holding a popular coupon's row
+        # while a browser thinks would put every storefront in a queue.
+        try:
+            found = coupons.find(db, body.coupon_code)
+            applied = coupons.apply(
+                db,
+                body.coupon_code,
+                subtotal_minor=max(cart.subtotal_minor - cart.discount_minor, 0),
+                eligible_minor=_eligible(db, cart, found) if found else None,
+                customer_user_id=user.id if user else None,
+            )
+            cart = priced(applied)
+        except coupons.CouponRefused as refused:
+            # Not raised. The cart still has a price and the page still has
+            # to show it; the reason goes beside the field they typed in.
+            refusal = refused.detail["message"]
+
     return QuoteOut(
         currency=cart.currency,
         amounts=_amounts(cart),
         delivery_miles=fee.miles if fee else None,
+        coupon=_coupon_out(cart.coupon),
+        coupon_error=refusal,
+    )
+
+
+def _eligible(db, cart, coupon) -> int:
+    """How much of a priced cart this coupon is allowed to reduce.
+
+    A coupon that names no headings may reduce all of the food. One that
+    names headings may reduce only the lines filed under them -- so the
+    amounts have to be worked out per line, and a meal deal's saving comes
+    off the cart rather than off a line.
+
+    tax.allocate_discount is what spreads it, and it is the same function
+    that decides which lines a discount reduced for tax purposes. Using it
+    here as well is the point: a cart cannot be taxed as though the discount
+    fell on one set of lines and discounted as though it fell on another.
+    """
+    net = allocate_discount(
+        [line.line_total_minor for line in cart.lines], cart.discount_minor
+    )
+    return coupons.eligible_base(
+        db, coupon, [(line.item_type_id, amount) for line, amount in zip(cart.lines, net)]
+    )
+
+
+def _coupon_out(applied) -> CouponAppliedOut | None:
+    if applied is None:
+        return None
+    return CouponAppliedOut(
+        code=applied.code, label=applied.label, discount_minor=applied.discount_minor
     )
 
 
@@ -159,6 +235,7 @@ def _amounts(cart) -> AmountsOut:
     return AmountsOut(
         subtotal_minor=cart.subtotal_minor,
         discount_minor=cart.discount_minor,
+        coupon_discount_minor=cart.coupon.discount_minor if cart.coupon else 0,
         delivery_fee_minor=cart.delivery_fee_minor,
         tax_minor=cart.tax_minor,
         total_minor=cart.total_minor,
@@ -294,13 +371,36 @@ def create_order(
     fee = None
     if body.fulfillment_type == "DELIVERY":
         fee = delivery.quote(db, restaurant, body.contact.address)
+    lines = [line.model_dump() for line in body.items]
+    combos = [combo.model_dump() for combo in body.combos]
     cart = price_cart(
-        db,
-        restaurant,
-        [line.model_dump() for line in body.items],
-        [combo.model_dump() for combo in body.combos],
+        db, restaurant, lines, combos,
         delivery_fee_minor=fee.fee_minor if fee else 0,
     )
+
+    if body.coupon_code:
+        # Refused loudly here, unlike on the quote. The customer is
+        # committing, and the alternative to an error is charging full price
+        # to somebody who believes they have a discount.
+        #
+        # Locked, because this is the request that spends a redemption. Two
+        # customers reaching the last redemption of a limited coupon at the
+        # same moment would otherwise both count the orders before either has
+        # written one, and both be told yes.
+        found = coupons.find(db, body.coupon_code)
+        applied = coupons.apply(
+            db,
+            body.coupon_code,
+            subtotal_minor=max(cart.subtotal_minor - cart.discount_minor, 0),
+            eligible_minor=_eligible(db, cart, found) if found else None,
+            customer_user_id=user.id,
+            lock=True,
+        )
+        cart = price_cart(
+            db, restaurant, lines, combos,
+            delivery_fee_minor=fee.fee_minor if fee else 0,
+            coupon=applied,
+        )
 
     if body.expected_total_minor is not None and body.expected_total_minor != cart.total_minor:
         # The menu changed between the quote and the confirm. Never silently

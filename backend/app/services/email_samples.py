@@ -36,6 +36,10 @@ def _order(**overrides) -> SimpleNamespace:
         ],
         subtotal_minor=2250, discount_minor=225, delivery_fee_minor=0,
         tax_minor=167, total_minor=2192,
+        # The discount above came from a code, so the sample exercises the
+        # receipt line that names one. The delivery sample below has no
+        # discount at all, which is the other case worth looking at.
+        coupon_code="WELCOME10",
     )
     values.update(overrides)
     return SimpleNamespace(**values)

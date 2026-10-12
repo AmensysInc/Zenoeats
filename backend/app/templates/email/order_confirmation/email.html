@@ -19,7 +19,7 @@
 </table>
 <table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px">
 {{ ui.total_row("Subtotal", amounts.subtotal) }}
-{% if amounts.discount %}{{ ui.total_row("Discount", amounts.discount) }}{% endif %}
+{% if amounts.discount %}{{ ui.total_row("Discount" ~ (" (" ~ amounts.discount_code ~ ")" if amounts.discount_code else ""), amounts.discount) }}{% endif %}
 {% if amounts.delivery_fee %}{{ ui.total_row("Delivery fee", amounts.delivery_fee) }}{% endif %}
 {{ ui.total_row("Tax", amounts.tax) }}
 {{ ui.total_row("Total", amounts.total, total=true) }}

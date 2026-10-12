@@ -73,9 +73,19 @@ services:
       DATABASE_URL_APP: ${DOCKER_DATABASE_URL_APP}
       DATABASE_URL_SYSTEM: ${DOCKER_DATABASE_URL_SYSTEM}
       DATABASE_URL_MIGRATE: ${DOCKER_DATABASE_URL_MIGRATE}
+      # Migrations install content as well as schema: 0047 loads the menu
+      # and writes its photographs. The pictures are files, so the job that
+      # runs migrations needs the same folder the api serves /images/ from,
+      # mounted below. Without it the menu still loads and every photo is
+      # left unset rather than recorded as a key with no file behind it --
+      # the migration says which happened. A production migrate job needs
+      # the same mount for the same reason.
+      IMAGES_DIR: /srv/images
     depends_on:
       postgres: {condition: service_healthy}
     restart: "no"
+    volumes:
+      - ./images:/srv/images
     command: alembic upgrade head
     # The image's HEALTHCHECK polls /health, which a job that exits never
     # serves.

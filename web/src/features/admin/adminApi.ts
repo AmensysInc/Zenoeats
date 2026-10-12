@@ -1,4 +1,85 @@
 import { api } from "@/services/api";
+import type { DiscountKind } from "@/types";
+
+/** A promotion code, as the platform dashboard shows it.
+ *
+ *  `discount_kind` is read the way a combo's is: PERCENT is basis points
+ *  (1000 = 10%), AMOUNT is minor units (500 = $5.00). Every limit is nullable
+ *  because a real promotion uses some and not others -- a launch offer has an
+ *  end date and no cap, a referral code has a cap of one per customer and no
+ *  end date at all. */
+export type Coupon = {
+  id: string;
+  code: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  /** A ceiling, for a percentage only: 20% off is a different offer on a $10
+   *  order and on a $400 office lunch. */
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  max_redemptions: number | null;
+  max_per_customer: number | null;
+  is_active: boolean;
+  /** The headings it applies to. Empty means the whole cart. */
+  applies_to: MenuHeading[];
+  /** Counted from the orders that used it, so a cancelled order is not one. */
+  redemptions: number;
+  /** What those orders took off in total -- the number that says whether a
+   *  promotion was worth running. */
+  discounted_minor: number;
+  created_at: string;
+};
+
+/** One heading on a restaurant's menu, as the coupon form offers it. */
+export type MenuHeading = {
+  id: string;
+  name: string;
+};
+
+export type CouponList = {
+  /** Which restaurant these belong to, and what their amounts are in. An
+   *  operator with several restaurants open needs to see which one they are
+   *  editing, and a page of percentages cannot render "$5.00 off" without
+   *  the currency. */
+  restaurant_name: string;
+  currency: string;
+  /** This restaurant's menu headings, for the "applies to" field. Sent with
+   *  the list so the form needs no second request. */
+  item_types: MenuHeading[];
+  coupons: Coupon[];
+};
+
+/** The two ways a discount can be stated, and exactly one of them is sent.
+ *
+ *  An operator thinks in a percentage or in an amount -- "10% off" or "$5
+ *  off" -- so the form asks for both and sends whichever was answered. Both
+ *  at once is refused by the API rather than guessed: "10% off and $5 off"
+ *  has no single answer, and the thing it resembles is a percentage with a
+ *  ceiling, which `max_discount_minor` already is. */
+export type CouponDraft = {
+  code: string;
+  description?: string | null;
+  /** Basis points: 1000 is 10%. */
+  percent_off_bps?: number | null;
+  /** Minor units: 500 is $5.00. */
+  amount_off_minor?: number | null;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  /** Menu heading ids. Empty means the whole cart. */
+  applies_to?: string[];
+  starts_at?: string | null;
+  ends_at?: string | null;
+  max_redemptions?: number | null;
+  max_per_customer?: number | null;
+  is_active?: boolean;
+};
+
+/** An edit. The code is absent on purpose: customers have been given it, so a
+ *  new code is a new coupon and the old one gets retired. */
+export type CouponPatch = Partial<Omit<CouponDraft, "code">>;
 
 export type Restaurant = {
   id: string;
@@ -265,6 +346,48 @@ export const adminApi = api.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "RestaurantLogin", id }],
     }),
 
+    // --- coupons ----------------------------------------------------------
+    //
+    // Promotion codes are the platform's to create, not a tenant's: there is
+    // no coupon screen in the restaurant portal and no endpoint behind one.
+    // These are on the admin surface, per restaurant.
+
+    coupons: build.query<CouponList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/coupons` }),
+      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    }),
+
+    createCoupon: build.mutation<Coupon, { id: string; draft: CouponDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/coupons`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    updateCoupon: build.mutation<
+      Coupon,
+      { id: string; couponId: string; patch: CouponPatch }
+    >({
+      query: ({ id, couponId, patch }) => ({
+        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    // Soft, and the code becomes free again: orders that used it keep their
+    // own snapshot, so a receipt from last month still reads the same.
+    retireCoupon: build.mutation<void, { id: string; couponId: string }>({
+      query: ({ id, couponId }) => ({
+        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
     platformReports: build.query<Report[], void>({
       query: () => ({ url: "/admin/reports" }),
       providesTags: ["AdminReport"],
@@ -301,4 +424,8 @@ export const {
   useRestaurantLoginsQuery,
   usePlatformReportsQuery,
   useRestaurantOrdersQuery,
+  useCouponsQuery,
+  useCreateCouponMutation,
+  useUpdateCouponMutation,
+  useRetireCouponMutation,
 } = adminApi;

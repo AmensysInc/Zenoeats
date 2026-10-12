@@ -38,6 +38,8 @@ const PATHS = {
   signout: "M9 3H3v18h6m6-14 5 5-5 5m5-5H8",
   stock: "m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7M12 11v10",
   store: "M3 9h18L19 3H5L3 9Zm1 0v12h16V9M9 21v-8h6v8",
+  // A luggage-style tag with its hole: a coupon, in one stroke.
+  tag: "M3 11 11 3h10v10l-8 8-10-10Zm13-3h.01",
   team: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7",
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2",
