@@ -45,6 +45,7 @@ from app.services import (
 )
 from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
 from app.services.pricing import price_cart
+from app.services.tax import allocate_discount
 from app.workers.tasks import reconcile_payment_intent
 
 log = logging.getLogger(__name__)
@@ -178,10 +179,12 @@ def quote_cart(
         # No lock: this writes nothing, and holding a popular coupon's row
         # while a browser thinks would put every storefront in a queue.
         try:
+            found = coupons.find(db, body.coupon_code)
             applied = coupons.apply(
                 db,
                 body.coupon_code,
                 subtotal_minor=max(cart.subtotal_minor - cart.discount_minor, 0),
+                eligible_minor=_eligible(db, cart, found) if found else None,
                 customer_user_id=user.id if user else None,
             )
             cart = priced(applied)
@@ -196,6 +199,27 @@ def quote_cart(
         delivery_miles=fee.miles if fee else None,
         coupon=_coupon_out(cart.coupon),
         coupon_error=refusal,
+    )
+
+
+def _eligible(db, cart, coupon) -> int:
+    """How much of a priced cart this coupon is allowed to reduce.
+
+    A coupon that names no headings may reduce all of the food. One that
+    names headings may reduce only the lines filed under them -- so the
+    amounts have to be worked out per line, and a meal deal's saving comes
+    off the cart rather than off a line.
+
+    tax.allocate_discount is what spreads it, and it is the same function
+    that decides which lines a discount reduced for tax purposes. Using it
+    here as well is the point: a cart cannot be taxed as though the discount
+    fell on one set of lines and discounted as though it fell on another.
+    """
+    net = allocate_discount(
+        [line.line_total_minor for line in cart.lines], cart.discount_minor
+    )
+    return coupons.eligible_base(
+        db, coupon, [(line.item_type_id, amount) for line, amount in zip(cart.lines, net)]
     )
 
 
@@ -363,10 +387,12 @@ def create_order(
         # customers reaching the last redemption of a limited coupon at the
         # same moment would otherwise both count the orders before either has
         # written one, and both be told yes.
+        found = coupons.find(db, body.coupon_code)
         applied = coupons.apply(
             db,
             body.coupon_code,
             subtotal_minor=max(cart.subtotal_minor - cart.discount_minor, 0),
+            eligible_minor=_eligible(db, cart, found) if found else None,
             customer_user_id=user.id,
             lock=True,
         )

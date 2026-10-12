@@ -250,8 +250,7 @@ def operator(admin_user, cleanup, monkeypatch):
         def make(**overrides):
             body = {
                 "code": overrides.pop("code", f"save{uuid.uuid4().hex[:6]}"),
-                "discount_kind": "PERCENT",
-                "discount_value": 1000,
+                "percent_off_bps": 1000,
             }
             body.update(overrides)
             return client.post(Operator.at, json=body)
@@ -280,7 +279,7 @@ def test_every_write_is_audited(operator):
     from app.db.session import system_session
 
     created = operator.make(code="audited").json()
-    operator.client.patch(f"{operator.at}/{created['id']}", json={"discount_value": 1500})
+    operator.client.patch(f"{operator.at}/{created['id']}", json={"percent_off_bps": 1500})
     operator.client.delete(f"{operator.at}/{created['id']}")
 
     with system_session() as session:
@@ -314,7 +313,7 @@ def test_two_restaurants_may_run_the_same_code(admin_user, cleanup, monkeypatch)
     client = _admin_client(admin_user, monkeypatch)
     first, second = _create(admin_user, cleanup), _create(admin_user, cleanup)
 
-    body = {"code": "SHARED", "discount_kind": "PERCENT", "discount_value": 500}
+    body = {"code": "SHARED", "percent_off_bps": 500}
     for restaurant in (first, second):
         res = client.post(f"/api/v1/admin/restaurants/{restaurant.id}/coupons", json=body)
         assert res.status_code == 201, res.text
@@ -337,7 +336,7 @@ def test_a_coupon_cannot_be_edited_through_another_restaurant(
     client = _admin_client(admin_user, monkeypatch)
 
     at = f"/api/v1/admin/restaurants/{other.id}/coupons/{created['id']}"
-    assert client.patch(at, json={"discount_value": 9000}).status_code == 422
+    assert client.patch(at, json={"percent_off_bps": 9000}).status_code == 422
     assert client.delete(at).status_code == 422
 
     # Untouched, and still this restaurant's.
@@ -359,18 +358,58 @@ def test_a_retired_code_can_be_created_again(operator):
 @pytest.mark.parametrize(
     "overrides, because",
     [
-        ({"discount_kind": "PERCENT", "discount_value": 10001}, "over 100%"),
-        ({"discount_kind": "NONE", "discount_value": 100}, "no kind of discount"),
-        ({"discount_value": 0}, "worth nothing"),
+        ({"percent_off_bps": 10001}, "over 100%"),
+        ({"percent_off_bps": 0}, "worth nothing"),
+        ({"amount_off_minor": 0}, "worth nothing"),
         ({"code": "ab"}, "too short"),
         ({"code": "save-10"}, "not alphanumeric"),
-        ({"discount_kind": "AMOUNT", "discount_value": 500, "max_discount_minor": 100},
+        ({"percent_off_bps": None, "amount_off_minor": 500, "max_discount_minor": 100},
          "a ceiling on a flat amount"),
         ({"max_redemptions": 2, "max_per_customer": 3}, "per-customer over the total"),
     ],
 )
 def test_a_coupon_nobody_meant_is_refused(operator, overrides, because):
     assert operator.make(**overrides).status_code == 422, because
+
+
+# --- the discount is two optional fields, one of which has to be filled ---
+
+
+def test_a_coupon_needs_a_percentage_or_an_amount(operator):
+    res = operator.make(percent_off_bps=None)
+    assert res.status_code == 422
+    # A schema refusal, so it arrives in the flat envelope rather than under
+    # "detail" the way an ApiError does.
+    assert "percentage off or an amount off" in res.json()["message"]
+
+
+def test_a_coupon_cannot_be_both(operator):
+    """"10% off and $5 off" has no single answer, and the thing it resembles
+    -- a percentage with a limit -- is what the ceiling is for."""
+    res = operator.make(percent_off_bps=1000, amount_off_minor=500)
+    assert res.status_code == 422
+    assert "not both" in res.json()["message"]
+
+
+def test_either_field_on_its_own_is_enough(operator):
+    percentage = operator.make(code="pct10", percent_off_bps=1000).json()
+    assert (percentage["discount_kind"], percentage["discount_value"]) == ("PERCENT", 1000)
+
+    flat = operator.make(code="flat5", percent_off_bps=None, amount_off_minor=500).json()
+    assert (flat["discount_kind"], flat["discount_value"]) == ("AMOUNT", 500)
+
+
+def test_switching_a_percentage_to_an_amount_drops_its_ceiling(operator):
+    """A ceiling on a flat amount is either the amount or a lie, so it must
+    not be left behind as a setting that no longer means anything."""
+    created = operator.make(percent_off_bps=2000, max_discount_minor=300).json()
+    assert created["max_discount_minor"] == 300
+
+    edited = operator.client.patch(
+        f"{operator.at}/{created['id']}", json={"amount_off_minor": 450}
+    ).json()
+    assert (edited["discount_kind"], edited["discount_value"]) == ("AMOUNT", 450)
+    assert edited["max_discount_minor"] is None
 
 
 def test_the_window_has_to_run_forwards(operator):
@@ -389,7 +428,7 @@ def test_a_coupon_can_be_edited_but_not_renamed(operator):
 
     res = operator.client.patch(
         f"{operator.at}/{created['id']}",
-        json={"discount_value": 1500, "description": "Better offer", "code": "RENAMED"},
+        json={"percent_off_bps": 1500, "description": "Better offer", "code": "RENAMED"},
     )
     assert res.status_code == 200
     edited = res.json()
@@ -425,9 +464,7 @@ def test_a_restaurant_login_cannot_create_a_coupon(team, operator):
 
     client = TestClient(app, base_url="http://admin.zenoeats.local")
     client.cookies.set(staff_auth.SESSION_COOKIE, staff_auth.issue_session(team.owner_id))
-    res = client.post(operator.at, json={
-        "code": "SNEAKY", "discount_kind": "PERCENT", "discount_value": 5000,
-    })
+    res = client.post(operator.at, json={"code": "SNEAKY", "percent_off_bps": 5000})
     assert res.status_code in (401, 403)
 
 
@@ -464,8 +501,7 @@ def _publish(shop, **overrides):
     admin surface -- so these tests exercise the same path an operator uses
     rather than a shortcut into the table.
     """
-    body = {"code": overrides.pop("code", "SAVE20"), "discount_kind": "PERCENT",
-            "discount_value": 2000}
+    body = {"code": overrides.pop("code", "SAVE20"), "percent_off_bps": 2000}
     body.update(overrides)
     res = shop.admin.post(shop.coupons_at, json=body)
     assert res.status_code == 201, res.text
@@ -667,3 +703,163 @@ def test_a_retired_coupon_stops_working_and_the_old_order_still_reads(shop):
     row = _row(shop, placed["order_id"], "coupon_code, coupon_discount_minor")
     assert row["coupon_code"] == "RETIRED"
     assert row["coupon_discount_minor"] > 0
+
+
+# ------------------------------------------- what a coupon applies to -------
+#
+# A code that names menu headings discounts only the lines filed under them.
+# Two numbers are at work and keeping them apart is the whole of it: the
+# minimum spend is about the order, the discount is about the eligible part.
+
+
+@pytest.fixture
+def two_headings(shop):
+    """A second heading with a dish under it, beside the shop's burger.
+
+    The shop fixture gives one item under whichever heading the restaurant
+    was created with; a scope test needs something outside the scope to
+    prove the discount does not reach it.
+    """
+    from app.db.session import tenant_session
+    from app.models import Item, ItemType, Meal, MealItem
+    from sqlalchemy import select
+
+    with tenant_session(shop.id) as session:
+        # The burger's own heading, read from the item rather than guessed:
+        # a new restaurant is created with several starter headings and which
+        # one _an_item picked is not this fixture's business.
+        burger = session.get(Item, shop.item_id)
+        burger_type = session.get(ItemType, burger.item_type_id)
+        # Another of those starter headings, whichever it is. Creating one
+        # called "Drinks" collided with the starter named the same.
+        drinks = session.execute(
+            select(ItemType)
+            .where(ItemType.id != burger_type.id, ItemType.deleted_at.is_(None))
+            .order_by(ItemType.sort_order, ItemType.id)
+            .limit(1)
+        ).scalars().one()
+
+        shake = Item(
+            restaurant_id=shop.id, item_type_id=drinks.id, name="Thick Shake",
+            base_price_minor=800, is_available=True,
+        )
+        session.add(shake)
+        session.flush()
+        meal = session.execute(select(Meal).limit(1)).scalars().one()
+        session.add(MealItem(restaurant_id=shop.id, meal_id=meal.id, item_id=shake.id))
+        session.flush()
+
+        shop.burger_type_id = str(burger_type.id)
+        shop.drinks_type_id = str(drinks.id)
+        shop.drinks_name = drinks.name
+        shop.shake_id = str(shake.id)
+    return shop
+
+
+def _mixed_quote(client, shop, **extra):
+    """A cart with one burger (1200) and one shake (800)."""
+    return client.post(QUOTE, json={
+        "items": [
+            {"menu_item_id": str(shop.item_id), "quantity": 1, "modifiers": []},
+            {"menu_item_id": shop.shake_id, "quantity": 1, "modifiers": []},
+        ],
+        **extra,
+    })
+
+
+def test_the_headings_a_coupon_can_name_come_with_the_list(two_headings):
+    """The form needs them, and gets them from the same request as the
+    coupons rather than a second round trip."""
+    listed = two_headings.admin.get(two_headings.coupons_at).json()
+    offered = {heading["id"] for heading in listed["item_types"]}
+    assert two_headings.burger_type_id in offered
+    assert two_headings.drinks_type_id in offered
+
+
+def test_a_coupon_with_no_headings_applies_to_the_whole_cart(two_headings):
+    _publish(two_headings, code="ALLOFIT", percent_off_bps=1000)
+    amounts = _mixed_quote(_guest(two_headings), two_headings,
+                           coupon_code="ALLOFIT").json()["amounts"]
+
+    assert amounts["subtotal_minor"] == 2000
+    # 10% of everything.
+    assert amounts["coupon_discount_minor"] == 200
+
+
+def test_a_coupon_scoped_to_a_heading_discounts_only_that_heading(two_headings):
+    """The whole point: 20% off drinks costs 20% of the drinks, not 20% of
+    the order."""
+    _publish(
+        two_headings, code="DRINKS20", percent_off_bps=2000,
+        applies_to=[two_headings.drinks_type_id],
+    )
+    amounts = _mixed_quote(_guest(two_headings), two_headings,
+                           coupon_code="DRINKS20").json()["amounts"]
+
+    assert amounts["subtotal_minor"] == 2000
+    # 20% of the 800 shake, not of the 2000 cart.
+    assert amounts["coupon_discount_minor"] == 160
+
+
+def test_a_coupon_that_applies_to_nothing_in_the_cart_says_so(two_headings):
+    """A burger coupon against an order of milkshakes. Its own sentence,
+    because unlike every other refusal it is not about the code."""
+    _publish(
+        two_headings, code="BURGERS10", percent_off_bps=1000,
+        applies_to=[two_headings.burger_type_id],
+    )
+    res = _guest(two_headings).post(QUOTE, json={
+        "items": [{"menu_item_id": two_headings.shake_id, "quantity": 1, "modifiers": []}],
+        "coupon_code": "BURGERS10",
+    })
+
+    body = res.json()
+    assert body["coupon"] is None
+    assert "doesn't apply to anything in your order" in body["coupon_error"]
+    # And the cart still has its price.
+    assert body["amounts"]["total_minor"] > 0
+
+
+def test_the_minimum_spend_is_measured_against_the_whole_order(two_headings):
+    """Not against the eligible part. "Spend $15 to get 20% off drinks" is
+    the offer; "spend $15 on drinks" is a different one nobody typed."""
+    _publish(
+        two_headings, code="BIGDRINKS", percent_off_bps=2000,
+        min_subtotal_minor=1500, applies_to=[two_headings.drinks_type_id],
+    )
+    # The cart is 2000, over the minimum; the drinks in it are only 800.
+    amounts = _mixed_quote(_guest(two_headings), two_headings,
+                           coupon_code="BIGDRINKS").json()["amounts"]
+    assert amounts["coupon_discount_minor"] == 160
+
+
+def test_a_scope_can_be_changed_and_cleared(two_headings):
+    created = _publish(
+        two_headings, code="SCOPED", percent_off_bps=1000,
+        applies_to=[two_headings.drinks_type_id],
+    )
+    assert [h["name"] for h in created["applies_to"]] == [two_headings.drinks_name]
+
+    at = f"{two_headings.coupons_at}/{created['id']}"
+    both = two_headings.admin.patch(at, json={
+        "applies_to": [two_headings.drinks_type_id, two_headings.burger_type_id],
+    }).json()
+    assert len(both["applies_to"]) == 2
+
+    # An empty list is "the whole cart again", which is why it has to be
+    # tellable apart from the field being absent.
+    cleared = two_headings.admin.patch(at, json={"applies_to": []}).json()
+    assert cleared["applies_to"] == []
+
+
+def test_a_heading_from_another_restaurant_is_refused(two_headings, admin_user, cleanup):
+    """Row-level security would already stop it being found; what this adds
+    is a message instead of a silently empty scope."""
+    other = _create(admin_user, cleanup)
+    res = two_headings.admin.post(two_headings.coupons_at, json={
+        "code": "ELSEWHERE", "percent_off_bps": 1000,
+        "applies_to": [str(uuid.uuid4())],
+    })
+    assert res.status_code == 422
+    assert "not on this restaurant's menu" in res.json()["detail"]["message"]
+    del other

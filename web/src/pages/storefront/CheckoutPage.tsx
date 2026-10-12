@@ -946,6 +946,17 @@ function CouponField({
 
   return (
     <div className="mt-5">
+      {/* Above the field, not under it.
+          A refusal under an input is read after the eye has already moved
+          on to the next control -- and on a phone the on-screen keyboard
+          covers it outright while the field is focused, which is exactly
+          when it appears. Above, it is the first thing between the total and
+          the box they are about to retype in. */}
+      {error && (
+        <p id="coupon-error" role="alert" className="note-error animate-rise mb-3">
+          {error}
+        </p>
+      )}
       <label className="block">
         <span className="label">Promo code</span>
         <div className="mt-[7px] flex gap-2">
@@ -979,11 +990,6 @@ function CouponField({
           </button>
         </div>
       </label>
-      {error && (
-        <p id="coupon-error" className="mt-2 text-caption text-brick" role="status">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

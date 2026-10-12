@@ -20,6 +20,17 @@ WHAT IT APPLIES TO is the food, after any meal deals, and never the delivery
 fee or the tax. A coupon that took money off a delivery fee would be a
 restaurant paying a driver out of a promotion, and one applied before the
 combos would discount a price nobody was being charged.
+
+A coupon may also be narrower than that: "20% off burgers" names the
+headings it applies to, and then only the lines under those headings are
+discounted. Two different numbers come into it, and keeping them apart is
+the whole of the arithmetic here:
+
+    the minimum spend   is about the order -- "spend $20 to use this"
+    the discount basis  is about the eligible part -- 20% of the burgers
+
+Measuring the minimum against the eligible part instead would mean "spend
+$20 on burgers", which is a different offer and not the one anybody typed.
 """
 
 import logging
@@ -32,7 +43,7 @@ from sqlalchemy.orm import Session
 
 from app.core import errors
 from app.core.money import apply_rate_bps
-from app.models import Coupon, DiscountKind, Order, OrderStatus
+from app.models import Coupon, CouponItemType, DiscountKind, Order, OrderStatus
 
 log = logging.getLogger(__name__)
 
@@ -46,9 +57,16 @@ MAX_CODE_LENGTH = 32
 # an unpaid cart is not a promotion anybody received.
 SPENT_STATUSES = (OrderStatus.EXPIRED.value, OrderStatus.CANCELLED.value)
 
-# What a customer is told, by what is wrong. Deliberately short of detail:
-# see the module docstring.
-UNKNOWN = "That code isn't valid. Check it and try again."
+# What a customer is told when the code itself is the problem -- it does not
+# exist, or it has been switched off, which read identically on purpose (see
+# the module docstring). It asks for the one thing they can do about it.
+#
+# The other refusals below say what is specifically wrong instead, because a
+# customer can act on those differently: a minimum spend can be reached by
+# adding something, and a window that has not opened yet is worth coming back
+# for. Telling all of them to "check the code" would send somebody hunting
+# for a typo in a code they typed correctly.
+UNKNOWN = "Please check again and re-enter the correct coupon code."
 
 
 class CouponRefused(errors.ApiError):
@@ -145,18 +163,50 @@ def redemptions(db: Session, coupon_id: UUID) -> int:
     ).scalar_one()
 
 
+def eligible_base(db: Session, coupon: Coupon, lines: list[tuple[UUID | None, int]]) -> int:
+    """How much of a cart this coupon is allowed to reduce.
+
+    `lines` is (item_type_id, amount) per priced line, already net of any
+    meal-deal discount -- the caller allocates that, because the combos take
+    money off the cart rather than off a line.
+
+    A coupon with no headings applies to all of it. One with headings applies
+    to the lines filed under them, and a dish whose heading is not named
+    contributes nothing: that is what makes "20% off burgers" cost 20% of the
+    burgers rather than 20% of the order.
+    """
+    scope = {
+        row
+        for row in db.execute(
+            select(CouponItemType.item_type_id).where(
+                CouponItemType.coupon_id == coupon.id
+            )
+        ).scalars()
+    }
+    if not scope:
+        return sum(amount for _type_id, amount in lines)
+    return sum(amount for type_id, amount in lines if type_id in scope)
+
+
 def apply(
     db: Session,
     code: str,
     *,
     subtotal_minor: int,
+    eligible_minor: int | None = None,
     customer_user_id: UUID | None,
     lock: bool = False,
 ) -> AppliedCoupon:
     """Price `code` against a cart, or raise CouponRefused saying why.
 
-    `subtotal_minor` is the food after any meal-deal discounts -- what the
-    coupon is actually allowed to reduce.
+    `subtotal_minor` is the food after any meal-deal discounts, and is what
+    the minimum spend is measured against: a minimum is a fact about the
+    order.
+
+    `eligible_minor` is the part of that the coupon may actually reduce --
+    smaller than the subtotal when the coupon names headings. Defaulted to
+    the subtotal, so a caller that has no scope to work out need not say the
+    same number twice.
 
     `lock` takes the coupon's row for the rest of the transaction, and is for
     the one caller that is about to create an order. Two customers reaching
@@ -215,7 +265,14 @@ def apply(
                 else "You've used that code as many times as it allows."
             )
 
-    discount = discount_for(coupon, subtotal_minor)
+    basis = subtotal_minor if eligible_minor is None else eligible_minor
+    if basis <= 0 and subtotal_minor > 0:
+        # The code is good and this cart has nothing it applies to: a burger
+        # coupon against an order of milkshakes. Said as its own sentence,
+        # because unlike the refusals above it is not about the code at all.
+        raise CouponRefused("That code doesn't apply to anything in your order.")
+
+    discount = discount_for(coupon, basis)
     if discount <= 0:
         # The coupon is valid and worth nothing on this cart -- a flat amount
         # against a cart that combos have already taken to zero. Saying

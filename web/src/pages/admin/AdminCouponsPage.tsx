@@ -11,6 +11,7 @@ import {
   useUpdateCouponMutation,
   type Coupon,
   type CouponDraft,
+  type MenuHeading,
 } from "@/features/admin/adminApi";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
@@ -105,6 +106,7 @@ export function AdminCouponsPage() {
         <CouponForm
           restaurantId={id}
           currency={currency}
+          headings={coupons.data?.item_types ?? []}
           onDone={(code) => {
             setAdding(false);
             if (code) setAnnouncement(`${code} created.`);
@@ -218,9 +220,14 @@ function trim(value: number): string {
 }
 
 /** The limits, as a sentence each. Only the ones that are set: a list of
- *  "no minimum, no cap, no end date" tells a manager nothing. */
+ *  "no minimum, no cap, no end date" tells an operator nothing. */
 function limits(coupon: Coupon, currency: string): string[] {
   const out: string[] = [];
+  // First, because it changes what the percentage above it even means: 20%
+  // off is 20% of the burgers, not of the order.
+  if (coupon.applies_to.length > 0) {
+    out.push(`On ${coupon.applies_to.map((heading) => heading.name).join(", ")}`);
+  }
   if (coupon.min_subtotal_minor > 0) {
     out.push(`Orders of ${money(coupon.min_subtotal_minor, currency)} or more`);
   }
@@ -286,6 +293,11 @@ function Row({
               typed back: an l and a 1 have to look different. */}
           <span className="font-mono text-[15px] font-bold tracking-[.5px]">{coupon.code}</span>
           <span className="text-[15px] font-semibold">{offer(coupon, currency)}</span>
+          {coupon.applies_to.length > 0 && (
+            <span className="rounded-full border border-hairline px-2 py-[2px] text-[11px] uppercase tracking-[.8px] text-muted">
+              Part of the menu
+            </span>
+          )}
           {!coupon.is_active && (
             <span className="rounded-full bg-[rgb(var(--ze-shortcut-ground))] px-2 py-[2px] text-[11px] uppercase tracking-[.8px] text-muted">
               Paused
@@ -361,10 +373,12 @@ function Row({
 function CouponForm({
   restaurantId,
   currency,
+  headings,
   onDone,
 }: {
   restaurantId: string;
   currency: string;
+  headings: MenuHeading[];
   onDone: (code: string | null) => void;
 }) {
   const [create, { isLoading }] = useCreateCouponMutation();
@@ -372,35 +386,55 @@ function CouponForm({
 
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
-  const [kind, setKind] = useState<"PERCENT" | "AMOUNT">("PERCENT");
+  // Two fields rather than a kind and a value. An operator thinks in one or
+  // the other, and asking which they mean before letting them type it is a
+  // question about our data model.
+  //
   // Strings, not numbers: an empty number input is the difference between
-  // "no limit" and zero, and a number state cannot hold that difference.
-  const [value, setValue] = useState("");
+  // "not set" and zero, and a number state cannot hold that difference.
+  const [percent, setPercent] = useState("");
+  const [amount, setAmount] = useState("");
   const [ceiling, setCeiling] = useState("");
   const [minimum, setMinimum] = useState("");
   const [total, setTotal] = useState("");
   const [perCustomer, setPerCustomer] = useState("");
   const [endsAt, setEndsAt] = useState("");
+  // Which headings it applies to. Empty is the common case: the whole cart.
+  const [appliesTo, setAppliesTo] = useState<string[]>([]);
+
+  const hasPercent = percent.trim() !== "";
+  const hasAmount = amount.trim() !== "";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
-    const amount = Number(value);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError("Say how much the code takes off.");
+    // The same two rules the API enforces, said here so the answer arrives
+    // before the round trip. The API is still the one that decides.
+    if (!hasPercent && !hasAmount) {
+      setError("Fill in either a percentage off or an amount off.");
+      return;
+    }
+    if (hasPercent && hasAmount) {
+      setError(
+        "Fill in a percentage off or an amount off, not both. " +
+          "For a percentage with a limit, set the ceiling instead.",
+      );
       return;
     }
 
     const draft: CouponDraft = {
       code,
       description: description.trim() || null,
-      discount_kind: kind,
-      // Percent is sent as basis points, an amount as minor units. One place,
-      // so the two readings cannot drift apart.
-      discount_value: kind === "PERCENT" ? Math.round(amount * 100) : Math.round(amount * 100),
-      max_discount_minor: kind === "PERCENT" ? cents(ceiling) : null,
+      // Percent as basis points, an amount as minor units -- the units the
+      // database and every other discount in the system use. Converted in
+      // one place so the two readings cannot drift apart.
+      percent_off_bps: hasPercent ? cents(percent) : null,
+      amount_off_minor: hasAmount ? cents(amount) : null,
+      // A ceiling means nothing on a flat amount, and the API refuses one.
+      max_discount_minor: hasPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
+      applies_to: appliesTo,
       max_redemptions: count(total),
       max_per_customer: count(perCustomer),
       // A local datetime from the browser, sent as an instant.
@@ -457,33 +491,88 @@ function CouponForm({
           </span>
         </label>
 
+        {/* Two fields, fill in one. Both are offered because an operator
+            arrives thinking "10% off" or "$5 off" and should not have to
+            answer a question about our data model first. Each dims while the
+            other holds something, so the rule is visible before the save
+            rather than explained by a refusal afterwards. */}
         <label className="block">
-          <span className="label">Takes off</span>
+          <span className="label">Percentage off</span>
           <div className="mt-[7px] flex gap-2">
-            <select
-              className="field w-auto"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as "PERCENT" | "AMOUNT")}
-            >
-              <option value="PERCENT">A percentage</option>
-              <option value="AMOUNT">An amount</option>
-            </select>
             <input
-              className="field tnum"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
+              className={`field tnum ${hasAmount ? "opacity-50" : ""}`}
+              value={percent}
+              onChange={(e) => setPercent(e.target.value)}
               inputMode="decimal"
-              placeholder={kind === "PERCENT" ? "10" : "5.00"}
-              aria-label={kind === "PERCENT" ? "Percent off" : `Amount off in ${currency}`}
-              required
+              placeholder="10"
+              aria-label="Percent off"
             />
-            <span className="self-center text-[15px] text-muted">
-              {kind === "PERCENT" ? "%" : currency}
-            </span>
+            <span className="self-center text-[15px] text-muted">%</span>
           </div>
+          <span className="mt-1 block text-caption text-muted">
+            {hasAmount ? "Clear the amount to use a percentage." : "Or fill in an amount below."}
+          </span>
         </label>
 
-        {kind === "PERCENT" && (
+        <label className="block">
+          <span className="label">Amount off</span>
+          <div className="mt-[7px] flex gap-2">
+            <input
+              className={`field tnum ${hasPercent ? "opacity-50" : ""}`}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder="5.00"
+              aria-label={`Amount off in ${currency}`}
+            />
+            <span className="self-center text-[15px] text-muted">{currency}</span>
+          </div>
+          <span className="mt-1 block text-caption text-muted">
+            {hasPercent
+              ? "Clear the percentage to use a flat amount."
+              : "One of these two is required."}
+          </span>
+        </label>
+
+        {/* What it comes off. Empty is the common case and the default: a
+            launch offer is meant to be spent on anything. Naming headings
+            makes it "20% off burgers", and only those lines are discounted. */}
+        {headings.length > 0 && (
+          <label className="block sm:col-span-2">
+            <span className="label">Applies to</span>
+            <div className="mt-[7px] flex flex-wrap gap-2">
+              {headings.map((heading) => {
+                const on = appliesTo.includes(heading.id);
+                return (
+                  <button
+                    key={heading.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setAppliesTo((chosen) =>
+                        on ? chosen.filter((id) => id !== heading.id) : [...chosen, heading.id],
+                      )
+                    }
+                    className={`rounded-status border px-3 py-[7px] text-caption transition-colors duration-color ${
+                      on
+                        ? "border-ink bg-ink text-white"
+                        : "border-hairline text-ink hover:border-ink"
+                    }`}
+                  >
+                    {heading.name}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="mt-1 block text-caption text-muted">
+              {appliesTo.length === 0
+                ? "Nothing chosen: the code comes off the whole order."
+                : "Only lines under these headings are discounted."}
+            </span>
+          </label>
+        )}
+
+        {!hasAmount && (
           <label className="block">
             <span className="label">Never more than</span>
             <input

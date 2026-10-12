@@ -23,6 +23,7 @@ from app.models.catalog import (
 from app.models.commerce import (
     ALLOWED_TRANSITIONS,
     Coupon,
+    CouponItemType,
     IdempotencyKey,
     Order,
     FulfillmentType,
@@ -69,7 +70,7 @@ __all__ = [
     "ModifierGroup", "ModifierOption", "ItemModifierGroup", "SelectionType",
     "ItemIncludedOption",
     "ModifierGroupItemType",
-    "Coupon",
+    "Coupon", "CouponItemType",
     "Order", "OrderItem", "OrderItemModifier", "OrderStatus", "OrderEvent", "OrderEventAction",
     "FulfillmentType",
     "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS", "SentEmail",

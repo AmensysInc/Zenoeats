@@ -344,6 +344,37 @@ class Coupon(Base, TimestampMixin):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class CouponItemType(Base):
+    """One heading a coupon applies to.
+
+    No rows for a coupon means the whole cart, which is why this is a join
+    table rather than a column: "everything" is the common case and is better
+    said by absence than by a sentinel value.
+
+    Headings rather than dishes on purpose -- see 0049. A scope of individual
+    items goes stale the moment the menu is edited; a scope of "Burgers"
+    keeps meaning what it meant.
+    """
+
+    __tablename__ = "coupon_item_types"
+    __table_args__ = (
+        UniqueConstraint("coupon_id", "item_type_id", name="uq_coupon_item_type"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    coupon_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupons.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    item_type_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("item_types.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+
 class OrderItem(Base):
     __tablename__ = "order_items"
     __table_args__ = (

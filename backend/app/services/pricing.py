@@ -44,6 +44,11 @@ class PricedLine:
     # From the item, read at pricing time like its price. Not stored on the
     # order: the tax the order was charged is what it keeps.
     taxable: bool = True
+    # The heading this dish is filed under, for a coupon that names headings
+    # ("20% off burgers"). Read at pricing time and not stored either: what
+    # the order keeps is the discount it was given, not the rule that gave
+    # it -- the heading may be renamed or deleted next week.
+    item_type_id: UUID | None = None
     # Set on the lines a combo produced. A combo is not a line of its own: it
     # becomes one line per slot at the item's own price, and the saving is
     # taken off the cart. combo_group numbers the combos within one cart, so
@@ -197,6 +202,7 @@ def price_cart(
                 note=note,
                 modifiers=selected,
                 taxable=not item.tax_exempt,
+                item_type_id=item.item_type_id,
             )
         )
 
@@ -515,6 +521,7 @@ def _price_combo(
                 note=note if not lines else None,
                 modifiers=selected,
                 taxable=not item.tax_exempt,
+                item_type_id=item.item_type_id,
                 combo_id=combo.id,
                 combo_name=combo.name,
                 combo_group=group_number,

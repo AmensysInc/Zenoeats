@@ -172,19 +172,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("coupon_id IS NOT NULL"),
     )
 
-    # Two columns for the system role, matching 0001 and 0022: those grants
-    # on orders are column-level, and a column added later is not in them.
-    #
-    # The coupons dashboard is a platform screen -- coupons are the
-    # platform's to create -- so it reads these across tenants, with no
-    # tenant context, to answer "how many orders used this code and what did
-    # it give away". Both are facts about the promotion rather than about the
-    # customer: an id and an amount. Nothing else on orders is opened up, and
-    # the three columns deliberately outside that grant -- the customer's
-    # note, their id's link to the pin, the pin itself -- stay outside it.
-    op.execute(
-        "GRANT SELECT (coupon_id, coupon_discount_minor) ON orders TO zenoeats_system"
-    )
     op.create_check_constraint(
         "ck_order_coupon_discount", "orders", "coupon_discount_minor >= 0"
     )
@@ -197,9 +184,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "REVOKE SELECT (coupon_id, coupon_discount_minor) ON orders FROM zenoeats_system"
-    )
     op.drop_constraint("ck_order_coupon_within_discount", "orders", type_="check")
     op.drop_constraint("ck_order_coupon_discount", "orders", type_="check")
     op.drop_index("ix_orders_coupon", table_name="orders")

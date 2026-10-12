@@ -23,12 +23,20 @@ export type Coupon = {
   max_redemptions: number | null;
   max_per_customer: number | null;
   is_active: boolean;
+  /** The headings it applies to. Empty means the whole cart. */
+  applies_to: MenuHeading[];
   /** Counted from the orders that used it, so a cancelled order is not one. */
   redemptions: number;
   /** What those orders took off in total -- the number that says whether a
    *  promotion was worth running. */
   discounted_minor: number;
   created_at: string;
+};
+
+/** One heading on a restaurant's menu, as the coupon form offers it. */
+export type MenuHeading = {
+  id: string;
+  name: string;
 };
 
 export type CouponList = {
@@ -38,16 +46,30 @@ export type CouponList = {
    *  the currency. */
   restaurant_name: string;
   currency: string;
+  /** This restaurant's menu headings, for the "applies to" field. Sent with
+   *  the list so the form needs no second request. */
+  item_types: MenuHeading[];
   coupons: Coupon[];
 };
 
+/** The two ways a discount can be stated, and exactly one of them is sent.
+ *
+ *  An operator thinks in a percentage or in an amount -- "10% off" or "$5
+ *  off" -- so the form asks for both and sends whichever was answered. Both
+ *  at once is refused by the API rather than guessed: "10% off and $5 off"
+ *  has no single answer, and the thing it resembles is a percentage with a
+ *  ceiling, which `max_discount_minor` already is. */
 export type CouponDraft = {
   code: string;
   description?: string | null;
-  discount_kind: DiscountKind;
-  discount_value: number;
+  /** Basis points: 1000 is 10%. */
+  percent_off_bps?: number | null;
+  /** Minor units: 500 is $5.00. */
+  amount_off_minor?: number | null;
   max_discount_minor?: number | null;
   min_subtotal_minor?: number;
+  /** Menu heading ids. Empty means the whole cart. */
+  applies_to?: string[];
   starts_at?: string | null;
   ends_at?: string | null;
   max_redemptions?: number | null;
