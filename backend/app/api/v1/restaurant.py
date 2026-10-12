@@ -1737,6 +1737,9 @@ def update_combo(
         )
 
     db.flush()
+    # The new slots were added as rows, not through the relationship, so it
+    # still holds the old ones until it is read again.
+    db.expire(combo, ["slots"])
     return _combo_out(combo)
 
 
