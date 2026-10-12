@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { RequireAdmin } from "@/components/layout/OperatorGuards";
 import { AdminRestaurantsPage } from "@/pages/admin/AdminRestaurantsPage";
 import { AdminOrdersPage } from "@/pages/admin/AdminOrdersPage";
+import { AdminCouponsPage } from "@/pages/admin/AdminCouponsPage";
 import { NotFound } from "@/routes/NotFound";
 
 /**
@@ -20,6 +21,10 @@ export default function AdminArea() {
       <Route
         path="restaurants/:id/orders"
         element={<RequireAdmin><AdminOrdersPage /></RequireAdmin>}
+      />
+      <Route
+        path="restaurants/:id/coupons"
+        element={<RequireAdmin><AdminCouponsPage /></RequireAdmin>}
       />
       <Route path="*" element={<NotFound />} />
     </Routes>

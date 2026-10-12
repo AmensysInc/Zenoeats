@@ -1,10 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { useAppSelector } from "@/app/hooks";
+import { Link, useParams } from "react-router-dom";
 import { Empty, ErrorNote, Loading } from "@/components/common/Feedback";
+import { Icon } from "@/components/common/icons";
 import { PageTitle } from "@/components/layout/Shell";
-import { selectSession } from "@/features/session/sessionSlice";
-import { canEditMenu } from "@/features/restaurant/nav";
-import { ManageShell } from "@/features/restaurant/components/ManageShell";
+import { AdminShell } from "@/features/admin/components/AdminShell";
 import {
   useCouponsQuery,
   useCreateCouponMutation,
@@ -12,12 +11,17 @@ import {
   useUpdateCouponMutation,
   type Coupon,
   type CouponDraft,
-} from "@/features/restaurant/restaurantApi";
+} from "@/features/admin/adminApi";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
 /**
- * Promotion codes: what exists, what it is worth, and what it has cost.
+ * One restaurant's promotion codes: what exists, what it is worth, and what
+ * it has cost.
+ *
+ * A platform screen, because a coupon is a Zenoeats decision rather than a
+ * tenant's -- the restaurant's own portal has no coupon tab, and no endpoint
+ * behind one. Reached from the restaurant's row on /admin.
  *
  * Two columns of information per coupon, and they answer different
  * questions. The left is the offer -- the code a customer types and what it
@@ -37,15 +41,13 @@ import { money } from "@/utils/format";
  * reads the same. Retiring takes it off this page and frees the code to be
  * created again -- which is how a seasonal promotion comes back.
  *
- * IT support reads this screen without the controls, the same split the menu
- * has: answering "why did this customer get a discount" needs the rows, and
- * inventing a discount is the restaurant's call.
+ * Every write here is audited to the operator who made it: a discount is
+ * money, and "who set this up" is a question that gets asked afterwards.
  */
-export function CouponsPage() {
-  const coupons = useCouponsQuery();
+export function AdminCouponsPage() {
+  const { id = "" } = useParams<{ id: string }>();
+  const coupons = useCouponsQuery(id);
   const currency = coupons.data?.currency ?? "USD";
-  const { roleCode } = useAppSelector(selectSession);
-  const canEdit = canEditMenu(roleCode);
 
   const [retire] = useRetireCouponMutation();
   const [update] = useUpdateCouponMutation();
@@ -76,14 +78,17 @@ export function CouponsPage() {
   }
 
   return (
-    <ManageShell>
+    <AdminShell>
+      <Link
+        to="/admin"
+        className="mb-4 inline-flex min-h-[40px] items-center gap-2 text-caption text-muted hover:text-ink"
+      >
+        <Icon name="back" className="h-4 w-4" />
+        Restaurants
+      </Link>
       <PageTitle
-        title="Coupons"
-        subtitle={
-          canEdit
-            ? "Codes a customer can type at checkout."
-            : "The promotion codes this restaurant is running."
-        }
+        title={coupons.data?.restaurant_name ?? "…"}
+        subtitle="Codes a customer can type at this restaurant's checkout"
       />
 
       <ErrorNote message={error ?? (coupons.error ? errorMessage(coupons.error) : null)} />
@@ -91,13 +96,14 @@ export function CouponsPage() {
         {announcement}
       </p>
 
-      {canEdit && !adding && (
+      {!adding && (
         <button type="button" className="btn-primary mb-7" onClick={() => setAdding(true)}>
           New coupon
         </button>
       )}
-      {canEdit && adding && (
+      {adding && (
         <CouponForm
+          restaurantId={id}
           currency={currency}
           onDone={(code) => {
             setAdding(false);
@@ -109,9 +115,7 @@ export function CouponsPage() {
       {coupons.isLoading ? (
         <Loading />
       ) : !rows.length ? (
-        <Empty>
-          No coupons yet.{canEdit ? " Create one and customers can use it straight away." : ""}
-        </Empty>
+        <Empty>No coupons yet. Create one and customers can use it straight away.</Empty>
       ) : (
         <>
           <Section title="Running" count={running.length}>
@@ -124,11 +128,21 @@ export function CouponsPage() {
                   coupon={coupon}
                   currency={currency}
                   busy={busy === coupon.id}
-                  canEdit={canEdit}
                   onPause={() =>
-                    act(coupon, () => update({ id: coupon.id, patch: { is_active: false } }).unwrap(), "paused")
+                    act(
+                      coupon,
+                      () =>
+                        update({
+                          id,
+                          couponId: coupon.id,
+                          patch: { is_active: false },
+                        }).unwrap(),
+                      "paused",
+                    )
                   }
-                  onRetire={() => act(coupon, () => retire(coupon.id).unwrap(), "retired")}
+                  onRetire={() =>
+                    act(coupon, () => retire({ id, couponId: coupon.id }).unwrap(), "retired")
+                  }
                 />
               ))
             )}
@@ -142,25 +156,31 @@ export function CouponsPage() {
                   coupon={coupon}
                   currency={currency}
                   busy={busy === coupon.id}
-                  canEdit={canEdit}
                   onResume={
                     coupon.is_active
                       ? undefined
                       : () =>
                           act(
                             coupon,
-                            () => update({ id: coupon.id, patch: { is_active: true } }).unwrap(),
+                            () =>
+                              update({
+                                id,
+                                couponId: coupon.id,
+                                patch: { is_active: true },
+                              }).unwrap(),
                             "switched back on",
                           )
                   }
-                  onRetire={() => act(coupon, () => retire(coupon.id).unwrap(), "retired")}
+                  onRetire={() =>
+                    act(coupon, () => retire({ id, couponId: coupon.id }).unwrap(), "retired")
+                  }
                 />
               ))}
             </Section>
           )}
         </>
       )}
-    </ManageShell>
+    </AdminShell>
   );
 }
 
@@ -244,7 +264,6 @@ function Row({
   coupon,
   currency,
   busy,
-  canEdit,
   onPause,
   onResume,
   onRetire,
@@ -252,7 +271,6 @@ function Row({
   coupon: Coupon;
   currency: string;
   busy: boolean;
-  canEdit: boolean;
   onPause?: () => void;
   onResume?: () => void;
   onRetire: () => void;
@@ -298,37 +316,35 @@ function Row({
               )} given`}
         </p>
 
-        {canEdit && (
-          <div className="flex items-center gap-3">
-            {onResume && (
-              <button type="button" className="btn-quiet" disabled={busy} onClick={onResume}>
-                Switch on
+        <div className="flex items-center gap-3">
+          {onResume && (
+            <button type="button" className="btn-quiet" disabled={busy} onClick={onResume}>
+              Switch on
+            </button>
+          )}
+          {onPause && (
+            <button type="button" className="btn-quiet" disabled={busy} onClick={onPause}>
+              Pause
+            </button>
+          )}
+          {/* Two taps, because retiring stops a code customers may be
+              holding. Not a modal: the confirmation replaces the button it
+              came from, where the eye already is. */}
+          {confirming ? (
+            <>
+              <button type="button" className="btn-danger" disabled={busy} onClick={onRetire}>
+                Retire {coupon.code}
               </button>
-            )}
-            {onPause && (
-              <button type="button" className="btn-quiet" disabled={busy} onClick={onPause}>
-                Pause
+              <button type="button" className="btn-quiet" onClick={() => setConfirming(false)}>
+                Keep
               </button>
-            )}
-            {/* Two taps, because retiring stops a code customers may be
-                holding. Not a modal: the confirmation replaces the button it
-                came from, where the eye already is. */}
-            {confirming ? (
-              <>
-                <button type="button" className="btn-danger" disabled={busy} onClick={onRetire}>
-                  Retire {coupon.code}
-                </button>
-                <button type="button" className="btn-quiet" onClick={() => setConfirming(false)}>
-                  Keep
-                </button>
-              </>
-            ) : (
-              <button type="button" className="btn-quiet" onClick={() => setConfirming(true)}>
-                Retire
-              </button>
-            )}
-          </div>
-        )}
+            </>
+          ) : (
+            <button type="button" className="btn-quiet" onClick={() => setConfirming(true)}>
+              Retire
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -343,9 +359,11 @@ function Row({
  *  what they take and the conversion happens in one place.
  */
 function CouponForm({
+  restaurantId,
   currency,
   onDone,
 }: {
+  restaurantId: string;
   currency: string;
   onDone: (code: string | null) => void;
 }) {
@@ -390,7 +408,7 @@ function CouponForm({
     };
 
     try {
-      const created = await create(draft).unwrap();
+      const created = await create({ id: restaurantId, draft }).unwrap();
       onDone(created.code);
     } catch (e) {
       setError(errorMessage(e));

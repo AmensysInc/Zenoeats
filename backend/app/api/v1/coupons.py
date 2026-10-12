@@ -1,20 +1,31 @@
-"""The coupons dashboard: create a code, change it, retire it, see its use.
+"""Coupons, created by the platform rather than by the restaurant.
 
-Its own module rather than another section of restaurant.py, which is four
-and a half thousand lines and holds the menu builder, the order board, the
-staff list and the delivery settings. A promotion is none of those.
+A promotion code is a Zenoeats decision here, not a tenant's: the people who
+run the platform set them up on a restaurant's behalf, and the restaurant's
+own portal has no coupon screen at all. Which is why this is mounted on the
+admin router, behind require_platform_admin, on admin.<root domain>.
 
-WHO MAY DO WHAT. Reading is MENU_VIEW -- admin, manager, and IT support, the
-same three who may look at the menu without being able to change it. Writing
-is MANAGE: admin and manager only. Support can see that STUDENT10 exists and
-has been used forty times, which is what answering a question about it needs,
-and cannot invent a discount.
+THE CUSTOMER SIDE IS UNAFFECTED by that choice. A code is typed at checkout
+and priced by services/coupons.py under the ordinary tenant session, like
+every other thing a customer's cart touches. This module is only where
+coupons come from.
 
-WHAT IS NOT HERE is a delete that deletes. Retiring a coupon is a soft
-delete, because orders point at it and a manager asking "what was WELCOME10"
-six months from now deserves an answer. The code becomes available again
-immediately -- the unique index covers only the live rows -- so a seasonal
-promotion can be retired in the autumn and created again in the spring.
+ON THE SYSTEM SESSION, which is the one thing to be careful about in here.
+Every other router in this codebase runs under a tenant session, where
+row-level security has already decided which restaurant's rows exist: a
+forgotten WHERE clause returns nothing rather than somebody else's data. This
+one does not. A platform admin is a member of no restaurant, so these
+endpoints run on the declared cross-tenant surface, where the policy for
+zenoeats_system is `USING (true)` -- it can see every coupon of every
+restaurant.
+
+So every query below names its restaurant_id explicitly, and that predicate
+is the whole of the isolation. It is not belt and braces as it is elsewhere;
+it is the belt. A query here that filters by coupon id alone would happily
+edit another restaurant's promotion.
+
+EVERY WRITE IS AUDITED, like every other super-admin action: a discount is
+money, and the log records which operator created, changed or retired it.
 """
 
 import logging
@@ -23,25 +34,24 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select, text
 
-from app.api.deps import StaffDb, current_restaurant_staff, require_staff
+from app.api.deps import require_platform_admin
 from app.core import errors
 from app.db.base import utcnow
-from app.models import Coupon, DiscountKind, Order, Restaurant, StaffRole
+from app.db.session import system_session
+from app.models import Coupon, DiscountKind, Order, User
 from app.services import coupons as coupon_service
 
+# The audit writer the rest of the admin surface uses. Imported rather than
+# copied: two places writing platform_audit_logs is two places to get its
+# shape wrong, and the shape is what makes the log worth keeping.
+from app.api.v1.admin import _audit
+
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/restaurant", tags=["coupons"])
+router = APIRouter(prefix="/admin", tags=["coupons"])
 
-# The same two lists restaurant.py keeps, for the same two reasons. Repeated
-# rather than imported: importing a module of that size to borrow two
-# constants would pull the whole order board into this one's import graph.
-MANAGE = require_staff(StaffRole.ADMIN, StaffRole.MANAGER)
-MENU_VIEW = require_staff(StaffRole.ADMIN, StaffRole.MANAGER, StaffRole.IT_SUPPORT)
-
-# Enough for every promotion a restaurant can keep track of, and a bound on
+# Enough for every promotion one restaurant can keep track of, and a bound on
 # what one page has to render.
 MAX_COUPONS = 200
 
@@ -58,8 +68,7 @@ class CouponIn(BaseModel):
     code: str = Field(min_length=3, max_length=32)
     description: str | None = Field(default=None, max_length=160)
     # PERCENT is basis points (1000 = 10%), AMOUNT is minor units (500 =
-    # $5.00) -- the same reading as a combo's discount, which is where a
-    # manager has met these two words before.
+    # $5.00) -- the same reading as a combo's discount.
     discount_kind: DiscountKind = DiscountKind.PERCENT
     discount_value: int = Field(gt=0)
     max_discount_minor: int | None = Field(default=None, gt=0)
@@ -75,7 +84,7 @@ class CouponIn(BaseModel):
     def _code(cls, value: str) -> str:
         """Normalised here, once, in the form it is stored and compared in.
 
-        A manager typing "save 10" and a customer typing "SAVE10" have the
+        An operator typing "save 10" and a customer typing "SAVE10" have the
         same coupon in mind, and the service that looks it up normalises the
         same way.
         """
@@ -105,10 +114,9 @@ class CouponIn(BaseModel):
             self.discount_kind == DiscountKind.AMOUNT
             and self.max_discount_minor is not None
         ):
-            # A ceiling on a flat amount is the flat amount, or it is lower
-            # than it and the amount was a lie. Either way it is not a
-            # setting; accepting it would mean a coupon whose stated value is
-            # not what it takes off.
+            # A ceiling on a flat amount is either the amount itself or lower
+            # than it, in which case the amount was a lie. Either way it is
+            # not a setting.
             raise ValueError("A ceiling only applies to a percentage discount.")
         if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
             raise ValueError("The end has to come after the start.")
@@ -165,6 +173,20 @@ class CouponOut(BaseModel):
     created_at: datetime
 
 
+class CouponListOut(BaseModel):
+    """The coupons, and what restaurant they belong to.
+
+    The name and currency ride along because the screen shows both and
+    neither is a coupon: a page of percentages with no currency on it cannot
+    render "$5.00 off", and an operator who has several restaurants open
+    needs to see which one they are editing.
+    """
+
+    restaurant_name: str
+    currency: str
+    coupons: list[CouponOut]
+
+
 def _out(coupon: Coupon, redemptions: int, discounted: int) -> CouponOut:
     return CouponOut(
         id=coupon.id,
@@ -185,174 +207,254 @@ def _out(coupon: Coupon, redemptions: int, discounted: int) -> CouponOut:
     )
 
 
-class CouponListOut(BaseModel):
-    """The coupons, and the currency every amount in them is in.
+def _restaurant(session, restaurant_id: UUID):
+    """The restaurant these coupons belong to, or 404.
 
-    An envelope rather than a bare list because the screen needs both and
-    only one of them is a coupon. The alternative was for the dashboard to
-    read /restaurant/profile for the currency, which is admin-only -- a
-    manager, who may run promotions, cannot read it, and the page would have
-    shown "Not authorized" beside a perfectly good list of coupons.
+    Read rather than taken on trust, so a coupon can never be created against
+    an id that is not a live restaurant: the foreign key would refuse that
+    anyway, with a message nobody could act on.
+
+    Named columns rather than the mapped class, as the rest of the admin
+    surface does: zenoeats_system holds column-level grants, and asking for a
+    column outside them is refused by Postgres. Two is all this needs.
     """
+    found = session.execute(
+        text(
+            "SELECT name, currency FROM restaurants "
+            "WHERE id = :rid AND deleted_at IS NULL"
+        ),
+        {"rid": str(restaurant_id)},
+    ).mappings().one_or_none()
+    if found is None:
+        raise errors.ApiError(404, "RESTAURANT_NOT_FOUND", "No such restaurant.")
+    return found
 
-    currency: str
-    coupons: list[CouponOut]
 
+def _usage(session, restaurant_id: UUID, coupon_ids: list[UUID]) -> dict:
+    """How many orders used each coupon, and what they took off.
 
-@router.get("/coupons", response_model=CouponListOut)
-def list_coupons(
-    restaurant: Restaurant = Depends(current_restaurant_staff),
-    db: Session = StaffDb,
-    _=Depends(MENU_VIEW),
-):
-    """Every live coupon, newest first, with what each has been used for.
+    One grouped query however many coupons there are: a page of thirty
+    promotions used to be thirty round trips every time it was opened.
 
-    The counts come from one grouped query over the orders rather than one
-    query per coupon: a dashboard of thirty promotions used to be thirty
-    round trips, every time the page was opened.
+    Scoped by restaurant_id as well as by coupon id. The ids came from this
+    restaurant's own coupons, so the extra predicate changes no answer -- it
+    is here because on this session a query that forgets it is a query that
+    reads every tenant, and that habit is the only thing keeping the next one
+    correct.
     """
-    rows = db.execute(
-        select(Coupon)
-        .where(Coupon.deleted_at.is_(None))
-        .order_by(Coupon.created_at.desc(), Coupon.id)
-        .limit(MAX_COUPONS)
-    ).scalars().all()
-
-    used: dict[UUID, tuple[int, int]] = {}
-    if rows:
-        counted = db.execute(
-            select(
-                Order.coupon_id,
-                func.count(),
-                func.coalesce(func.sum(Order.coupon_discount_minor), 0),
-            )
-            .where(
-                Order.coupon_id.in_([coupon.id for coupon in rows]),
-                Order.status.notin_(coupon_service.SPENT_STATUSES),
-            )
-            .group_by(Order.coupon_id)
-        ).all()
-        used = {row[0]: (row[1], row[2]) for row in counted}
-
-    return CouponListOut(
-        currency=restaurant.currency,
-        coupons=[_out(coupon, *used.get(coupon.id, (0, 0))) for coupon in rows],
-    )
+    if not coupon_ids:
+        return {}
+    rows = session.execute(
+        select(
+            Order.coupon_id,
+            func.count(),
+            func.coalesce(func.sum(Order.coupon_discount_minor), 0),
+        )
+        .where(
+            Order.restaurant_id == restaurant_id,
+            Order.coupon_id.in_(coupon_ids),
+            Order.status.notin_(coupon_service.SPENT_STATUSES),
+        )
+        .group_by(Order.coupon_id)
+    ).all()
+    return {row[0]: (row[1], row[2]) for row in rows}
 
 
-@router.post("/coupons", response_model=CouponOut, status_code=201)
-def create_coupon(
-    body: CouponIn,
-    restaurant: Restaurant = Depends(current_restaurant_staff),
-    db: Session = StaffDb,
-    _=Depends(MANAGE),
-):
-    """Create a coupon. It works from the moment it is saved, unless it
-    carries a start date or was saved switched off."""
-    live = db.execute(
-        select(func.count()).select_from(Coupon).where(Coupon.deleted_at.is_(None))
-    ).scalar_one()
-    if live >= MAX_COUPONS:
-        raise errors.validation_error(
-            f"That is {MAX_COUPONS} coupons. Retire one before adding another."
+def _find(session, restaurant_id: UUID, coupon_id: UUID) -> Coupon:
+    """One live coupon of this restaurant's.
+
+    Both halves of that are load-bearing. On the system session there is no
+    tenant context to fall back on, so a lookup by coupon id alone would
+    reach another restaurant's promotion.
+    """
+    coupon = session.execute(
+        select(Coupon).where(
+            Coupon.id == coupon_id,
+            Coupon.restaurant_id == restaurant_id,
+            Coupon.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if coupon is None:
+        raise errors.validation_error("No such coupon.")
+    return coupon
+
+
+@router.get("/restaurants/{restaurant_id}/coupons", response_model=CouponListOut)
+def list_coupons(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
+    """Every live coupon of one restaurant, newest first, with what each has
+    been used for.
+
+    Not audited. It is a read of the platform's own configuration, it exposes
+    nothing a customer typed and no money that moved, and an audit line per
+    page view would bury the writes that matter.
+    """
+    with system_session() as session:
+        restaurant = _restaurant(session, restaurant_id)
+        rows = session.execute(
+            select(Coupon)
+            .where(Coupon.restaurant_id == restaurant_id, Coupon.deleted_at.is_(None))
+            .order_by(Coupon.created_at.desc(), Coupon.id)
+            .limit(MAX_COUPONS)
+        ).scalars().all()
+        used = _usage(session, restaurant_id, [coupon.id for coupon in rows])
+        return CouponListOut(
+            restaurant_name=restaurant["name"],
+            currency=restaurant["currency"],
+            coupons=[_out(coupon, *used.get(coupon.id, (0, 0))) for coupon in rows],
         )
 
-    # Checked here for the message. The partial unique index is what actually
-    # guarantees it, and it covers the live rows only -- a retired code may be
-    # created again.
-    clash = coupon_service.find(db, body.code)
-    if clash is not None:
-        raise errors.validation_error(f"{body.code} already exists.")
 
-    coupon = Coupon(
-        restaurant_id=restaurant.id,
-        code=body.code,
-        description=body.description,
-        discount_kind=body.discount_kind.value,
-        discount_value=body.discount_value,
-        max_discount_minor=body.max_discount_minor,
-        min_subtotal_minor=body.min_subtotal_minor,
-        starts_at=body.starts_at,
-        ends_at=body.ends_at,
-        max_redemptions=body.max_redemptions,
-        max_per_customer=body.max_per_customer,
-        is_active=body.is_active,
-    )
-    db.add(coupon)
-    db.flush()
-    log.info("coupon %s created for restaurant %s", coupon.code, restaurant.id)
-    return _out(coupon, 0, 0)
+@router.post(
+    "/restaurants/{restaurant_id}/coupons", response_model=CouponOut, status_code=201
+)
+def create_coupon(
+    restaurant_id: UUID, body: CouponIn, admin: User = Depends(require_platform_admin)
+):
+    """Create a coupon on a restaurant. It works from the moment it is saved,
+    unless it carries a start date or was saved switched off."""
+    with system_session() as session:
+        _restaurant(session, restaurant_id)
+
+        live = session.execute(
+            select(func.count())
+            .select_from(Coupon)
+            .where(Coupon.restaurant_id == restaurant_id, Coupon.deleted_at.is_(None))
+        ).scalar_one()
+        if live >= MAX_COUPONS:
+            raise errors.validation_error(
+                f"That is {MAX_COUPONS} coupons. Retire one before adding another."
+            )
+
+        # Checked here for the message. The partial unique index is what
+        # actually guarantees it, and it covers the live rows only -- a
+        # retired code may be created again.
+        clash = session.execute(
+            select(Coupon.id).where(
+                Coupon.restaurant_id == restaurant_id,
+                Coupon.code == body.code,
+                Coupon.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise errors.validation_error(f"{body.code} already exists here.")
+
+        coupon = Coupon(
+            restaurant_id=restaurant_id,
+            code=body.code,
+            description=body.description,
+            discount_kind=body.discount_kind.value,
+            discount_value=body.discount_value,
+            max_discount_minor=body.max_discount_minor,
+            min_subtotal_minor=body.min_subtotal_minor,
+            starts_at=body.starts_at,
+            ends_at=body.ends_at,
+            max_redemptions=body.max_redemptions,
+            max_per_customer=body.max_per_customer,
+            is_active=body.is_active,
+        )
+        session.add(coupon)
+        session.flush()
+
+        _audit(
+            session, admin, "SUPER_ADMIN_CREATE_COUPON",
+            {
+                "restaurant_id": str(restaurant_id),
+                "coupon_id": str(coupon.id),
+                "code": coupon.code,
+                "discount_kind": coupon.discount_kind,
+                "discount_value": coupon.discount_value,
+            },
+        )
+        log.info("coupon %s created on restaurant %s", coupon.code, restaurant_id)
+        return _out(coupon, 0, 0)
 
 
-@router.patch("/coupons/{coupon_id}", response_model=CouponOut)
+@router.patch(
+    "/restaurants/{restaurant_id}/coupons/{coupon_id}", response_model=CouponOut
+)
 def update_coupon(
+    restaurant_id: UUID,
     coupon_id: UUID,
     body: CouponPatch,
-    restaurant: Restaurant = Depends(current_restaurant_staff),
-    db: Session = StaffDb,
-    _=Depends(MANAGE),
+    admin: User = Depends(require_platform_admin),
 ):
     """Edit a coupon, except its code.
 
     A limit may be lowered below what has already been redeemed, and that is
-    deliberate: it is how a manager stops a promotion that is running away
-    without retiring the code customers are holding. The orders already placed
-    keep their discount -- they were charged that way -- and the next person to
-    try the code is told it has been fully redeemed.
+    deliberate: it is how a promotion that is running away gets stopped
+    without retiring a code customers are holding. The orders already placed
+    keep their discount -- they were charged that way -- and the next person
+    to try the code is told it has been fully redeemed.
     """
-    coupon = _find(db, coupon_id)
-    sent = body.model_dump(exclude_unset=True)
+    with system_session() as session:
+        _restaurant(session, restaurant_id)
+        coupon = _find(session, restaurant_id, coupon_id)
+        sent = body.model_dump(exclude_unset=True)
 
-    if "description" in sent:
-        coupon.description = (sent["description"] or "").strip() or None
+        if "description" in sent:
+            coupon.description = (sent["description"] or "").strip() or None
 
-    # Read together: a value means nothing without its kind, so changing one
-    # has to fall back on the other as it is stored.
-    if "discount_kind" in sent or "discount_value" in sent:
-        kind = DiscountKind(sent.get("discount_kind") or coupon.discount_kind)
-        value = sent.get("discount_value") or coupon.discount_value
-        if kind == DiscountKind.NONE:
-            raise errors.validation_error("Choose a percentage or an amount off.")
-        if kind == DiscountKind.PERCENT and value > 10000:
-            raise errors.validation_error("A percentage cannot be more than 100%.")
-        coupon.discount_kind = kind.value
-        coupon.discount_value = value
+        # Read together: a value means nothing without its kind, so changing
+        # one has to fall back on the other as it is stored.
+        if "discount_kind" in sent or "discount_value" in sent:
+            kind = DiscountKind(sent.get("discount_kind") or coupon.discount_kind)
+            value = sent.get("discount_value") or coupon.discount_value
+            if kind == DiscountKind.NONE:
+                raise errors.validation_error("Choose a percentage or an amount off.")
+            if kind == DiscountKind.PERCENT and value > 10000:
+                raise errors.validation_error("A percentage cannot be more than 100%.")
+            coupon.discount_kind = kind.value
+            coupon.discount_value = value
 
-    if "max_discount_minor" in sent:
-        # Zero is how a form clears a ceiling: an empty number input sends
-        # nothing useful, and "no ceiling" has to be expressible.
-        ceiling = sent["max_discount_minor"] or None
-        if ceiling is not None and coupon.discount_kind != DiscountKind.PERCENT.value:
-            raise errors.validation_error("A ceiling only applies to a percentage discount.")
-        coupon.max_discount_minor = ceiling
+        if "max_discount_minor" in sent:
+            # Zero is how a form clears a ceiling: an empty number input
+            # sends nothing useful, and "no ceiling" has to be expressible.
+            ceiling = sent["max_discount_minor"] or None
+            if ceiling is not None and coupon.discount_kind != DiscountKind.PERCENT.value:
+                raise errors.validation_error(
+                    "A ceiling only applies to a percentage discount."
+                )
+            coupon.max_discount_minor = ceiling
 
-    if "min_subtotal_minor" in sent:
-        coupon.min_subtotal_minor = sent["min_subtotal_minor"] or 0
-    if "starts_at" in sent:
-        coupon.starts_at = sent["starts_at"]
-    if "ends_at" in sent:
-        coupon.ends_at = sent["ends_at"]
-    if "max_redemptions" in sent:
-        coupon.max_redemptions = sent["max_redemptions"] or None
-    if "max_per_customer" in sent:
-        coupon.max_per_customer = sent["max_per_customer"] or None
-    if sent.get("is_active") is not None:
-        coupon.is_active = sent["is_active"]
+        if "min_subtotal_minor" in sent:
+            coupon.min_subtotal_minor = sent["min_subtotal_minor"] or 0
+        if "starts_at" in sent:
+            coupon.starts_at = sent["starts_at"]
+        if "ends_at" in sent:
+            coupon.ends_at = sent["ends_at"]
+        if "max_redemptions" in sent:
+            coupon.max_redemptions = sent["max_redemptions"] or None
+        if "max_per_customer" in sent:
+            coupon.max_per_customer = sent["max_per_customer"] or None
+        if sent.get("is_active") is not None:
+            coupon.is_active = sent["is_active"]
 
-    if coupon.starts_at and coupon.ends_at and coupon.ends_at <= coupon.starts_at:
-        raise errors.validation_error("The end has to come after the start.")
+        if coupon.starts_at and coupon.ends_at and coupon.ends_at <= coupon.starts_at:
+            raise errors.validation_error("The end has to come after the start.")
 
-    coupon.updated_at = utcnow()
-    db.flush()
-    return _out(coupon, *_usage(db, coupon.id))
+        coupon.updated_at = utcnow()
+        session.flush()
+
+        _audit(
+            session, admin, "SUPER_ADMIN_UPDATE_COUPON",
+            {
+                "restaurant_id": str(restaurant_id),
+                "coupon_id": str(coupon.id),
+                "code": coupon.code,
+                # What was asked for, not the whole row: the log is a record
+                # of the decision somebody made.
+                "changed": sorted(sent),
+            },
+        )
+        used = _usage(session, restaurant_id, [coupon.id])
+        return _out(coupon, *used.get(coupon.id, (0, 0)))
 
 
-@router.delete("/coupons/{coupon_id}", status_code=204)
+@router.delete(
+    "/restaurants/{restaurant_id}/coupons/{coupon_id}", status_code=204
+)
 def retire_coupon(
-    coupon_id: UUID,
-    restaurant: Restaurant = Depends(current_restaurant_staff),
-    db: Session = StaffDb,
-    _=Depends(MANAGE),
+    restaurant_id: UUID, coupon_id: UUID, admin: User = Depends(require_platform_admin)
 ):
     """Retire a coupon. Soft, and the code becomes free again.
 
@@ -360,29 +462,19 @@ def retire_coupon(
     so a receipt from last month still reads the same. The row stays for the
     same reason: a question about a promotion is asked after it has ended.
     """
-    coupon = _find(db, coupon_id)
-    coupon.deleted_at = utcnow()
-    coupon.is_active = False
-    db.flush()
-    log.info("coupon %s retired for restaurant %s", coupon.code, restaurant.id)
+    with system_session() as session:
+        _restaurant(session, restaurant_id)
+        coupon = _find(session, restaurant_id, coupon_id)
+        coupon.deleted_at = utcnow()
+        coupon.is_active = False
+        session.flush()
 
-
-def _find(db: Session, coupon_id: UUID) -> Coupon:
-    coupon = db.get(Coupon, coupon_id)
-    if coupon is None or coupon.deleted_at is not None:
-        # RLS has already made another restaurant's coupon invisible, so
-        # "not found" is the whole truth here.
-        raise errors.validation_error("No such coupon.")
-    return coupon
-
-
-def _usage(db: Session, coupon_id: UUID) -> tuple[int, int]:
-    row = db.execute(
-        select(func.count(), func.coalesce(func.sum(Order.coupon_discount_minor), 0))
-        .select_from(Order)
-        .where(
-            Order.coupon_id == coupon_id,
-            Order.status.notin_(coupon_service.SPENT_STATUSES),
+        _audit(
+            session, admin, "SUPER_ADMIN_RETIRE_COUPON",
+            {
+                "restaurant_id": str(restaurant_id),
+                "coupon_id": str(coupon.id),
+                "code": coupon.code,
+            },
         )
-    ).first()
-    return (row[0], row[1]) if row else (0, 0)
+        log.info("coupon %s retired on restaurant %s", coupon.code, restaurant_id)

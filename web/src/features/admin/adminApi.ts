@@ -1,4 +1,63 @@
 import { api } from "@/services/api";
+import type { DiscountKind } from "@/types";
+
+/** A promotion code, as the platform dashboard shows it.
+ *
+ *  `discount_kind` is read the way a combo's is: PERCENT is basis points
+ *  (1000 = 10%), AMOUNT is minor units (500 = $5.00). Every limit is nullable
+ *  because a real promotion uses some and not others -- a launch offer has an
+ *  end date and no cap, a referral code has a cap of one per customer and no
+ *  end date at all. */
+export type Coupon = {
+  id: string;
+  code: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  /** A ceiling, for a percentage only: 20% off is a different offer on a $10
+   *  order and on a $400 office lunch. */
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  max_redemptions: number | null;
+  max_per_customer: number | null;
+  is_active: boolean;
+  /** Counted from the orders that used it, so a cancelled order is not one. */
+  redemptions: number;
+  /** What those orders took off in total -- the number that says whether a
+   *  promotion was worth running. */
+  discounted_minor: number;
+  created_at: string;
+};
+
+export type CouponList = {
+  /** Which restaurant these belong to, and what their amounts are in. An
+   *  operator with several restaurants open needs to see which one they are
+   *  editing, and a page of percentages cannot render "$5.00 off" without
+   *  the currency. */
+  restaurant_name: string;
+  currency: string;
+  coupons: Coupon[];
+};
+
+export type CouponDraft = {
+  code: string;
+  description?: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  max_redemptions?: number | null;
+  max_per_customer?: number | null;
+  is_active?: boolean;
+};
+
+/** An edit. The code is absent on purpose: customers have been given it, so a
+ *  new code is a new coupon and the old one gets retired. */
+export type CouponPatch = Partial<Omit<CouponDraft, "code">>;
 
 export type Restaurant = {
   id: string;
@@ -265,6 +324,48 @@ export const adminApi = api.injectEndpoints({
       providesTags: (_r, _e, id) => [{ type: "RestaurantLogin", id }],
     }),
 
+    // --- coupons ----------------------------------------------------------
+    //
+    // Promotion codes are the platform's to create, not a tenant's: there is
+    // no coupon screen in the restaurant portal and no endpoint behind one.
+    // These are on the admin surface, per restaurant.
+
+    coupons: build.query<CouponList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/coupons` }),
+      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    }),
+
+    createCoupon: build.mutation<Coupon, { id: string; draft: CouponDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/coupons`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    updateCoupon: build.mutation<
+      Coupon,
+      { id: string; couponId: string; patch: CouponPatch }
+    >({
+      query: ({ id, couponId, patch }) => ({
+        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    // Soft, and the code becomes free again: orders that used it keep their
+    // own snapshot, so a receipt from last month still reads the same.
+    retireCoupon: build.mutation<void, { id: string; couponId: string }>({
+      query: ({ id, couponId }) => ({
+        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
     platformReports: build.query<Report[], void>({
       query: () => ({ url: "/admin/reports" }),
       providesTags: ["AdminReport"],
@@ -301,4 +402,8 @@ export const {
   useRestaurantLoginsQuery,
   usePlatformReportsQuery,
   useRestaurantOrdersQuery,
+  useCouponsQuery,
+  useCreateCouponMutation,
+  useUpdateCouponMutation,
+  useRetireCouponMutation,
 } = adminApi;

@@ -30,12 +30,16 @@ api_router.include_router(
 # by itself. Both are pinned to the origin they are served from: the staff API
 # to its own restaurant's hostname, the platform API to admin.<root domain>.
 api_router.include_router(restaurant.router, dependencies=[Depends(require_same_origin)])
-# The coupons dashboard. Its own module, the staff API's prefix, and the same
-# origin pin -- it is the restaurant portal by every measure except which file
-# it lives in.
-api_router.include_router(coupons.router, dependencies=[Depends(require_same_origin)])
 api_router.include_router(
     admin.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
+)
+# Coupons are the platform's to create, not a tenant's, so this is the admin
+# router by every measure except which file it lives in -- same prefix, same
+# host pin, same origin pin. Mounted after admin.router and with the same two
+# dependencies, because a coupon endpoint reachable from a restaurant's own
+# hostname would be a coupon endpoint a restaurant could call.
+api_router.include_router(
+    coupons.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
 )
 
 # Stripe signs its webhooks and calls them server to server; there is no

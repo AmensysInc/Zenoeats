@@ -34,12 +34,14 @@ from tests.test_admin_restaurants import (  # noqa: F401  (fixtures)
     admin_user,
     cleanup,
 )
-from tests.test_checkout_contact import CONTACT, _guest, shop  # noqa: F401  (fixtures)
+# Imported under another name so the fixture below can wrap it: a coupon is
+# created by an operator on the admin surface, and the checkout tests need
+# both that and the storefront the shop fixture builds.
+from tests.test_checkout_contact import CONTACT, _guest, shop as base_shop  # noqa: F401
 from tests.test_delivery_pricing import ADDRESS, DELIVERY, LOCATE, ORIGIN, PROFILE, ZONES, _place  # noqa: F401
 from tests.test_order_delivery_fee import _an_item  # noqa: F401
 from tests.test_staff_removal import team  # noqa: F401  (fixture)
 
-COUPONS = "/api/v1/restaurant/coupons"
 QUOTE = "/api/v1/orders/quote"
 
 
@@ -203,49 +205,155 @@ def test_a_coupon_never_comes_off_the_delivery_fee():
     assert cart.total_minor == 400
 
 
-# ------------------------------------------------------ the dashboard API ---
+# ---------------------------------------------- creating one, as an admin ---
+#
+# Coupons are the platform's to create, not a tenant's: these endpoints are on
+# the admin router, behind a platform-admin session, on admin.<root domain>.
+# The restaurant's own portal has no coupon screen, and the tests at the
+# bottom of this section are what hold that line.
 
 pytestmark = pytest.mark.integration
 
 
-def _make(client, **overrides):
-    body = {"code": f"save{uuid.uuid4().hex[:6]}", "discount_kind": "PERCENT",
-            "discount_value": 1000}
-    body.update(overrides)
-    return client.post(COUPONS, json=body)
+def _admin_client(admin_user, monkeypatch):
+    """A signed-in platform admin, on the one hostname the admin API answers
+    from."""
+    from fastapi.testclient import TestClient
+
+    from app.core import platform_auth
+    from app.main import app
+
+    monkeypatch.setattr(
+        platform_auth.settings, "ADMIN_USERS",
+        f"{admin_user.email}:{platform_auth.hash_password('x' * 16)}",
+    )
+    client = TestClient(app, base_url="http://admin.zenoeats.local")
+    client.cookies.set(
+        platform_auth.SESSION_COOKIE,
+        platform_auth.issue_session(platform_auth.PlatformAdmin(email=admin_user.email)),
+    )
+    return client
 
 
-def test_a_manager_creates_a_coupon_and_it_is_listed(team):
-    res = _make(team.owner, code="welcome10", description="Launch offer")
-    assert res.status_code == 201
+@pytest.fixture
+def operator(admin_user, cleanup, monkeypatch):
+    """An admin, and a restaurant to put coupons on."""
+    restaurant = _create(admin_user, cleanup)
+    client = _admin_client(admin_user, monkeypatch)
+
+    class Operator:
+        id = restaurant.id
+        slug = restaurant.slug
+        at = f"/api/v1/admin/restaurants/{restaurant.id}/coupons"
+
+        @staticmethod
+        def make(**overrides):
+            body = {
+                "code": overrides.pop("code", f"save{uuid.uuid4().hex[:6]}"),
+                "discount_kind": "PERCENT",
+                "discount_value": 1000,
+            }
+            body.update(overrides)
+            return client.post(Operator.at, json=body)
+
+    Operator.client = client
+    return Operator
+
+
+def test_an_admin_creates_a_coupon_and_it_is_listed(operator):
+    res = operator.make(code="welcome10", description="Launch offer")
+    assert res.status_code == 201, res.text
     created = res.json()
     # Normalised on the way in, so the lookup at checkout can be exact.
     assert created["code"] == "WELCOME10"
     assert created["redemptions"] == 0
     assert created["discounted_minor"] == 0
 
-    listed = team.owner.get(COUPONS).json()
+    listed = operator.client.get(operator.at).json()
+    assert listed["restaurant_name"]
     assert listed["currency"]
     assert [c["code"] for c in listed["coupons"]] == ["WELCOME10"]
 
 
-def test_the_same_live_code_cannot_exist_twice(team):
-    _make(team.owner, code="twice")
-    again = _make(team.owner, code="TWICE")
+def test_every_write_is_audited(operator):
+    """A discount is money. The log says which operator made it."""
+    from app.db.session import system_session
+
+    created = operator.make(code="audited").json()
+    operator.client.patch(f"{operator.at}/{created['id']}", json={"discount_value": 1500})
+    operator.client.delete(f"{operator.at}/{created['id']}")
+
+    with system_session() as session:
+        actions = [
+            row[0]
+            for row in session.execute(
+                text(
+                    "SELECT action FROM platform_audit_logs "
+                    "WHERE scope->>'coupon_id' = :c ORDER BY created_at"
+                ),
+                {"c": created["id"]},
+            ).all()
+        ]
+    assert actions == [
+        "SUPER_ADMIN_CREATE_COUPON",
+        "SUPER_ADMIN_UPDATE_COUPON",
+        "SUPER_ADMIN_RETIRE_COUPON",
+    ]
+
+
+def test_the_same_live_code_cannot_exist_twice_on_one_restaurant(operator):
+    operator.make(code="twice")
+    again = operator.make(code="TWICE")
     assert again.status_code == 422
     assert "already exists" in again.json()["detail"]["message"]
 
 
-def test_a_retired_code_can_be_created_again(team):
+def test_two_restaurants_may_run_the_same_code(admin_user, cleanup, monkeypatch):
+    """A code belongs to a restaurant. Two of them running WELCOME10 is two
+    promotions, and neither has to know about the other."""
+    client = _admin_client(admin_user, monkeypatch)
+    first, second = _create(admin_user, cleanup), _create(admin_user, cleanup)
+
+    body = {"code": "SHARED", "discount_kind": "PERCENT", "discount_value": 500}
+    for restaurant in (first, second):
+        res = client.post(f"/api/v1/admin/restaurants/{restaurant.id}/coupons", json=body)
+        assert res.status_code == 201, res.text
+
+    # And each sees only its own.
+    for restaurant in (first, second):
+        listed = client.get(f"/api/v1/admin/restaurants/{restaurant.id}/coupons").json()
+        assert [c["code"] for c in listed["coupons"]] == ["SHARED"]
+
+
+def test_a_coupon_cannot_be_edited_through_another_restaurant(
+    admin_user, cleanup, monkeypatch, operator
+):
+    """The predicate that matters most in that module. These endpoints run on
+    the cross-tenant surface, where row-level security is not scoping
+    anything -- so a lookup by coupon id alone would reach this coupon from
+    somebody else's restaurant."""
+    created = operator.make(code="mineonly").json()
+    other = _create(admin_user, cleanup)
+    client = _admin_client(admin_user, monkeypatch)
+
+    at = f"/api/v1/admin/restaurants/{other.id}/coupons/{created['id']}"
+    assert client.patch(at, json={"discount_value": 9000}).status_code == 422
+    assert client.delete(at).status_code == 422
+
+    # Untouched, and still this restaurant's.
+    mine = operator.client.get(operator.at).json()["coupons"]
+    assert [(c["code"], c["discount_value"]) for c in mine] == [("MINEONLY", 1000)]
+
+
+def test_a_retired_code_can_be_created_again(operator):
     """A seasonal promotion comes back. The unique index covers the live rows
     only, which is what makes the code free again the moment it is retired."""
-    first = _make(team.owner, code="spring").json()
-    assert team.owner.delete(f"{COUPONS}/{first['id']}").status_code == 204
+    first = operator.make(code="spring").json()
+    assert operator.client.delete(f"{operator.at}/{first['id']}").status_code == 204
 
-    assert _make(team.owner, code="spring").status_code == 201
-    # And the retired one is gone from the dashboard without taking its
-    # history with it.
-    assert len(team.owner.get(COUPONS).json()["coupons"]) == 1
+    assert operator.make(code="spring").status_code == 201
+    # And the retired one is gone from the list without taking its history.
+    assert len(operator.client.get(operator.at).json()["coupons"]) == 1
 
 
 @pytest.mark.parametrize(
@@ -261,27 +369,26 @@ def test_a_retired_code_can_be_created_again(team):
         ({"max_redemptions": 2, "max_per_customer": 3}, "per-customer over the total"),
     ],
 )
-def test_a_coupon_nobody_meant_is_refused(team, overrides, because):
-    assert _make(team.owner, **overrides).status_code == 422, because
+def test_a_coupon_nobody_meant_is_refused(operator, overrides, because):
+    assert operator.make(**overrides).status_code == 422, because
 
 
-def test_the_window_has_to_run_forwards(team):
+def test_the_window_has_to_run_forwards(operator):
     from app.db.base import utcnow
 
     now = utcnow()
-    res = _make(
-        team.owner,
+    res = operator.make(
         starts_at=(now + timedelta(days=2)).isoformat(),
         ends_at=now.isoformat(),
     )
     assert res.status_code == 422
 
 
-def test_a_coupon_can_be_edited_but_not_renamed(team):
-    created = _make(team.owner, code="editme", discount_value=1000).json()
+def test_a_coupon_can_be_edited_but_not_renamed(operator):
+    created = operator.make(code="editme", discount_value=1000).json()
 
-    res = team.owner.patch(
-        f"{COUPONS}/{created['id']}",
+    res = operator.client.patch(
+        f"{operator.at}/{created['id']}",
         json={"discount_value": 1500, "description": "Better offer", "code": "RENAMED"},
     )
     assert res.status_code == 200
@@ -293,34 +400,74 @@ def test_a_coupon_can_be_edited_but_not_renamed(team):
     assert edited["code"] == "EDITME"
 
 
-def test_kitchen_cannot_create_or_see_coupons(team):
-    user_id, _ = team.member("KITCHEN")
-    kitchen = team.client(user_id)
+def test_coupons_cannot_be_reached_from_a_restaurant_hostname(operator, admin_user):
+    """Even holding a valid admin session. The endpoint is not served there,
+    which is what stops a restaurant calling it from its own portal."""
+    from fastapi.testclient import TestClient
 
-    assert _make(kitchen).status_code == 403
-    assert kitchen.get(COUPONS).status_code == 403
+    from app.core import platform_auth
+    from app.main import app
+
+    token = platform_auth.issue_session(platform_auth.PlatformAdmin(email=admin_user.email))
+    for host in (f"{operator.slug}.zenoeats.local", "zenoeats.local"):
+        client = TestClient(app, base_url=f"http://{host}")
+        client.cookies.set(platform_auth.SESSION_COOKIE, token)
+        assert client.get(operator.at).status_code == 404, host
 
 
-def test_support_can_look_but_not_touch(team):
-    """The same split the menu has: support answers questions about a
-    promotion without being able to invent a discount."""
-    _make(team.owner, code="support1")
-    user_id, _ = team.member("IT_SUPPORT")
-    support = team.client(user_id)
+def test_a_restaurant_login_cannot_create_a_coupon(team, operator):
+    """The restaurant's own portal has no coupon screen, and no endpoint
+    behind one either. A staff session on the admin host is not an admin."""
+    from app.core import staff_auth
+    from fastapi.testclient import TestClient
 
-    assert support.get(COUPONS).status_code == 200
-    assert _make(support).status_code == 403
+    from app.main import app
+
+    client = TestClient(app, base_url="http://admin.zenoeats.local")
+    client.cookies.set(staff_auth.SESSION_COOKIE, staff_auth.issue_session(team.owner_id))
+    res = client.post(operator.at, json={
+        "code": "SNEAKY", "discount_kind": "PERCENT", "discount_value": 5000,
+    })
+    assert res.status_code in (401, 403)
+
+
+def test_the_restaurant_portal_serves_no_coupon_endpoint(team):
+    """Belt and braces on the line above: whatever a staff session tries on
+    its own hostname, there is nothing there."""
+    for path in ("/api/v1/restaurant/coupons", "/api/v1/restaurant/coupons/x"):
+        assert team.owner.get(path).status_code == 404, path
+        assert team.owner.post(path, json={}).status_code in (404, 405), path
+
+
+def test_coupons_on_a_restaurant_that_does_not_exist(operator):
+    missing = uuid.uuid4()
+    res = operator.client.get(f"/api/v1/admin/restaurants/{missing}/coupons")
+    assert res.status_code == 404
+    assert res.json()["detail"]["code"] == "RESTAURANT_NOT_FOUND"
 
 
 # -------------------------------------------------------- at the checkout ---
 
 
+@pytest.fixture
+def shop(base_shop, admin_user, monkeypatch):
+    """The checkout tests' restaurant, plus the operator who gives it codes."""
+    base_shop.admin = _admin_client(admin_user, monkeypatch)
+    base_shop.coupons_at = f"/api/v1/admin/restaurants/{base_shop.id}/coupons"
+    return base_shop
+
+
 def _publish(shop, **overrides):
-    """A coupon on the shop the checkout tests order from."""
+    """A coupon on the shop the checkout tests order from.
+
+    Created the way coupons are actually created -- by the platform, on the
+    admin surface -- so these tests exercise the same path an operator uses
+    rather than a shortcut into the table.
+    """
     body = {"code": overrides.pop("code", "SAVE20"), "discount_kind": "PERCENT",
             "discount_value": 2000}
     body.update(overrides)
-    res = shop.owner.post(COUPONS, json=body)
+    res = shop.admin.post(shop.coupons_at, json=body)
     assert res.status_code == 201, res.text
     return res.json()
 
@@ -421,7 +568,7 @@ def test_an_order_with_a_bad_code_is_refused_rather_than_charged_in_full(shop):
 def test_a_switched_off_code_reads_exactly_like_one_that_does_not_exist(shop):
     """So the error cannot be used to go fishing for codes."""
     created = _publish(shop, code="PAUSED")
-    shop.owner.patch(f"{COUPONS}/{created['id']}", json={"is_active": False})
+    shop.admin.patch(f"{shop.coupons_at}/{created['id']}", json={"is_active": False})
 
     off = _quote(_guest(shop), shop, coupon_code="PAUSED").json()["coupon_error"]
     unknown = _quote(_guest(shop), shop, coupon_code="NEVEREXISTED").json()["coupon_error"]
@@ -483,7 +630,9 @@ def test_the_dashboard_counts_what_the_promotion_actually_cost(shop):
     quoted = _quote(client, shop, coupon_code="COUNTME").json()
     assert _order(client, shop, coupon_code="COUNTME").status_code == 201
 
-    listed = {c["code"]: c for c in shop.owner.get(COUPONS).json()["coupons"]}["COUNTME"]
+    listed = {
+        c["code"]: c for c in shop.admin.get(shop.coupons_at).json()["coupons"]
+    }["COUNTME"]
     assert listed["redemptions"] == 1
     assert listed["discounted_minor"] == quoted["amounts"]["coupon_discount_minor"]
 
@@ -510,7 +659,7 @@ def test_a_retired_coupon_stops_working_and_the_old_order_still_reads(shop):
     client = _guest(shop)
     placed = _order(client, shop, coupon_code="RETIRED").json()
 
-    assert shop.owner.delete(f"{COUPONS}/{created['id']}").status_code == 204
+    assert shop.admin.delete(f"{shop.coupons_at}/{created['id']}").status_code == 204
 
     # Gone for the next customer.
     assert _order(_guest(shop), shop, coupon_code="RETIRED").status_code == 422
