@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MenuImage } from "@/components/common/MenuImage";
 import { QuantityStepper, Sheet } from "@/components/common/Sheet";
 import { money, signedMoney } from "@/utils/format";
@@ -12,6 +12,7 @@ import {
   type Selection,
 } from "../modifiers";
 import { ModifierGroups } from "./ModifierGroups";
+import { mealSizeDelta, mealSizeGroupName, mealSizes, sizeGroupOf, withMealSize } from "../mealSize";
 import { comboExtrasMinor, comboPreviewMinor } from "../cartSlice";
 
 /** What one slot has been filled with, if anything yet. */
@@ -51,13 +52,43 @@ export function ComboSheet({
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
 
+  // One size for the meal, where every sizeable course offers the same ones.
+  // Starts at the smallest rather than unset: the course size groups are
+  // required, and this answers them, so an unset meal size would refuse to
+  // add a combo while hiding the control that fixes it.
+  const sizes = useMemo(() => mealSizes(combo), [combo]);
+  const sizeGroup = useMemo(() => mealSizeGroupName(combo), [combo]);
+  const [mealSize, setMealSize] = useState<string | null>(() => mealSizes(combo)[0] ?? null);
+  // Hidden per course only while a meal size actually governs it.
+  const omitPerCourse = useMemo(
+    () => (sizes.length > 0 && sizeGroup ? [sizeGroup] : []),
+    [sizes.length, sizeGroup],
+  );
+
   function chooseItem(slotId: string, item: Item) {
     setChoices((prev) => {
       // Re-picking the same item leaves its modifiers alone. Choosing a
       // different one starts that item's own defaults, because the previous
       // item's options mean nothing on it.
       if (prev[slotId]?.item.id === item.id) return prev;
-      return { ...prev, [slotId]: { item, selected: defaultSelection(item) } };
+      // A course joining a meal that is already a large arrives large: the
+      // size was chosen for the meal, not for whatever was in it at the time.
+      return {
+        ...prev,
+        [slotId]: { item, selected: withMealSize(item, defaultSelection(item), mealSize) },
+      };
+    });
+  }
+
+  /** Size the whole meal: every course already chosen follows. */
+  function chooseMealSize(size: string) {
+    setMealSize(size);
+    setChoices((prev) => {
+      const next: Record<string, SlotChoice> = {};
+      for (const [slotId, choice] of Object.entries(prev)) {
+        next[slotId] = { ...choice, selected: withMealSize(choice.item, choice.selected, size) };
+      }
+      return next;
     });
   }
 
@@ -185,6 +216,60 @@ export function ComboSheet({
         </>
       }
     >
+      {/* Asked once, before the courses: the answer applies to all of them,
+          and a control that governs several sections belongs above them
+          rather than inside one. Segments rather than a stacked list --
+          sizes are one short axis the eye compares across, and the price of
+          each is the thing being compared. */}
+      {sizes.length > 0 && (
+        <fieldset>
+          <legend className="mb-1 text-sm font-semibold">
+            Meal size
+            <span className="text-caption font-normal text-muted"> · Sizes the whole meal</span>
+          </legend>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {sizes.map((size) => {
+              const checked = mealSize === size;
+              // What it adds to the whole meal, stated from the moment the
+              // sheet opens so the sizes can be compared on price. The
+              // calories stay on the courses and the total, where they move
+              // as the meal is actually chosen.
+              const delta = mealSizeDelta(combo, choices, size);
+              return (
+                <label
+                  key={size}
+                  className={`flex min-w-[calc(50%-4px)] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-button border px-3 py-[11px] text-center transition-colors duration-color ease-standard sm:min-w-0 ${
+                    checked ? "border-brick bg-brickSoft/60" : "border-hairline"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`meal-size:${combo.id}`}
+                    checked={checked}
+                    onChange={() => chooseMealSize(size)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`text-[13px] font-bold uppercase tracking-[.4px] ${
+                      checked ? "text-brick" : "text-ink"
+                    }`}
+                  >
+                    {size}
+                  </span>
+                  {/* "Included" for the size the meal already is, the same
+                      word an option that costs nothing uses elsewhere in
+                      this sheet. Never blank: a price missing from one
+                      segment reads as a price still loading. */}
+                  <span className={`tnum text-caption ${checked ? "text-brick" : "text-muted"}`}>
+                    {delta === 0 ? "Included" : signedMoney(delta, currency)}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+
       {combo.slots.map((slot) => {
         const choice = choices[slot.id];
         return (
@@ -200,6 +285,18 @@ export function ComboSheet({
               {slot.items.map((item) => {
                 const checked = choice?.item.id === item.id;
                 const upcharge = slot.upcharges?.[item.id] ?? 0;
+                // A sizeable course has its size settled by the meal, chosen
+                // or not, so its figure is known before it is picked and
+                // moves when the meal size does. Without this the row sat at
+                // the small portion's floor until it was selected, and
+                // switching the meal size appeared to do nothing.
+                const sized = mealSize !== null && sizeGroupOf(item) !== undefined;
+                const figure = selectionCalories(
+                  item,
+                  checked
+                    ? choice.selected
+                    : withMealSize(item, defaultSelection(item), mealSize),
+                );
                 return (
                   <label
                     key={item.id}
@@ -222,12 +319,14 @@ export function ComboSheet({
                     <span className="min-w-0 flex-1 text-sm">
                       {item.name}
                       {!item.is_available && <span className="text-danger"> · Sold out</span>}
-                      {/* Once this one is chosen its own sizes are settled,
-                          so it states a figure rather than a floor. */}
+                      {/* Chosen, or sized by the meal: either way its size
+                          is settled, so it states a figure rather than a
+                          floor. Still a floor where something else on it
+                          could add more. */}
                       {kcal(item.calories) && (
                         <span className="block text-caption text-muted">
-                          {checked
-                            ? kcal(selectionCalories(item, choice.selected))
+                          {checked || sized
+                            ? `${!checked && canAddCalories(item, omitPerCourse) ? "from " : ""}${kcal(figure)}`
                             : `${canAddCalories(item) ? "from " : ""}${kcal(item.calories)}`}
                         </span>
                       )}
@@ -247,14 +346,19 @@ export function ComboSheet({
             </fieldset>
 
             {/* The chosen item's own modifiers, in place. A combo does not
-                relax them: a required choice is still required inside one. */}
-            {choice && choice.item.modifier_groups.length > 0 && (
+                relax them: a required choice is still required inside one.
+                Counted after the meal size is taken out, so a course whose
+                only group was its size does not leave an empty rule behind
+                it. */}
+            {choice &&
+              choice.item.modifier_groups.some((g) => !omitPerCourse.includes(g.name)) && (
               <div className="ml-5 mt-4 flex animate-disclose flex-col gap-4 border-l-2 border-brickSoft pl-4">
                 <ModifierGroups
                   item={choice.item}
                   currency={currency}
                   selected={choice.selected}
                   scope={slot.id}
+                  omit={omitPerCourse}
                   onToggle={(group, option) => toggle(slot.id, group, option)}
                 />
               </div>
