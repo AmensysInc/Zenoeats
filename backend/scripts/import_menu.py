@@ -257,9 +257,15 @@ def load(slug: str, path: Path) -> None:
                 db.execute(text("DELETE FROM combo_slots WHERE combo_id = :c"),
                            {"c": combo.id})
             for order, slot_spec in enumerate(spec.get("slots", [])):
-                slot = ComboSlot(restaurant_id=rid, combo_id=combo.id,
-                                 item_type_id=types[slot_spec["item_type"]].id,
-                                 sort_order=order)
+                slot = ComboSlot(
+                    restaurant_id=rid, combo_id=combo.id,
+                    item_type_id=types[slot_spec["item_type"]].id,
+                    sort_order=order,
+                    # Absent means required, which is what every menu written
+                    # before optional courses existed says by saying nothing.
+                    is_optional=bool(slot_spec.get("is_optional", False)),
+                    skip_credit_minor=int(slot_spec.get("skip_credit_minor", 0) or 0),
+                )
                 db.add(slot)
                 db.flush()
                 for position, choice in enumerate(slot_spec.get("choices", [])):

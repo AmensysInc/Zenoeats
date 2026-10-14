@@ -273,7 +273,17 @@ def _combos_by_meal(
                 and (include_empty or choice.item.is_available)
             ]
             if not items:
-                complete = False
+                # A required course with nothing left to choose makes the
+                # combo unsellable. An optional one does not: the customer
+                # could have left it out anyway, and the pricing credits a
+                # course it receives no choice for. The customer is not
+                # shown an empty one -- there is nothing to pick and nothing
+                # to decline -- while the portal still sees it, because the
+                # restaurant is the one who has to notice it is empty.
+                if not slot.is_optional:
+                    complete = False
+                elif not include_empty:
+                    continue
             slots.append(
                 ComboSlotOut(
                     id=slot.id,
@@ -287,6 +297,8 @@ def _combos_by_meal(
                         for choice in slot.choices
                         if choice.upcharge_minor
                     },
+                    is_optional=slot.is_optional,
+                    skip_credit_minor=slot.skip_credit_minor,
                 )
             )
 
