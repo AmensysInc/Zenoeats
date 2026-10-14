@@ -13,7 +13,7 @@ import {
 } from "../modifiers";
 import { ModifierGroups } from "./ModifierGroups";
 import { mealSizeDelta, mealSizeGroupName, mealSizes, sizeGroupOf, withMealSize } from "../mealSize";
-import { comboExtrasMinor, comboPreviewMinor } from "../cartSlice";
+import { comboExtrasMinor, comboPreviewMinor, comboUnitMinor } from "../cartSlice";
 
 /** What one slot has been filled with, if anything yet. */
 type SlotChoice = { item: Item; selected: Selection };
@@ -49,6 +49,11 @@ export function ComboSheet({
   // Keyed by slot id, not by index: two slots can offer the same item, and a
   // combo can be edited to have fewer slots than a stale render expects.
   const [choices, setChoices] = useState<Record<string, SlotChoice>>({});
+  // Courses the customer has actively left out. Separate from `choices`
+  // because an absent entry there means "not answered yet", and the footer
+  // has to tell that apart from "no drink, thanks" -- one blocks the order
+  // and the other is the order.
+  const [skipped, setSkipped] = useState<Record<string, boolean>>({});
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
 
@@ -78,6 +83,18 @@ export function ComboSheet({
         [slotId]: { item, selected: withMealSize(item, defaultSelection(item), mealSize) },
       };
     });
+    setSkipped((prev) => (prev[slotId] ? { ...prev, [slotId]: false } : prev));
+  }
+
+  /** Leave a course out: the choice is dropped, not merely unticked. */
+  function skipSlot(slotId: string) {
+    setChoices((prev) => {
+      if (!(slotId in prev)) return prev;
+      const next = { ...prev };
+      delete next[slotId];
+      return next;
+    });
+    setSkipped((prev) => ({ ...prev, [slotId]: true }));
   }
 
   /** Size the whole meal: every course already chosen follows. */
@@ -111,7 +128,7 @@ export function ComboSheet({
     .filter((x): x is { slot: Combo["slots"][number]; choice: SlotChoice } => x !== null);
 
   const emptySlots = combo.slots
-    .filter((slot) => !choices[slot.id])
+    .filter((slot) => !choices[slot.id] && !skipped[slot.id])
     .map((slot) => slot.label);
 
   const unanswered = filled.flatMap(({ choice }) =>
@@ -134,7 +151,11 @@ export function ComboSheet({
   const unit = comboPreviewMinor(combo, itemsSubtotal, extras);
   const discount = Math.max(0, itemsSubtotal - unit);
 
-  const ready = emptySlots.length === 0 && unanswered.length === 0;
+  // At least one course has to be taken. The builder refuses a combo whose
+  // every course is optional, so this cannot normally be reached -- but the
+  // pricing refuses an empty deal too, and the button must not offer what
+  // checkout would reject.
+  const ready = filled.length > 0 && emptySlots.length === 0 && unanswered.length === 0;
 
   const total = comboCalories(filled.map(({ choice }) => choice));
   const helper =
@@ -343,6 +364,66 @@ export function ComboSheet({
                   </label>
                 );
               })}
+
+              {/* A course the customer may leave out. Last, after the things
+                  they might want, because it is the answer to "none of
+                  these" rather than one of them. */}
+              {slot.is_optional && (() => {
+                const left = filled
+                  .filter(({ slot: s }) => s.id !== slot.id)
+                  .map(({ slot: s, choice: c }) => ({
+                    slotId: s.id, item: c.item, selected: c.selected,
+                  }));
+                // Priced against the course they have, or the cheapest one
+                // they could take: a saving has to be measured against
+                // something, and the cheapest is the only figure that is
+                // never an overstatement.
+                const reference =
+                  choice?.item ??
+                  slot.items
+                    .filter((i) => i.is_available)
+                    .reduce<Item | undefined>(
+                      (cheapest, i) =>
+                        !cheapest || i.base_price_minor < cheapest.base_price_minor ? i : cheapest,
+                      undefined,
+                    );
+                const taken = reference
+                  ? [...left, {
+                      slotId: slot.id,
+                      item: reference,
+                      selected:
+                        choice?.item.id === reference.id
+                          ? choice.selected
+                          : withMealSize(reference, defaultSelection(reference), mealSize),
+                    }]
+                  : left;
+                // Both sides through one helper, so the drop shown and the
+                // total below cannot be arrived at by different arithmetic.
+                const drop = Math.max(0, comboUnitMinor(combo, taken) - comboUnitMinor(combo, left));
+                const off = skipped[slot.id] === true;
+                return (
+                  <label
+                    className={`mt-2 flex min-h-[52px] items-center gap-3 rounded-button border px-3 py-[11px] transition-colors duration-color ease-standard cursor-pointer ${
+                      off ? "border-brick bg-brickSoft/60" : "border-hairline"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={`slot:${slot.id}`}
+                      checked={off}
+                      onChange={() => skipSlot(slot.id)}
+                      className="h-5 w-5 shrink-0"
+                    />
+                    {/* The restaurant's own word, unchanged: it may be plural
+                        and it may be a name, and neither survives being
+                        lowercased or made singular here. */}
+                    <span className="min-w-0 flex-1 text-sm">No {slot.label}</span>
+                    <span className="tnum ml-auto whitespace-nowrap text-caption text-brick">
+                      {drop > 0 ? signedMoney(-drop, currency) : ""}
+                    </span>
+                  </label>
+                );
+              })()}
             </fieldset>
 
             {/* The chosen item's own modifiers, in place. A combo does not
