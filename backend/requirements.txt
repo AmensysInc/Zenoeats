@@ -25,4 +25,4 @@ argon2-cffi==23.1.0
 sentry-sdk==2.69.1
 # IANA timezones for zoneinfo: restaurant-local report days. Slim images and
 # Windows have no system zone database.
-tzdata==2026.3
+tzdata==2026.4
