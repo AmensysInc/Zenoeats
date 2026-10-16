@@ -4,7 +4,7 @@ sqlalchemy==2.0.52
 psycopg2-binary==2.9.10
 alembic==1.14.0
 pydantic==2.10.4
-pydantic-settings==2.7.0
+pydantic-settings==2.15.0
 python-multipart==0.0.31
 # Menu image uploads: checked, re-encoded to WebP and stripped of metadata
 # before they are stored. Built with WebP support in the published wheels.
