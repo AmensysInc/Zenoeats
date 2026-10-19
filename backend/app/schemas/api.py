@@ -35,6 +35,67 @@ class LocationsOut(BaseModel):
     locations: list[LocationOut]
 
 
+# ---------- Rewards and offers -------------------------------------------
+
+class RewardOut(BaseModel):
+    """One dish the program gives away, at the threshold it is given at."""
+
+    id: UUID
+    item_id: UUID
+    item_name: str
+    points_required: int
+    image_url: str | None = None
+    # Whether the kitchen can serve it at all right now.
+    is_available: bool = True
+    # Whether this customer may take it on this order. False both for a dish
+    # they have not earned and for one that is sold out, which is why the
+    # two flags are separate: the card says "3 more orders" or "sold out"
+    # rather than one word for both.
+    is_claimable: bool = False
+
+
+class RewardsOut(BaseModel):
+    """A customer's standing in one restaurant's program.
+
+    `points` is the number of orders they have completed here, counted at
+    read time rather than stored. `collecting` is false for a caller with no
+    account -- a guest row lives for one checkout, so there is nothing to
+    accrue against and the storefront should say so instead of showing a
+    balance of zero as though it were progress.
+    """
+
+    points: int = 0
+    collecting: bool = False
+    # The rungs that exist, lowest first. Derived from the rewards, so a rung
+    # offering nothing is not a rung.
+    thresholds: list[int] = Field(default_factory=list)
+    # The next rung above the balance, and how far off it is. Both null once
+    # every rung is reached.
+    next_threshold: int | None = None
+    points_to_next: int | None = None
+    rewards: list[RewardOut] = Field(default_factory=list)
+
+
+class OfferOut(BaseModel):
+    """Something the storefront tells a customer, for a while.
+
+    No price and no code: an offer that takes money off is a coupon. The
+    dates are sent so the card can say how long is left, and are null where
+    the restaurant set none.
+    """
+
+    id: UUID
+    title: str
+    body: str | None = None
+    image_url: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class OffersOut(BaseModel):
+    offers: list[OfferOut]
+
+
 # ---------- Portal / menu ------------------------------------------------
 
 class OptionOut(BaseModel):

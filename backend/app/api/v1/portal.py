@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import TenantContext, TenantDb, current_restaurant, resolve_tenant
+from app.api.deps import (
+    TenantContext, TenantDb, current_restaurant, optional_current_user, resolve_tenant,
+)
 from app.config import settings
 from app.core import google_oauth
 from app.core.tenant import platform_url_for, storefront_url_for
@@ -16,9 +18,13 @@ from app.core.ratelimit import per_ip
 from app.db.session import system_session
 from app.models import (
     Location, LocationStatus, Restaurant, RestaurantPaymentAccount, RestaurantStatus,
+    User,
 )
-from app.schemas.api import BrandOut, LocationOut, LocationsOut, MenuOut, PortalOut
-from app.services import delivery, images, storefront
+from app.schemas.api import (
+    BrandOut, LocationOut, LocationsOut, MenuOut, OfferOut, OffersOut, PortalOut,
+    RewardOut, RewardsOut,
+)
+from app.services import delivery, images, rewards as rewards_service, storefront
 from app.services.menu import load_menu
 
 router = APIRouter(tags=["portal"])
@@ -150,3 +156,81 @@ def get_locations(request: Request):
                 )
             )
     return LocationsOut(locations=out)
+
+
+@router.get(
+    "/rewards",
+    response_model=RewardsOut,
+    dependencies=[Depends(per_ip("rewards", limit=240))],
+)
+def get_rewards(
+    user: User | None = Depends(optional_current_user),
+    db: Session = TenantDb,
+):
+    """This restaurant's program, and the caller's standing in it.
+
+    Answers for an anonymous caller rather than refusing one: the ladder is
+    what persuades somebody to make an account, so it has to be readable
+    before they have one. What such a caller does not get is a balance --
+    `collecting` is false and the points are zero, which the storefront
+    renders as an invitation rather than as progress.
+
+    A guest is in the same position and for a structural reason, not a
+    policy: a guest users row is made per checkout and reachable only by the
+    cookie that made it, so there is no identity to accrue against.
+    """
+    choices = rewards_service.ladder(db)
+    balance = rewards_service.points(db, user)
+    collecting = user is not None and user.kind == "CUSTOMER"
+    claimable = {c.item_id for c in rewards_service.claimable(balance, choices)}
+    upcoming = rewards_service.next_threshold(balance, choices)
+    return RewardsOut(
+        points=balance,
+        collecting=collecting,
+        thresholds=rewards_service.thresholds(choices),
+        next_threshold=upcoming,
+        points_to_next=None if upcoming is None else upcoming - balance,
+        rewards=[
+            RewardOut(
+                id=choice.id,
+                item_id=choice.item_id,
+                item_name=choice.item_name,
+                points_required=choice.points_required,
+                image_url=images.image_url(choice.image_path),
+                is_available=choice.is_available,
+                # Only a customer who is collecting can claim: a balance of
+                # zero reached by having no account must not light up a
+                # zero-point reward, if one ever existed.
+                is_claimable=collecting and choice.item_id in claimable,
+            )
+            for choice in choices
+        ],
+    )
+
+
+@router.get(
+    "/offers",
+    response_model=OffersOut,
+    dependencies=[Depends(per_ip("offers", limit=240))],
+)
+def get_offers(db: Session = TenantDb):
+    """What this restaurant is advertising right now.
+
+    Public and unauthenticated, like the menu: an offer is a poster in the
+    window and the whole point is that a passer-by reads it. Only the ones
+    inside their window are returned, so the storefront never has to know
+    the rules about dates.
+    """
+    return OffersOut(
+        offers=[
+            OfferOut(
+                id=offer.id,
+                title=offer.title,
+                body=offer.body,
+                image_url=images.image_url(offer.image_path),
+                starts_at=offer.starts_at,
+                ends_at=offer.ends_at,
+            )
+            for offer in rewards_service.live_offers(db)
+        ]
+    )

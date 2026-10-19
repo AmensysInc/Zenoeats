@@ -32,7 +32,9 @@ from app.models.commerce import (
     OrderItem,
     OrderItemModifier,
     OrderStatus,
+    Offer,
     RestaurantOrderCounter,
+    Reward,
     SentEmail,
 )
 from app.models.identity import RestaurantUser, StaffRole, StaffStatus, User, UserKind
@@ -71,6 +73,7 @@ __all__ = [
     "ItemIncludedOption",
     "ModifierGroupItemType",
     "Coupon", "CouponItemType",
+    "Reward", "Offer",
     "Order", "OrderItem", "OrderItemModifier", "OrderStatus", "OrderEvent", "OrderEventAction",
     "FulfillmentType",
     "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS", "SentEmail",

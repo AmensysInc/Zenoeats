@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "@/app/hooks";
-import { ErrorNote, Loading, Spinner, StatePage } from "@/components/common/Feedback";
+import { Empty, ErrorNote, Loading, Spinner, StatePage } from "@/components/common/Feedback";
 import { BackLink } from "@/components/common/BackLink";
 import { Icon } from "@/components/common/icons";
 import { MenuImage } from "@/components/common/MenuImage";
@@ -28,17 +28,19 @@ import {
   useLazyCustomerOrdersQuery,
   usePortalQuery,
   usePublicMenuQuery,
+  useRewardsQuery,
   useUpdateProfileMutation,
 } from "@/features/storefront/storefrontApi";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 import type { Contact, CustomerSession, Item, Meal, OrderSummary } from "@/types";
 
-type Tab = "details" | "orders" | "favourites";
+type Tab = "details" | "orders" | "favourites" | "rewards";
 
-const TABS: { id: Tab; label: string; icon: "user" | "bag" | "heart" }[] = [
+const TABS: { id: Tab; label: string; icon: "user" | "bag" | "heart" | "tag" }[] = [
   { id: "details", label: "Personal details", icon: "user" },
   { id: "orders", label: "Orders", icon: "bag" },
+  { id: "rewards", label: "Rewards", icon: "tag" },
   { id: "favourites", label: "Favourites", icon: "heart" },
 ];
 
@@ -154,6 +156,7 @@ export function ProfilePage() {
           <div className="min-w-0">
             {tab === "details" && <DetailsTab session={session.data} slug={portal.data.slug} />}
             {tab === "orders" && <OrdersTab />}
+            {tab === "rewards" && <RewardsTab guest={guest} />}
             {tab === "favourites" && (
               <FavouritesTab
                 session={session.data}
@@ -538,6 +541,170 @@ function SavedItems({ currency, orderable }: { currency: string; orderable: bool
           }}
         />
       )}
+    </section>
+  );
+}
+
+// ----------------------------------------------------------------- rewards
+
+/**
+ * What the customer has earned here, and what it is worth.
+ *
+ * A point is a completed order, counted server-side from the orders
+ * themselves, so this page never adds anything up and cannot disagree with
+ * the kitchen about how many visits someone has made.
+ *
+ * The ladder is shown whole, reached rungs and unreached alike. A program
+ * whose unreached half is hidden is a program nobody saves towards, and the
+ * point of the page is the rung above the one you are on.
+ */
+function RewardsTab({ guest }: { guest: boolean }) {
+  const rewards = useRewardsQuery();
+
+  if (rewards.isLoading) return <StatePage busy>Loading…</StatePage>;
+  if (rewards.error) {
+    return (
+      <StatePage title="Rewards are unavailable">{errorMessage(rewards.error)}</StatePage>
+    );
+  }
+
+  const data = rewards.data;
+  if (!data || data.rewards.length === 0) {
+    return (
+      <section aria-label="Your rewards">
+        <Empty>This restaurant is not running a rewards program yet.</Empty>
+      </section>
+    );
+  }
+
+  // The rungs, each with the dishes it offers. Grouped here rather than
+  // server-side because the order is already the server's and grouping is a
+  // presentation question.
+  const rungs = data.thresholds.map((points) => ({
+    points,
+    items: data.rewards.filter((r) => r.points_required === points),
+    reached: data.points >= points,
+  }));
+
+  // How far along the bar sits: towards the next rung, or full once every
+  // rung is reached.
+  const target = data.next_threshold;
+  const earnedTowards = target === null ? 1 : Math.min(1, data.points / target);
+
+  return (
+    <section aria-label="Your rewards">
+      <div className="rounded-panel border border-hairline bg-surface p-5 sm:p-6">
+        <p className="eyebrow text-muted">
+          {guest ? "Not collecting yet" : "Your points"}
+        </p>
+        <p className="my-2 font-display text-[34px] leading-none tracking-[-1px]">
+          <span className="tnum">{data.points}</span>
+          <span className="ml-2 text-[15px] font-normal tracking-normal text-muted">
+            {data.points === 1 ? "point" : "points"}
+          </span>
+        </p>
+
+        {/* A guest has no identity to accrue against -- the row is made per
+            checkout -- so this says so plainly rather than showing a zero
+            that looks like a start. */}
+        {!data.collecting ? (
+          <p className="text-sm text-muted">
+            Points are saved to your account. Create one, or sign in, and every
+            order you complete here counts towards a free item.
+          </p>
+        ) : target === null ? (
+          <p className="text-sm text-brick">
+            You have unlocked everything on the list. Enjoy.
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-muted">
+              <span className="tnum">{data.points_to_next}</span>{" "}
+              {data.points_to_next === 1 ? "more order" : "more orders"} until{" "}
+              <span className="tnum">{target}</span> points.
+            </p>
+            {/* aria-hidden: the sentence above already says it, and a
+                progress bar read out as a percentage says it worse. */}
+            <div
+              aria-hidden="true"
+              className="mt-3 h-2 overflow-hidden rounded-full bg-[rgb(var(--ze-shortcut-ground))]"
+            >
+              <div
+                className="h-full rounded-full bg-brick transition-[width] duration-500 ease-standard"
+                style={{ width: `${Math.round(earnedTowards * 100)}%` }}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      <h2 className="mb-1 mt-7 font-display text-[22px] leading-[1.2] tracking-[-.4px]">
+        What you can get
+      </h2>
+      <p className="mb-4 text-caption text-muted">
+        One free item per order. A reward stays yours once you reach it.
+      </p>
+
+      {rungs.map((rung) => (
+        <div key={rung.points} className="mt-5">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <span className="tnum">{rung.points}</span> points
+            {rung.reached ? (
+              <span className="rounded-[5px] bg-brickSoft px-[7px] py-1 text-[11px] font-[650] text-brick">
+                Unlocked
+              </span>
+            ) : (
+              <span className="text-caption font-normal text-muted">
+                {/* Counted from the balance, not from the rung below: what a
+                    customer wants to know is how many more orders. */}
+                {rung.points - data.points} to go
+              </span>
+            )}
+          </p>
+          <ul className="flex flex-col">
+            {rung.items.map((reward) => (
+              <li
+                key={reward.id}
+                className={`flex items-center gap-4 border-t border-hairline py-4 ${
+                  rung.reached ? "" : "opacity-[.55]"
+                }`}
+              >
+                {reward.image_url ? (
+                  <MenuImage
+                    src={reward.image_url}
+                    className="h-16 w-16 shrink-0 rounded-button bg-paper object-cover"
+                  />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="grid h-16 w-16 shrink-0 place-items-center rounded-button bg-paper text-muted"
+                  >
+                    <Icon name="tag" className="h-6 w-6" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-[650]">{reward.item_name}</span>
+                  {/* Two separate reasons, said separately: a dish you have
+                      not earned and a dish the kitchen has run out of are
+                      not the same disappointment. */}
+                  <span className="block text-caption text-muted">
+                    {!reward.is_available
+                      ? "Sold out right now"
+                      : reward.is_claimable
+                        ? "Yours to claim"
+                        : `Reach ${reward.points_required} points`}
+                  </span>
+                </span>
+                {reward.is_claimable && (
+                  <span className="rounded-[5px] border border-brick px-[7px] py-1 text-[11px] font-[650] text-brick">
+                    Free
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </section>
   );
 }

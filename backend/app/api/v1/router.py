@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import require_admin_host, require_same_origin
 from app.api.v1 import (
-    admin, coupons, customer, customer_accounts, orders, portal, restaurant, webhooks,
+    admin, coupons, customer, customer_accounts, orders, portal, restaurant,
+    rewards_admin, webhooks,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -40,6 +41,14 @@ api_router.include_router(
 # hostname would be a coupon endpoint a restaurant could call.
 api_router.include_router(
     coupons.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
+)
+# Rewards and offers are the platform's too, for the reason coupons are, so
+# they get the identical treatment: same prefix, same host pin, same origin
+# pin. A rewards endpoint reachable from a restaurant's own hostname would be
+# a rewards endpoint a restaurant could call.
+api_router.include_router(
+    rewards_admin.router,
+    dependencies=[Depends(require_admin_host), Depends(require_same_origin)],
 )
 
 # Stripe signs its webhooks and calls them server to server; there is no

@@ -398,6 +398,12 @@ _PURGE_ORDER = [
     # deleted further down.
     "coupon_item_types",
     "coupons",
+    # After orders too: an order names the dish it was given free. Before
+    # menu_items, which a reward names.
+    "rewards",
+    # Nothing points at an offer, so its place here is only "before the
+    # restaurant row itself".
+    "offers",
     "combo_slot_items",
     "combo_slots",
     "combos",

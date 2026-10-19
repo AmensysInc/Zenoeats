@@ -132,6 +132,8 @@ export const api = createApi({
     "CustomerSession",
     "CustomerOrders",
     "Favourites",
+    "Rewards",
+    "Offers",
   ],
   endpoints: () => ({}),
 });
