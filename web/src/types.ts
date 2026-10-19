@@ -291,6 +291,8 @@ export type Amounts = {
    *  off. Zero when no code was applied, so the two can be shown as separate
    *  lines without the customer having to work out which was which. */
   coupon_discount_minor: number;
+  /** The reward's share of discount_minor: what the free dish was worth. */
+  reward_discount_minor: number;
   /** Zero on a collection. */
   delivery_fee_minor: number;
   tax_minor: number;

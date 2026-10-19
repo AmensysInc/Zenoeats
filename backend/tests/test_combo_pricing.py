@@ -11,6 +11,7 @@ receipt can show and a manager can check.
 """
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -578,3 +579,90 @@ def test_an_option_inside_a_fixed_price_combo_costs_what_it_does_outside(jrs_mea
     _combo, _burger, fries, _cheese_fries, _drink, large = jrs_meal
     cart = _fixed(jrs_meal, fries, drink_options=[large])
     assert cart.total_minor == 959
+
+
+# --- a dish given away by the rewards program (0052) -----------------------
+
+
+def _reward_cart(meal_deal, reward_item, coupon=None):
+    """The burger meal, plus a dish the customer has earned free."""
+    from app.services.pricing import price_cart
+
+    burger, tea, fries, combo = meal_deal
+    raw = {
+        "combo_id": str(combo.id),
+        "quantity": 1,
+        "selections": [
+            {"slot_id": str(combo.slots[0].id), "menu_item_id": str(burger.id)},
+            {"slot_id": str(combo.slots[1].id), "menu_item_id": str(tea.id)},
+            {"slot_id": str(combo.slots[2].id), "menu_item_id": str(fries.id)},
+        ],
+    }
+    session = FakeSession([burger, tea, fries], combo)
+    return price_cart(
+        session, FakeRestaurant(), [], [raw],
+        coupon=coupon, reward_item_id=reward_item.id,
+    )
+
+
+def test_a_reward_is_a_line_at_its_price_and_a_discount_that_takes_it_back():
+    """The shape every other saving here uses: the food at what it is worth,
+    and what was taken off beside it. A line priced at nothing would only
+    raise the question of why."""
+    burger, tea, fries, _combo = meal_deal_parts = _meal_deal_parts()
+    cart = _reward_cart(meal_deal_parts, tea)
+    # The drink appears twice: once in the deal, once as the reward.
+    assert cart.subtotal_minor == 1700 + 300
+    assert cart.reward_discount_minor == 300
+    assert cart.reward_item_id == tea.id
+
+
+def test_a_free_dish_adds_nothing_to_the_bill():
+    """The whole point: the customer pays what they would have paid without
+    it. The subtotal rises by what the dish is worth and the discount takes
+    exactly that back, so the total does not move."""
+    parts = _meal_deal_parts()
+    _burger, tea, _fries, _combo = parts
+    with_reward = _reward_cart(parts, tea)
+    without = _cart(parts)
+    assert with_reward.total_minor == without.total_minor
+    # And the receipt can still say what was given away.
+    assert with_reward.subtotal_minor == without.subtotal_minor + 300
+    assert with_reward.reward_discount_minor == 300
+
+
+def test_a_coupon_cannot_discount_a_dish_that_is_already_free():
+    """The reward comes off before the coupon, so the code is capped at what
+    is actually left to pay rather than at a subtotal including a giveaway."""
+    parts = _meal_deal_parts()
+    _burger, tea, _fries, _combo = parts
+    huge = SimpleNamespace(
+        coupon_id=uuid.uuid4(), code="HALFOFF", label=None, discount_minor=100_000
+    )
+    cart = _reward_cart(parts, tea, coupon=huge)
+    # Everything is discounted and nothing is charged, but never more than
+    # the food came to -- the cart cannot go negative or pay the customer.
+    assert cart.discount_minor == cart.subtotal_minor
+    assert cart.total_minor == 0
+
+
+def test_a_sold_out_dish_cannot_be_given_away():
+    parts = _meal_deal_parts()
+    _burger, tea, _fries, _combo = parts
+    tea.is_available = False
+    with pytest.raises(errors.ApiError):
+        _reward_cart(parts, tea)
+
+
+def _meal_deal_parts():
+    """The meal_deal fixture's parts, built directly so a test can take a
+    second copy and change one of them."""
+    burger = FakeItem("Smash Burger", 1000)
+    tea = FakeItem("Iced Tea", 300, DRINKS)
+    fries = FakeItem("Fries", 400, SIDES)
+    combo = FakeCombo(
+        "Burger Meal",
+        [FakeSlot(FOOD, [burger]), FakeSlot(DRINKS, [tea]), FakeSlot(SIDES, [fries])],
+        kind="PERCENT", value=1000,
+    )
+    return burger, tea, fries, combo

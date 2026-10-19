@@ -41,6 +41,7 @@ from app.schemas.api import (
 from app.core.tenant import extract_slug
 from app.services import (
     account_emails, clerk_customers, coupons, customer_profile, delivery, guest_customers,
+    rewards,
     stripe_service, terms, tracking,
 )
 from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
@@ -158,11 +159,25 @@ def quote_cart(
     lines = [line.model_dump() for line in body.items]
     combos = [combo.model_dump() for combo in body.combos]
 
+    # A reward the customer has not earned is dropped rather than refused:
+    # the rest of the cart still has a price and the page still has to show
+    # it, which is the same courtesy a bad coupon code gets. What the
+    # storefront offered may simply have gone stale.
+    reward_item_id = None
+    if body.reward_item_id is not None:
+        try:
+            reward_item_id = rewards.refuse_unless_claimable(
+                db, user, body.reward_item_id
+            ).item_id
+        except errors.ApiError:
+            reward_item_id = None
+
     def priced(applied=None):
         return price_cart(
             db, restaurant, lines, combos,
             delivery_fee_minor=fee.fee_minor if fee else 0,
             coupon=applied,
+            reward_item_id=reward_item_id,
         )
 
     cart = priced()
@@ -236,6 +251,7 @@ def _amounts(cart) -> AmountsOut:
         subtotal_minor=cart.subtotal_minor,
         discount_minor=cart.discount_minor,
         coupon_discount_minor=cart.coupon.discount_minor if cart.coupon else 0,
+        reward_discount_minor=cart.reward_discount_minor,
         delivery_fee_minor=cart.delivery_fee_minor,
         tax_minor=cart.tax_minor,
         total_minor=cart.total_minor,
@@ -373,9 +389,23 @@ def create_order(
         fee = delivery.quote(db, restaurant, body.contact.address)
     lines = [line.model_dump() for line in body.items]
     combos = [combo.model_dump() for combo in body.combos]
+
+    # Refused loudly here, unlike on the quote. The customer is committing,
+    # and the alternative to an error is charging for a dish they believe is
+    # free -- the same failure as charging full price to somebody who
+    # believes they have a discount. Read fresh from their completed orders,
+    # so a reward the storefront offered a few minutes ago is re-earned now
+    # or not given.
+    reward_item_id = None
+    if body.reward_item_id is not None:
+        reward_item_id = rewards.refuse_unless_claimable(
+            db, user, body.reward_item_id
+        ).item_id
+
     cart = price_cart(
         db, restaurant, lines, combos,
         delivery_fee_minor=fee.fee_minor if fee else 0,
+        reward_item_id=reward_item_id,
     )
 
     if body.coupon_code:
@@ -400,6 +430,7 @@ def create_order(
             db, restaurant, lines, combos,
             delivery_fee_minor=fee.fee_minor if fee else 0,
             coupon=applied,
+            reward_item_id=reward_item_id,
         )
 
     if body.expected_total_minor is not None and body.expected_total_minor != cart.total_minor:

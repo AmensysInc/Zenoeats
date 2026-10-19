@@ -352,6 +352,10 @@ class QuoteIn(BaseModel):
     # not fail the quote -- the rest of the cart still has a price, and the
     # page still has to show it. See QuoteOut.coupon_error.
     coupon_code: str | None = Field(default=None, max_length=32)
+    # A dish the customer has earned and wants free on this order. One, and
+    # checked against their balance server-side: what the browser sends is a
+    # request, not a decision.
+    reward_item_id: UUID | None = None
 
 
 def _collapse(value: str) -> str:
@@ -427,6 +431,11 @@ class CreateOrderIn(BaseModel):
     # at this point is an error, because the alternative is silently charging
     # full price to somebody who believed they had a discount.
     coupon_code: str | None = Field(default=None, max_length=32)
+    # The reward the customer claimed. Checked again here against their
+    # balance, for the reason the coupon is: the quote was a moment ago, and
+    # charging for a dish somebody believed was free is the same failure as
+    # charging full price to somebody who believed they had a discount.
+    reward_item_id: UUID | None = None
 
     # A delivery goes to contact.address: one address, typed once. Priced
     # again here from that address, whatever the quote said.
@@ -505,6 +514,10 @@ class AmountsOut(BaseModel):
     # off. Defaulted for the same reason delivery_fee_minor is: a stored
     # idempotent replay from before coupons existed still reads back.
     coupon_discount_minor: int = 0
+    # The reward's share of discount_minor: what the free dish was worth.
+    # Defaulted for the same reason the two above are -- a stored idempotent
+    # replay from before rewards existed still reads back.
+    reward_discount_minor: int = 0
     # Zero on a collection. Defaulted so an idempotent replay stored before
     # delivery existed still reads back.
     delivery_fee_minor: int = 0
