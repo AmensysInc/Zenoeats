@@ -73,11 +73,15 @@ export function CustomerFooter() {
           {phone && <a href={`tel:${phone.replace(/[^+\d]/g, "")}`}>Contact us</a>}
         </nav>
 
-        <div className="space-y-1">
+        {/* Centred as a pair. The notice and the policies above are read
+            left to right like the rest of the page; these two are a colophon
+            and sit under it, which is where a reader expects a sign-off
+            rather than another paragraph. */}
+        <div className="space-y-1 pt-1 text-center">
           {/* Read at render rather than written in: a hard-coded year is
               wrong every January and nobody notices until a customer does. */}
           <p>© {new Date().getFullYear()} Zenoeats. All rights reserved.</p>
-          <p>Powered by Zenoeats</p>
+          <p className="font-semibold text-ink">Powered by Zenoeats</p>
         </div>
       </div>
     </footer>
