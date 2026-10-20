@@ -3,8 +3,7 @@ import { RequireAdmin } from "@/components/layout/OperatorGuards";
 import { AdminRestaurantsPage } from "@/pages/admin/AdminRestaurantsPage";
 import { AdminOrdersPage } from "@/pages/admin/AdminOrdersPage";
 import { AdminCouponsPage } from "@/pages/admin/AdminCouponsPage";
-import { AdminRewardsPage } from "@/pages/admin/AdminRewardsPage";
-import { AdminOffersPage } from "@/pages/admin/AdminOffersPage";
+import { AdminPromotionsPage } from "@/pages/admin/AdminPromotionsPage";
 import { NotFound } from "@/routes/NotFound";
 
 /**
@@ -29,12 +28,8 @@ export default function AdminArea() {
         element={<RequireAdmin><AdminCouponsPage /></RequireAdmin>}
       />
       <Route
-        path="restaurants/:id/rewards"
-        element={<RequireAdmin><AdminRewardsPage /></RequireAdmin>}
-      />
-      <Route
-        path="restaurants/:id/offers"
-        element={<RequireAdmin><AdminOffersPage /></RequireAdmin>}
+        path="restaurants/:id/promotions"
+        element={<RequireAdmin><AdminPromotionsPage /></RequireAdmin>}
       />
       <Route path="*" element={<NotFound />} />
     </Routes>
