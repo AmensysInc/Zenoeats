@@ -334,6 +334,10 @@ export type BuilderCombo = {
     item_ids: string[];
     /** Item id -> upcharge in a FIXED_PRICE combo; only the non-zero ones. */
     upcharges?: Record<string, number>;
+    /** Whether the customer may order the combo without this course. */
+    is_optional?: boolean;
+    /** What leaving it out takes off a FIXED_PRICE combo. */
+    skip_credit_minor?: number;
   }[];
 };
 
@@ -344,6 +348,11 @@ export type ComboSlotDraft = {
   item_ids: string[];
   /** Item id -> what choosing it adds to a FIXED_PRICE combo. */
   upcharges?: Record<string, number>;
+  /** Whether the customer may order the combo without this course. */
+  is_optional?: boolean;
+  /** What leaving it out takes off a FIXED_PRICE combo, in minor units.
+   *  Refused on a required course, where it could never be earned. */
+  skip_credit_minor?: number;
 };
 
 /** An item as the sold-out screen needs it, and nothing more. */

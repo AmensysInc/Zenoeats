@@ -84,10 +84,12 @@ class FakeChoice:
 
 
 class FakeSlot:
-    def __init__(self, item_type, items=()):
+    def __init__(self, item_type, items=(), optional=False, skip_credit=0):
         self.id = uuid.uuid4()
         self.item_type = item_type
         self.item_type_id = item_type.id
+        self.is_optional = optional
+        self.skip_credit_minor = skip_credit
         self.choices = [FakeChoice(item) for item in items]
 
 
