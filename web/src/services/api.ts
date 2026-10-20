@@ -132,6 +132,13 @@ export const api = createApi({
     "CustomerSession",
     "CustomerOrders",
     "Favourites",
+    "Rewards",
+    "Offers",
+    // The admin-side lists, keyed by restaurant id. Separate tags from the
+    // customer-side "Rewards"/"Offers" above: editing one restaurant's
+    // ladder must not refetch a storefront's.
+    "Reward",
+    "Offer",
   ],
   endpoints: () => ({}),
 });

@@ -35,6 +35,67 @@ class LocationsOut(BaseModel):
     locations: list[LocationOut]
 
 
+# ---------- Rewards and offers -------------------------------------------
+
+class RewardOut(BaseModel):
+    """One dish the program gives away, at the threshold it is given at."""
+
+    id: UUID
+    item_id: UUID
+    item_name: str
+    points_required: int
+    image_url: str | None = None
+    # Whether the kitchen can serve it at all right now.
+    is_available: bool = True
+    # Whether this customer may take it on this order. False both for a dish
+    # they have not earned and for one that is sold out, which is why the
+    # two flags are separate: the card says "3 more orders" or "sold out"
+    # rather than one word for both.
+    is_claimable: bool = False
+
+
+class RewardsOut(BaseModel):
+    """A customer's standing in one restaurant's program.
+
+    `points` is the number of orders they have completed here, counted at
+    read time rather than stored. `collecting` is false for a caller with no
+    account -- a guest row lives for one checkout, so there is nothing to
+    accrue against and the storefront should say so instead of showing a
+    balance of zero as though it were progress.
+    """
+
+    points: int = 0
+    collecting: bool = False
+    # The rungs that exist, lowest first. Derived from the rewards, so a rung
+    # offering nothing is not a rung.
+    thresholds: list[int] = Field(default_factory=list)
+    # The next rung above the balance, and how far off it is. Both null once
+    # every rung is reached.
+    next_threshold: int | None = None
+    points_to_next: int | None = None
+    rewards: list[RewardOut] = Field(default_factory=list)
+
+
+class OfferOut(BaseModel):
+    """Something the storefront tells a customer, for a while.
+
+    No price and no code: an offer that takes money off is a coupon. The
+    dates are sent so the card can say how long is left, and are null where
+    the restaurant set none.
+    """
+
+    id: UUID
+    title: str
+    body: str | None = None
+    image_url: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class OffersOut(BaseModel):
+    offers: list[OfferOut]
+
+
 # ---------- Portal / menu ------------------------------------------------
 
 class OptionOut(BaseModel):
@@ -298,6 +359,10 @@ class QuoteIn(BaseModel):
     # not fail the quote -- the rest of the cart still has a price, and the
     # page still has to show it. See QuoteOut.coupon_error.
     coupon_code: str | None = Field(default=None, max_length=32)
+    # A dish the customer has earned and wants free on this order. One, and
+    # checked against their balance server-side: what the browser sends is a
+    # request, not a decision.
+    reward_item_id: UUID | None = None
 
 
 def _collapse(value: str) -> str:
@@ -373,6 +438,11 @@ class CreateOrderIn(BaseModel):
     # at this point is an error, because the alternative is silently charging
     # full price to somebody who believed they had a discount.
     coupon_code: str | None = Field(default=None, max_length=32)
+    # The reward the customer claimed. Checked again here against their
+    # balance, for the reason the coupon is: the quote was a moment ago, and
+    # charging for a dish somebody believed was free is the same failure as
+    # charging full price to somebody who believed they had a discount.
+    reward_item_id: UUID | None = None
 
     # A delivery goes to contact.address: one address, typed once. Priced
     # again here from that address, whatever the quote said.
@@ -451,6 +521,10 @@ class AmountsOut(BaseModel):
     # off. Defaulted for the same reason delivery_fee_minor is: a stored
     # idempotent replay from before coupons existed still reads back.
     coupon_discount_minor: int = 0
+    # The reward's share of discount_minor: what the free dish was worth.
+    # Defaulted for the same reason the two above are -- a stored idempotent
+    # replay from before rewards existed still reads back.
+    reward_discount_minor: int = 0
     # Zero on a collection. Defaulted so an idempotent replay stored before
     # delivery existed still reads back.
     delivery_fee_minor: int = 0

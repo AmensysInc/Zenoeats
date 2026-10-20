@@ -79,6 +79,12 @@ class PricedCart:
     # a receipt can show the meal deals and the code as separate lines, and
     # the order can record which coupon it was.
     coupon: "AppliedCoupon | None" = None
+    # The dish given away under the rewards program, and what it was worth.
+    # Inside discount_minor too, and separate for the same reason the coupon
+    # is: a receipt that says "Fries 2.45" and "Reward -2.45" explains itself,
+    # where a line priced at nothing only raises the question.
+    reward_item_id: UUID | None = None
+    reward_discount_minor: int = 0
 
 
 def price_cart(
@@ -88,6 +94,7 @@ def price_cart(
     raw_combos: list[dict] | None = None,
     delivery_fee_minor: int = 0,
     coupon: AppliedCoupon | None = None,
+    reward_item_id: UUID | None = None,
 ) -> PricedCart:
     """Validate and price a cart. Raises ApiError on any invalid input.
 
@@ -111,6 +118,14 @@ def price_cart(
     sentence shown beside a text field; a bad cart is a refusal to sell. This
     function has never had an opinion about who is ordering, and a coupon's
     per-customer limit would have given it one.
+
+    `reward_item_id` is the same arrangement for the same reason. Whether a
+    customer has earned a dish is a question about who is ordering, so it is
+    answered before this is called (services/rewards.py, from orders.py) and
+    what arrives here is an instruction: add this dish and charge nothing for
+    it. One dish, quantity one, no modifiers -- a free large shake with extra
+    everything is a different offer from the one the restaurant put on the
+    ladder, and the plain dish is the one it put there.
     """
     raw_combos = raw_combos or []
     if not raw_lines and not raw_combos:
@@ -127,6 +142,8 @@ def price_cart(
     for combo in raw_combos:
         for selection in combo.get("selections") or []:
             item_ids.add(UUID(str(selection["menu_item_id"])))
+    if reward_item_id is not None:
+        item_ids.add(reward_item_id)
 
     # RLS already scopes this to the current tenant. The explicit
     # restaurant_id predicate is belt and braces, and it keeps the index in
@@ -219,10 +236,43 @@ def price_cart(
         subtotal += sum(line.line_total_minor for line in combo_lines)
         discount += combo_discount
 
+    # The reward dish: a line at what it is worth, and a discount that takes
+    # exactly that back off. Added last so it sits at the end of the receipt
+    # where a customer looks for it, and priced plainly -- quantity one, no
+    # modifiers -- because the plain dish is the one on the ladder.
+    reward_value = 0
+    if reward_item_id is not None:
+        reward = items_by_id[reward_item_id]
+        if not reward.is_available:
+            raise errors.item_unavailable(f"{reward.name} is sold out.")
+        if not reward.meal_links:
+            raise errors.item_unavailable(f"{reward.name} is no longer on the menu.")
+        reward_value = max(0, reward.base_price_minor)
+        subtotal += reward_value
+        priced_lines.append(
+            PricedLine(
+                menu_item_id=reward.id,
+                name=reward.name,
+                unit_price_minor=reward_value,
+                quantity=1,
+                line_total_minor=reward_value,
+                note=None,
+                modifiers=[],
+                taxable=not reward.tax_exempt,
+                item_type_id=reward.item_type_id,
+            )
+        )
+
     # Never more than the food. A percentage cannot exceed the total it is
     # taken from, but a flat amount can be set above what a cheap combination
     # comes to, and a negative subtotal is not a thing that can be charged.
     discount = min(discount, subtotal)
+
+    # Taken off before the coupon, so a code cannot discount a dish that is
+    # already free: the coupon is capped at subtotal - discount below, and
+    # the reward is inside that figure by the time it is read.
+    reward_discount = min(reward_value, max(subtotal - discount, 0))
+    discount += reward_discount
 
     # The coupon comes off what is left after the meal deals, never off the
     # original subtotal: a cart whose combos already took $4 off cannot have
@@ -264,6 +314,11 @@ def price_cart(
         delivery_fee_minor=fee,
         lines=priced_lines,
         tax_calculation_id=tax_result.calculation_id,
+        # Null unless a dish was actually given away and actually came off:
+        # an order that records a reward it did not discount would overstate
+        # what the program cost.
+        reward_item_id=reward_item_id if reward_discount > 0 else None,
+        reward_discount_minor=reward_discount,
         # Reported with the amount it actually took off, which the cap above
         # may have reduced. What the order stores has to be what was charged.
         coupon=(

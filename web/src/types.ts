@@ -297,6 +297,8 @@ export type Amounts = {
    *  off. Zero when no code was applied, so the two can be shown as separate
    *  lines without the customer having to work out which was which. */
   coupon_discount_minor: number;
+  /** The reward's share of discount_minor: what the free dish was worth. */
+  reward_discount_minor: number;
   /** Zero on a collection. */
   delivery_fee_minor: number;
   tax_minor: number;
@@ -346,4 +348,49 @@ export type Order = {
   cancelled_by_restaurant: boolean;
   /** On its way back to the customer's card; null until a refund is issued. */
   refund_minor: number | null;
+};
+
+/** One dish the rewards program gives away, at the threshold it is given at.
+ *
+ *  `is_available` is whether the kitchen can serve it; `is_claimable` is
+ *  whether this customer may take it on this order. Two flags rather than
+ *  one, so a card can say "3 more orders" or "sold out" instead of one word
+ *  covering both. */
+export type Reward = {
+  id: string;
+  item_id: string;
+  item_name: string;
+  points_required: number;
+  image_url: string | null;
+  is_available: boolean;
+  is_claimable: boolean;
+};
+
+/** A customer's standing in one restaurant's program.
+ *
+ *  `points` is their completed orders here, counted server-side rather than
+ *  stored. `collecting` is false without an account: a guest row lives for
+ *  one checkout, so a balance of zero there is not progress and the page
+ *  should invite rather than report it.
+ *
+ *  `next_threshold` and `points_to_next` are both null once every rung is
+ *  reached -- "0 more orders" is not progress either. */
+export type Rewards = {
+  points: number;
+  collecting: boolean;
+  thresholds: number[];
+  next_threshold: number | null;
+  points_to_next: number | null;
+  rewards: Reward[];
+};
+
+/** Something the storefront advertises, for a while. Carries no discount and
+ *  no code: a promotion that takes money off is a coupon. */
+export type Offer = {
+  id: string;
+  title: string;
+  body: string | null;
+  image_url: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
 };

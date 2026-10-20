@@ -120,6 +120,10 @@ def create_pending_order(
         coupon_id=cart.coupon.coupon_id if cart.coupon else None,
         coupon_code=cart.coupon.code if cart.coupon else None,
         coupon_discount_minor=cart.coupon.discount_minor if cart.coupon else 0,
+        # The reward, by the same rule and for the same reason: read off the
+        # priced cart, so the dish the order says it gave away is the dish
+        # the total already stopped charging for.
+        reward_item_id=cart.reward_item_id,
         customer_note=customer_note,
         contact_name=contact_name,
         contact_phone=contact_phone,

@@ -11,6 +11,7 @@ import {
   useCustomerSessionQuery,
   usePortalQuery,
   useQuoteMutation,
+  useRewardsQuery,
 } from "@/features/storefront/storefrontApi";
 import { useOpenCart } from "@/features/cart/useOpenCart";
 import { ApiError, errorMessage, newIdempotencyKey } from "@/services/apiClient";
@@ -110,6 +111,12 @@ export function CheckoutPage() {
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
   const [coupon, setCoupon] = useState<AppliedCoupon | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
+  // The free dish the customer is taking, if they have earned one. The
+  // server checks this again against their completed orders, so this is a
+  // request rather than a decision -- and a reward the ladder has since
+  // withdrawn is simply dropped from the quote.
+  const [rewardItemId, setRewardItemId] = useState<string | null>(null);
+  const rewards = useRewardsQuery();
   const [note, setNote] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [fulfillment, setFulfillment] = useState<FulfillmentType>("PICKUP");
@@ -277,6 +284,7 @@ export function CheckoutPage() {
         ? { fulfillment_type: "DELIVERY" as const, delivery_address: settledAddress }
         : {}),
       ...(appliedCode ? { coupon_code: appliedCode } : {}),
+      ...(rewardItemId ? { reward_item_id: rewardItemId } : {}),
     });
     request.unwrap()
       .then((q) => {
@@ -320,7 +328,7 @@ export function CheckoutPage() {
       alive = false;
       request.abort();
     };
-  }, [payload, comboPayload, cartSignature, empty, quote, priceDelivery, settledAddress, retry, delivering, contact.address, appliedCode]);
+  }, [payload, comboPayload, cartSignature, empty, quote, priceDelivery, settledAddress, retry, delivering, contact.address, appliedCode, rewardItemId]);
 
   // The total on screen is for exactly what is being ordered: this choice,
   // and for a delivery this address as typed, not as it was a moment ago.
@@ -365,6 +373,7 @@ export function CheckoutPage() {
         fulfillment_type: fulfillment,
         expected_total_minor: amounts.total_minor,
         ...(appliedCode ? { coupon_code: appliedCode } : {}),
+        ...(rewardItemId ? { reward_item_id: rewardItemId } : {}),
       };
       const key = attemptKeyFor(JSON.stringify(body));
 
@@ -608,13 +617,32 @@ export function CheckoutPage() {
                     meal deal takes off is a property of the food; what a code
                     takes off is something the customer did. Shown as one
                     "Discount" they would have to work out which was which. */}
-                {amounts.discount_minor - amounts.coupon_discount_minor > 0 && (
+                {/* What the meal deals took off: the whole discount less
+                    the two parts that name themselves below. Without
+                    subtracting the reward as well, a free dish would be
+                    reported as a meal deal nobody ordered. */}
+                {amounts.discount_minor
+                  - amounts.coupon_discount_minor
+                  - amounts.reward_discount_minor > 0 && (
                   <Row
-                    label={amounts.coupon_discount_minor > 0 ? "Meal deals" : "Discount"}
+                    label={
+                      amounts.coupon_discount_minor > 0 || amounts.reward_discount_minor > 0
+                        ? "Meal deals"
+                        : "Discount"
+                    }
                     value={`−${money(
-                      amounts.discount_minor - amounts.coupon_discount_minor,
+                      amounts.discount_minor
+                        - amounts.coupon_discount_minor
+                        - amounts.reward_discount_minor,
                       currency,
                     )}`}
+                    valueClass="text-brick"
+                  />
+                )}
+                {amounts.reward_discount_minor > 0 && (
+                  <Row
+                    label="Reward"
+                    value={`−${money(amounts.reward_discount_minor, currency)}`}
                     valueClass="text-brick"
                   />
                 )}
@@ -660,6 +688,12 @@ export function CheckoutPage() {
                 Updating your total…
               </p>
             )}
+
+            <RewardField
+              rewards={(rewards.data?.rewards ?? []).filter((r) => r.is_claimable)}
+              chosen={rewardItemId}
+              onChoose={setRewardItemId}
+            />
 
             <CouponField
               draft={couponDraft}
@@ -1010,5 +1044,71 @@ function Row({ label, value, valueClass = "" }: { label: string; value: string; 
       <dt>{label}</dt>
       <dd className={valueClass}>{value}</dd>
     </div>
+  );
+}
+
+/**
+ * The free dish, where one has been earned.
+ *
+ * Shown only when there is something to take: a customer who has earned
+ * nothing is not told what they are missing on the page where they are
+ * paying. One at a time, because the program gives one dish per order, and
+ * the choice is undoable right up to the moment the order is placed.
+ *
+ * The server checks the choice again against the customer's completed
+ * orders, so this is a request rather than a decision. A reward withdrawn
+ * from the ladder between loading the page and paying is dropped from the
+ * quote rather than refused: the rest of the cart still has a price.
+ */
+function RewardField({
+  rewards,
+  chosen,
+  onChoose,
+}: {
+  rewards: { item_id: string; item_name: string; points_required: number }[];
+  chosen: string | null;
+  onChoose: (itemId: string | null) => void;
+}) {
+  if (rewards.length === 0) return null;
+
+  return (
+    <fieldset className="mt-5">
+      <legend className="mb-1 text-sm font-semibold">
+        Your reward
+        <span className="text-caption font-normal text-muted"> · One per order</span>
+      </legend>
+      {rewards.map((reward) => {
+        const picked = chosen === reward.item_id;
+        return (
+          <label
+            key={reward.item_id}
+            className={`mt-2 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-button border px-3 py-[11px] transition-colors duration-color ease-standard ${
+              picked ? "border-brick bg-brickSoft/60" : "border-hairline"
+            }`}
+          >
+            <input
+              type="radio"
+              name="reward"
+              className="h-5 w-5 shrink-0"
+              checked={picked}
+              // Clicking the chosen one again takes it off, so a customer
+              // who changes their mind is not stuck with a free dish they
+              // did not want on this order.
+              onChange={() => onChoose(picked ? null : reward.item_id)}
+              onClick={() => picked && onChoose(null)}
+            />
+            <span className="min-w-0 flex-1 text-sm">
+              {reward.item_name}
+              <span className="block text-caption text-muted">
+                Earned at {reward.points_required} points
+              </span>
+            </span>
+            <span className="tnum ml-auto whitespace-nowrap text-caption font-[650] text-brick">
+              Free
+            </span>
+          </label>
+        );
+      })}
+    </fieldset>
   );
 }

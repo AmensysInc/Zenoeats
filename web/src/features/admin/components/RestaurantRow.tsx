@@ -190,6 +190,9 @@ export function RestaurantRow({
               <Link className={action} to={`/admin/restaurants/${r.id}/coupons`}>
                 Coupons
               </Link>
+              <Link className={action} to={`/admin/restaurants/${r.id}/promotions`}>
+                Promotions
+              </Link>
               {/* The API refuses to delete an ACTIVE restaurant. Hiding the
                   button avoids offering a certain 409. */}
               {r.status !== "ACTIVE" && !confirmingDelete && (

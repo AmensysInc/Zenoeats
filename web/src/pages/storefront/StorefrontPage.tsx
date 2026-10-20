@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from "@/app/hooks";
 import { Loading, StatePage } from "@/components/common/Feedback";
 import { Cloche, Icon } from "@/components/common/icons";
 import { MenuImage } from "@/components/common/MenuImage";
+import { Offers } from "@/features/storefront/components/Offers";
 import { ModifierSheet } from "@/features/cart/components/ModifierSheet";
 import { ComboSheet, savingLabel } from "@/features/cart/components/ComboSheet";
 import { CustomerHeader } from "@/features/storefront/components/CustomerHeader";
@@ -162,6 +163,10 @@ export function StorefrontPage() {
         ) : (
           <>
             <CategoryShortcuts meals={shown} severalPeriods={severalPeriods} categories={restaurant.storefront?.categories} shortcuts={restaurant.storefront?.shortcuts} />
+            {/* Above the menu, below the way into it: an offer is read on
+                the way past rather than searched for. Renders nothing at
+                all when the restaurant has nothing on. */}
+            <Offers />
             {restaurant.storefront?.collections.map((collection) => {
               const items = collection.item_ids.flatMap((id) => lookup.has(id) ? [lookup.get(id)!] : []);
               if (!items.length) return null;

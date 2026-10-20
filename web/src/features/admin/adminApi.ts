@@ -52,6 +52,69 @@ export type CouponList = {
   coupons: Coupon[];
 };
 
+/** One dish on the ladder, as the admin list shows it. */
+export type Reward = {
+  id: string;
+  item_id: string;
+  item_name: string;
+  points_required: number;
+  sort_order: number;
+  is_active: boolean;
+  /** Whether the kitchen can serve it. A reward on a sold-out dish stays on
+   *  the ladder and cannot be claimed, which an operator should see rather
+   *  than discover. */
+  item_is_available: boolean;
+};
+
+export type RewardDraft = {
+  item_id: string;
+  points_required: number;
+  sort_order?: number;
+  is_active?: boolean;
+};
+
+export type MenuDish = { id: string; name: string; base_price_minor: number };
+
+export type RewardList = {
+  restaurant_name: string;
+  currency: string;
+  items: MenuDish[];
+  rewards: Reward[];
+};
+
+/** An offer as the admin list shows it. Named AdminOffer because the
+ *  storefront has its own, narrower Offer: this one carries the window and
+ *  the switch, which a customer never sees. */
+export type AdminOffer = {
+  id: string;
+  title: string;
+  body: string | null;
+  image_path: string | null;
+  image_url: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_active: boolean;
+  sort_order: number;
+  /** Whether a customer would see it now: the window and the switch, worked
+   *  out server-side so this list and the storefront cannot disagree. */
+  is_live: boolean;
+};
+
+export type OfferDraft = {
+  title: string;
+  body?: string | null;
+  image_path?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  is_active?: boolean;
+  sort_order?: number;
+};
+
+export type OfferList = {
+  restaurant_name: string;
+  offers: AdminOffer[];
+};
+
 /** The two ways a discount can be stated, and exactly one of them is sent.
  *
  *  An operator thinks in a percentage or in an amount -- "10% off" or "$5
@@ -388,6 +451,82 @@ export const adminApi = api.injectEndpoints({
       invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
     }),
 
+    // --- rewards and offers ------------------------------------------------
+    //
+    // The platform's to create, for the reason coupons are: what a promotion
+    // costs is Zenoeats' business as much as the kitchen's. No screen for
+    // either in the restaurant portal, and no endpoint behind one.
+
+    rewards: build.query<RewardList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/rewards` }),
+      providesTags: (_r, _e, id) => [{ type: "Reward", id }],
+    }),
+
+    createReward: build.mutation<Reward, { id: string; draft: RewardDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/rewards`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Reward", id }],
+    }),
+
+    updateReward: build.mutation<
+      Reward,
+      { id: string; rewardId: string; patch: Partial<RewardDraft> }
+    >({
+      query: ({ id, rewardId, patch }) => ({
+        url: `/admin/restaurants/${id}/rewards/${rewardId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Reward", id }],
+    }),
+
+    // Soft, like a coupon's: orders that were given this dish free keep
+    // their own lines and figures, and the row stays answerable.
+    retireReward: build.mutation<void, { id: string; rewardId: string }>({
+      query: ({ id, rewardId }) => ({
+        url: `/admin/restaurants/${id}/rewards/${rewardId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Reward", id }],
+    }),
+
+    offers: build.query<OfferList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/offers` }),
+      providesTags: (_r, _e, id) => [{ type: "Offer", id }],
+    }),
+
+    createOffer: build.mutation<AdminOffer, { id: string; draft: OfferDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/offers`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Offer", id }],
+    }),
+
+    updateOffer: build.mutation<
+      AdminOffer,
+      { id: string; offerId: string; patch: Partial<OfferDraft> }
+    >({
+      query: ({ id, offerId, patch }) => ({
+        url: `/admin/restaurants/${id}/offers/${offerId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Offer", id }],
+    }),
+
+    retireOffer: build.mutation<void, { id: string; offerId: string }>({
+      query: ({ id, offerId }) => ({
+        url: `/admin/restaurants/${id}/offers/${offerId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Offer", id }],
+    }),
+
     platformReports: build.query<Report[], void>({
       query: () => ({ url: "/admin/reports" }),
       providesTags: ["AdminReport"],
@@ -428,4 +567,12 @@ export const {
   useCreateCouponMutation,
   useUpdateCouponMutation,
   useRetireCouponMutation,
+  useRewardsQuery,
+  useCreateRewardMutation,
+  useUpdateRewardMutation,
+  useRetireRewardMutation,
+  useOffersQuery,
+  useCreateOfferMutation,
+  useUpdateOfferMutation,
+  useRetireOfferMutation,
 } = adminApi;
