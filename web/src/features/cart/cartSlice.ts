@@ -79,7 +79,8 @@ export function comboPreviewMinor(
   combo: Combo,
   itemsSubtotalMinor: number,
   /** FIXED_PRICE only: the chosen dishes' upcharges plus what their options
-   *  added, which go on top of the set price. */
+   *  added, which go on top of the set price, less the credit for any
+   *  optional course left out -- so it may be negative. */
   extrasMinor = 0,
 ): number {
   if (itemsSubtotalMinor <= 0) return 0;
@@ -96,17 +97,46 @@ export function comboPreviewMinor(
   return Math.max(0, itemsSubtotalMinor - Math.min(off, itemsSubtotalMinor));
 }
 
-/** What a FIXED_PRICE combo adds to its set price for these choices: each
- *  dish's upcharge, and what its options cost. The server sums the same. */
+/** What adjusts a FIXED_PRICE combo's set price for these choices: each
+ *  dish's upcharge and what its options cost, less the credit for every
+ *  optional course left out. The server sums the same. */
 export function comboExtrasMinor(
   combo: Combo,
   chosen: { slotId: string; item: Item; selected: Selection }[],
 ): number {
-  return chosen.reduce((sum, c) => {
+  const extras = chosen.reduce((sum, c) => {
     const unit = Math.max(0, c.item.base_price_minor + modifierDelta(c.item, c.selected));
     const slot = combo.slots.find((s) => s.id === c.slotId);
     return sum + unit - c.item.base_price_minor + (slot?.upcharges?.[c.item.id] ?? 0);
   }, 0);
+  // A course left out gives its credit back off a set price. Read from the
+  // slots rather than from the choices, because what matters here is the
+  // course that is absent. The other discount kinds ignore this figure --
+  // they have already lost the dish's own price from the subtotal.
+  const taken = new Set(chosen.map((c) => c.slotId));
+  const credits = combo.slots.reduce(
+    (sum, slot) =>
+      sum + (slot.is_optional && !taken.has(slot.id) ? slot.skip_credit_minor ?? 0 : 0),
+    0,
+  );
+  return extras - credits;
+}
+
+/** What the combo costs for exactly these courses, discount included.
+ *
+ *  The two helpers above, applied together. Having it once means a caller
+ *  that needs to compare two versions of a meal -- with a course and
+ *  without it -- cannot price the two by different rules, which is how a
+ *  "saving" ends up disagreeing with the total it is supposed to explain. */
+export function comboUnitMinor(
+  combo: Combo,
+  chosen: { slotId: string; item: Item; selected: Selection }[],
+): number {
+  const subtotal = chosen.reduce(
+    (sum, c) => sum + Math.max(0, c.item.base_price_minor + modifierDelta(c.item, c.selected)),
+    0,
+  );
+  return comboPreviewMinor(combo, subtotal, comboExtrasMinor(combo, chosen));
 }
 
 const cartSlice = createSlice({

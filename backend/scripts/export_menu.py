@@ -165,6 +165,15 @@ def export(slug: str) -> dict:
                                 if si.slot_id == s.id and si.item_id in by_item_id
                                 and si.upcharge_minor
                             },
+                            # Written only when set, so an export of a menu
+                            # with no optional course reads exactly as it did
+                            # before there were any.
+                            **({"is_optional": True} if s.is_optional else {}),
+                            **(
+                                {"skip_credit_minor": s.skip_credit_minor}
+                                if s.skip_credit_minor
+                                else {}
+                            ),
                         }
                         for s in slots
                         if s.combo_id == c.id

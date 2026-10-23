@@ -1032,7 +1032,7 @@ class MealItemsIn(BaseModel):
 
 
 class ComboSlotIn(BaseModel):
-    """One required choice in a combo, and what may fill it.
+    """One choice in a combo, and what may fill it.
 
     A slot with no items is not sent. The builder creates a slot by ticking
     items into a type, so a type nobody ticked is a type the combo does not
@@ -1045,6 +1045,14 @@ class ComboSlotIn(BaseModel):
     # units. Absent means nothing extra. Kept beside item_ids rather than
     # replacing it so a builder that knows nothing of upcharges still works.
     upcharges: dict[UUID, int] = Field(default_factory=dict)
+    # Whether the customer may order the combo without this course. Defaults
+    # to required, which is every slot that existed before 0051 and what a
+    # builder that knows nothing of this still sends.
+    is_optional: bool = False
+    # What leaving this course out takes off a FIXED_PRICE combo, in minor
+    # units. Meaningless on a required slot, and refused there rather than
+    # stored and never earned.
+    skip_credit_minor: int = Field(default=0, ge=0)
 
 
 class ComboIn(BaseModel):
@@ -1537,6 +1545,13 @@ def _set_combo_slots(
         raise errors.validation_error(
             "A combo needs at least one choice. Tick the items it includes."
         )
+    # At least one course has to be ordered, or the deal is a discount on an
+    # empty bag: the pricing would refuse every such order at checkout, which
+    # is a worse place to find out than here.
+    if all(slot.is_optional for slot in slots):
+        raise errors.validation_error(
+            "A combo needs at least one course the customer has to take."
+        )
 
     served = {
         link.item_id
@@ -1567,9 +1582,17 @@ def _set_combo_slots(
             )
         seen_types.add(item_type.id)
 
+        if slot_in.skip_credit_minor and not slot_in.is_optional:
+            raise errors.validation_error(
+                f"{item_type.name} is a required course, so leaving it out "
+                "cannot take anything off."
+            )
+
         slot = ComboSlot(
             restaurant_id=restaurant.id, combo_id=combo.id,
             item_type_id=item_type.id, sort_order=order,
+            is_optional=slot_in.is_optional,
+            skip_credit_minor=slot_in.skip_credit_minor,
         )
         db.add(slot)
         db.flush()
@@ -1628,6 +1651,8 @@ def _combo_out(combo: Combo) -> dict:
                     for choice in slot.choices
                     if choice.upcharge_minor
                 },
+                "is_optional": slot.is_optional,
+                "skip_credit_minor": slot.skip_credit_minor,
             }
             for slot in combo.slots
         ],

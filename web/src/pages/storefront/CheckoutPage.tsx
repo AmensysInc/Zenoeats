@@ -273,6 +273,10 @@ export function CheckoutPage() {
     let alive = true;
     setQuoting(true);
     const key = cartSignature + ":" + (priceDelivery ? pricingKey("DELIVERY", settledAddress) : "PICKUP");
+    // Whether this particular quote carried a code, read when the request is
+    // built rather than when it answers: by then appliedCode may already be
+    // null, dropped by the refusal this very request is about to report.
+    const sentCode = appliedCode;
     const request = quote({
       items: payload,
       combos: comboPayload,
@@ -296,10 +300,16 @@ export function CheckoutPage() {
         // removed from the cart, and the summary has to say so then rather
         // than at the payment screen.
         setCoupon(q.coupon);
-        setCouponError(q.coupon_error);
-        // A code that has stopped working is not still applied. Dropping it
-        // here is what keeps the next quote, and the order, honest.
-        if (q.coupon_error) setAppliedCode(null);
+        // Only a quote that carried a code can say anything about one. The
+        // refusal below drops the code, which re-quotes without it, and that
+        // answer reports no coupon error -- which used to wipe the refusal
+        // one render after it appeared, so it only ever flickered.
+        if (sentCode) {
+          setCouponError(q.coupon_error);
+          // A code that has stopped working is not still applied. Dropping it
+          // here is what keeps the next quote, and the order, honest.
+          if (q.coupon_error) setAppliedCode(null);
+        }
       })
       .catch((e) => {
         if (!alive) return;
@@ -972,7 +982,7 @@ function CouponField({
 
   if (!open && !draft && !error) {
     return (
-      <button type="button" className="btn-quiet mt-5 px-0" onClick={() => setOpen(true)}>
+      <button type="button" className="btn-quiet mt-5 !rounded-button" onClick={() => setOpen(true)}>
         Have a promo code?
       </button>
     );
@@ -995,7 +1005,7 @@ function CouponField({
         <span className="label">Promo code</span>
         <div className="mt-[7px] flex gap-2">
           <input
-            className="field font-mono uppercase"
+            className="field font-mono uppercase aria-[invalid=true]:bg-dangerSoft"
             value={draft}
             onChange={(e) => onDraft(e.target.value)}
             onKeyDown={(e) => {

@@ -64,7 +64,7 @@ export type Section = {
   groups: Subsection[];
 };
 
-/** One required choice inside a combo. Exactly one item, always. */
+/** One choice inside a combo. At most one item, required unless optional. */
 export type ComboSlot = {
   id: string;
   item_type_id: string;
@@ -73,6 +73,12 @@ export type ComboSlot = {
   /** Item id -> what choosing it adds to a FIXED_PRICE combo. Only the dearer
    *  choices; absent means nothing extra. */
   upcharges?: Record<string, number>;
+  /** Whether the customer may order the combo without this course. */
+  is_optional?: boolean;
+  /** What leaving it out takes off a FIXED_PRICE combo. The other kinds drop
+   *  the dish's own price from the subtotal instead, so this is unread for
+   *  them. */
+  skip_credit_minor?: number;
 };
 
 /** How a combo is priced from its parts. PERCENT carries basis points,
