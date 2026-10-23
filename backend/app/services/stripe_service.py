@@ -1,7 +1,7 @@
 """Stripe Connect. Direct charges on the restaurant's connected account.
 
 Section 8: the restaurant is the merchant of record, receives payouts and
-owns dispute operations. Zenoeats' own revenue is an application fee on each
+owns dispute operations. ZenoEats' own revenue is an application fee on each
 charge, set by PLATFORM_FEE_BPS and PLATFORM_FEE_FIXED_MINOR; with both at 0
 no fee is sent at all.
 
@@ -29,7 +29,7 @@ _client = stripe.StripeClient(settings.STRIPE_SECRET_KEY)
 
 
 def platform_fee_minor(total_minor: int) -> int:
-    """Zenoeats' fee on an order total, in minor units.
+    """ZenoEats' fee on an order total, in minor units.
 
     Rounded half up to the nearest cent, and never more than the order is
     worth: Stripe rejects an application fee larger than the charge, and a
@@ -46,7 +46,7 @@ def platform_fee_minor(total_minor: int) -> int:
 def refund_order(payment, reason: str | None = None) -> dict:
     """Give a paid order's money back, on the restaurant's own account.
 
-    The whole charge, including Zenoeats' fee: the sale did not happen, and
+    The whole charge, including ZenoEats' fee: the sale did not happen, and
     a restaurant should not carry a commission on an order it cancelled.
     `refund_application_fee` is what returns the fee from the platform's
     balance rather than leaving it against the restaurant's.
@@ -111,7 +111,7 @@ def _value(obj, name):
 
 
 def _charged_a_fee(payment) -> bool:
-    """Whether this charge actually carried Zenoeats' fee.
+    """Whether this charge actually carried ZenoEats' fee.
 
     Asked of Stripe rather than recomputed from the current settings: the fee
     is whatever was taken when the customer paid, and a rate changed since
@@ -170,7 +170,7 @@ def create_payment_intent(
 
     No receipt_email. In live mode Stripe emails a receipt to that address
     whatever the account's settings say, and another for every refund -- on
-    top of Zenoeats' own confirmation and refund emails, which carry the
+    top of ZenoEats' own confirmation and refund emails, which carry the
     order and the restaurant's name. One email per event is enough. The
     customer's address still reaches Stripe, for fraud screening, as the
     payment's billing email: the payment page sends it with the card.
@@ -280,7 +280,7 @@ def cancel_payment_intent(intent_id: str, stripe_account_id: str) -> str | None:
 
 
 def create_account_link(stripe_account_id: str, refresh_url: str, return_url: str) -> str:
-    """Stripe-hosted onboarding. Zenoeats never collects KYC data itself."""
+    """Stripe-hosted onboarding. ZenoEats never collects KYC data itself."""
     try:
         link = stripe.AccountLink.create(
             account=stripe_account_id,
@@ -309,7 +309,7 @@ def create_connected_account(
     explicit `merchant` configuration: v2 does not infer capabilities from an
     account type, you request them. `responsibilities` both set to "stripe"
     keeps the connected account liable for its own fees and losses, which is
-    what direct charges require and what makes the restaurant, not Zenoeats,
+    what direct charges require and what makes the restaurant, not ZenoEats,
     the merchant of record.
 
     Returns the id rather than the object because the v2 response shape omits

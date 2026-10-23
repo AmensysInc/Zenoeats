@@ -8,7 +8,7 @@ those, so a customer's every email comes from the same sender and looks the
 same.
 
 The two a customer meets most, the verification code and the password-reset
-code, are rendered from Zenoeats' own template (customer_code/). Any other
+code, are rendered from ZenoEats' own template (customer_code/). Any other
 kind is sent in Clerk's own words, exactly as Clerk rendered it, so
 switching off a kind this module has no template for still delivers it.
 

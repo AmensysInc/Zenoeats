@@ -22,7 +22,7 @@ export const ADMIN_NAV: NavItem[] = [{ href: "/admin", label: "Restaurants", ico
 export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <Shell
-      title="Zenoeats"
+      title="ZenoEats"
       brandMark
       titleHref="/admin"
       nav={ADMIN_NAV}

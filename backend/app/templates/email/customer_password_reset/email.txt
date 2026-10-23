@@ -1,7 +1,7 @@
 {#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
 Hi{% if name %} {{ name }}{% endif %},
 
-Somebody asked to reset the password for your Zenoeats account. Choose a new
+Somebody asked to reset the password for your ZenoEats account. Choose a new
 one here:
 
 {{ reset_url }}

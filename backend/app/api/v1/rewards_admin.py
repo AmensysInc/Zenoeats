@@ -14,11 +14,12 @@ query that forgot its restaurant_id returns nothing rather than another
 restaurant's program. The audit line is the one genuinely platform-owned
 write, so it goes on a nested system session.
 
-WHAT IS NOT HERE is the points. A balance is the count of a customer's
-completed orders (services/rewards.py), so there is nothing to administer: no
-granting, no adjusting, no zeroing. An operator who wants to change what a
-customer has earned changes their orders, which is the only honest way to say
-it. That is a deliberate absence, not a missing screen.
+WHAT IS NOT HERE is any way to grant or adjust a customer's stamps. The
+ledger is the truth and it is written by orders completing and refunds
+reversing them (services/loyalty.py); a button here would be a second way to
+move the same number, and the two would disagree the first time somebody
+used it. An operator who wants to change what a customer earned changes
+their orders. That is a deliberate absence, not a missing screen.
 """
 
 import logging
@@ -32,7 +33,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_platform_admin
 from app.core import errors
-from app.models import Item, Offer, Reward, User
+from app.models import (
+    Item, ItemType, LoyaltyProgram, LoyaltyProgramItem, Offer, PurchaseType, User,
+)
 from app.services import images
 
 # The audit writer the rest of the admin surface uses, imported rather than
@@ -44,44 +47,85 @@ from app.db.session import system_session, tenant_session
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["rewards"])
 
-# A ladder longer than this is not a ladder a customer reads, and it bounds
-# what one page has to render.
-MAX_REWARDS = 100
+# More programs than this is not a scheme a customer can hold in their head,
+# and it bounds what one page has to render.
+MAX_PROGRAMS = 20
 MAX_OFFERS = 50
 
 
 # ---------------------------------------------------------------- shapes
 
 
-class RewardIn(BaseModel):
-    """One dish, free, from a threshold."""
+class ProgramIn(BaseModel):
+    """A loyalty program as the form sends it.
 
-    item_id: UUID
-    points_required: int = Field(ge=1, le=10_000)
-    sort_order: int = 0
+    `choices` is the dishes the reward may be taken as -- at least one, or
+    the program wins nothing. The qualifying fields are read only by
+    MENU_ITEM and exactly one of them is set; the check constraint refuses
+    the rest, and _qualifier below says so in words first.
+    """
+
+    name: str = Field(min_length=1, max_length=120)
+    purchase_type: str = Field(default=PurchaseType.COMPLETED_ORDERS.value)
+    required_count: int = Field(ge=1, le=1000)
+    minimum_spend_minor: int = Field(default=0, ge=0)
+    qualifying_item_id: UUID | None = None
+    qualifying_item_type_id: UUID | None = None
+    reward_expires_days: int | None = Field(default=None, ge=1, le=3650)
     is_active: bool = True
+    sort_order: int = 0
+    choices: list[UUID] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _tidy(cls, value: str) -> str:
+        cleaned = " ".join(value.split()).strip()
+        if not cleaned:
+            raise ValueError("A program needs a name.")
+        return cleaned
+
+    @field_validator("purchase_type")
+    @classmethod
+    def _known(cls, value: str) -> str:
+        if value not in {t.value for t in PurchaseType}:
+            raise ValueError("That is not a kind of qualifying purchase.")
+        return value
 
 
-class RewardPatch(BaseModel):
-    """A partial update. Only what is sent changes."""
+class ProgramPatch(BaseModel):
+    """A partial update. Only what is sent changes; `choices` replaces the
+    whole list when it is sent at all."""
 
-    item_id: UUID | None = None
-    points_required: int | None = Field(default=None, ge=1, le=10_000)
-    sort_order: int | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    required_count: int | None = Field(default=None, ge=1, le=1000)
+    minimum_spend_minor: int | None = Field(default=None, ge=0)
+    reward_expires_days: int | None = Field(default=None, ge=1, le=3650)
     is_active: bool | None = None
+    sort_order: int | None = None
+    choices: list[UUID] | None = None
 
 
-class RewardAdminOut(BaseModel):
-    id: UUID
+class ProgramChoiceOut(BaseModel):
     item_id: UUID
     item_name: str
-    points_required: int
-    sort_order: int
+    is_available: bool
+
+
+class ProgramOut(BaseModel):
+    id: UUID
+    name: str
+    purchase_type: str
+    required_count: int
+    minimum_spend_minor: int
+    qualifying_item_id: UUID | None
+    qualifying_item_type_id: UUID | None
+    # What the rule reads as in words, so the list does not make an operator
+    # reassemble it from five fields.
+    summary: str
+    reward_expires_days: int | None
     is_active: bool
-    # Whether the dish itself can be served. A reward on a sold-out dish is
-    # worth flagging in the admin list: it stays on the ladder and cannot be
-    # claimed, which is a thing an operator should see rather than discover.
-    item_is_available: bool
+    sort_order: int
+    choices: list[ProgramChoiceOut]
 
 
 class MenuDishOut(BaseModel):
@@ -92,12 +136,17 @@ class MenuDishOut(BaseModel):
     base_price_minor: int
 
 
-class RewardListOut(BaseModel):
+class MenuHeadingOut(BaseModel):
+    id: UUID
+    name: str
+
+
+class ProgramListOut(BaseModel):
     restaurant_name: str
     currency: str
-    # Every live dish, for the "which dish" field.
     items: list[MenuDishOut]
-    rewards: list[RewardAdminOut]
+    headings: list[MenuHeadingOut]
+    programs: list[ProgramOut]
 
 
 class OfferIn(BaseModel):
@@ -179,8 +228,7 @@ def _restaurant(db: Session, restaurant_id: UUID):
 
 
 def _dish(db: Session, item_id: UUID) -> Item:
-    """A dish of this restaurant, or 404. Live only: a reward on a deleted
-    dish is a reward nobody can be given."""
+    """A live dish of this restaurant, or a refusal."""
     item = db.execute(
         select(Item).where(Item.id == item_id, Item.deleted_at.is_(None))
     ).scalar_one_or_none()
@@ -189,13 +237,15 @@ def _dish(db: Session, item_id: UUID) -> Item:
     return item
 
 
-def _reward(db: Session, reward_id: UUID) -> Reward:
-    reward = db.execute(
-        select(Reward).where(Reward.id == reward_id, Reward.deleted_at.is_(None))
+def _program(db: Session, program_id: UUID) -> LoyaltyProgram:
+    program = db.execute(
+        select(LoyaltyProgram).where(
+            LoyaltyProgram.id == program_id, LoyaltyProgram.deleted_at.is_(None)
+        )
     ).scalar_one_or_none()
-    if reward is None:
-        raise errors.ApiError(404, "REWARD_NOT_FOUND", "No such reward.")
-    return reward
+    if program is None:
+        raise errors.ApiError(404, "PROGRAM_NOT_FOUND", "No such loyalty program.")
+    return program
 
 
 def _offer(db: Session, offer_id: UUID) -> Offer:
@@ -207,15 +257,122 @@ def _offer(db: Session, offer_id: UUID) -> Offer:
     return offer
 
 
-def _reward_out(reward: Reward, item: Item) -> RewardAdminOut:
-    return RewardAdminOut(
-        id=reward.id,
-        item_id=item.id,
-        item_name=item.name,
-        points_required=reward.points_required,
-        sort_order=reward.sort_order,
-        is_active=reward.is_active,
-        item_is_available=item.is_available,
+def _qualifier(db: Session, body: ProgramIn) -> tuple[UUID | None, UUID | None]:
+    """What a MENU_ITEM program counts, refused in words before the check
+    constraint refuses it in Postgres.
+
+    Exactly one of a dish or a heading. "Nine burgers" means one of those two
+    and a restaurant means different things by it on different weeks, so it
+    has to say which rather than have the engine guess.
+    """
+    if body.purchase_type != PurchaseType.MENU_ITEM.value:
+        if body.qualifying_item_id or body.qualifying_item_type_id:
+            raise errors.validation_error(
+                "A program counting orders does not also name a dish to count."
+            )
+        return None, None
+
+    named = [bool(body.qualifying_item_id), bool(body.qualifying_item_type_id)]
+    if sum(named) != 1:
+        raise errors.validation_error(
+            "Counting purchases needs either one dish or one menu heading, not both."
+        )
+    if body.qualifying_item_id:
+        return _dish(db, body.qualifying_item_id).id, None
+
+    heading = db.execute(
+        select(ItemType).where(
+            ItemType.id == body.qualifying_item_type_id, ItemType.deleted_at.is_(None)
+        )
+    ).scalar_one_or_none()
+    if heading is None:
+        raise errors.validation_error("That heading is not on this restaurant's menu.")
+    return None, heading.id
+
+
+def _set_choices(db: Session, restaurant_id: UUID, program: LoyaltyProgram, items: list[UUID]):
+    """Replace the dishes this program's reward may be taken as.
+
+    At least one, because a program that wins nothing is a card nobody would
+    fill. Replaced as a set rather than patched one at a time: the form
+    sends what the list should be, and a diff here would be a second way to
+    express the same thing.
+    """
+    wanted = list(dict.fromkeys(items))
+    if not wanted:
+        raise errors.validation_error(
+            "Choose at least one dish the reward can be taken as."
+        )
+    for existing in list(program.choices):
+        program.choices.remove(existing)
+    db.flush()
+    for order, item_id in enumerate(wanted):
+        dish = _dish(db, item_id)
+        db.add(
+            LoyaltyProgramItem(
+                restaurant_id=restaurant_id,
+                program_id=program.id,
+                item_id=dish.id,
+                sort_order=order,
+            )
+        )
+    db.flush()
+
+
+def _summary(db: Session, program: LoyaltyProgram) -> str:
+    """The rule in a sentence, built server-side so the admin list and any
+    later digest read it the same way."""
+    if program.purchase_type == PurchaseType.COMPLETED_ORDERS.value:
+        spend = (
+            f" of at least {program.minimum_spend_minor / 100:.2f}"
+            if program.minimum_spend_minor
+            else ""
+        )
+        earning = f"{program.required_count} completed orders{spend}"
+    elif program.qualifying_item_id:
+        dish = db.get(Item, program.qualifying_item_id)
+        earning = f"{program.required_count} \u00d7 {dish.name if dish else 'a dish'}"
+    else:
+        heading = db.get(ItemType, program.qualifying_item_type_id)
+        earning = f"{program.required_count} items from {heading.name if heading else 'a heading'}"
+
+    names = [c.item_name for c in _choices_out(db, program)]
+    reward = " or ".join(names) if names else "nothing yet"
+    lapses = (
+        f", expiring {program.reward_expires_days} days after it is won"
+        if program.reward_expires_days
+        else ""
+    )
+    return f"After {earning}, the customer may have {reward} free{lapses}."
+
+
+def _choices_out(db: Session, program: LoyaltyProgram) -> list[ProgramChoiceOut]:
+    rows = db.execute(
+        select(LoyaltyProgramItem, Item)
+        .join(Item, Item.id == LoyaltyProgramItem.item_id)
+        .where(LoyaltyProgramItem.program_id == program.id, Item.deleted_at.is_(None))
+        .order_by(LoyaltyProgramItem.sort_order, LoyaltyProgramItem.id)
+    ).all()
+    return [
+        ProgramChoiceOut(item_id=i.id, item_name=i.name, is_available=i.is_available)
+        for _link, i in rows
+    ]
+
+
+def _program_out(db: Session, program: LoyaltyProgram) -> ProgramOut:
+    return ProgramOut(
+        id=program.id,
+        name=program.name,
+        purchase_type=program.purchase_type,
+        required_count=program.required_count,
+        minimum_spend_minor=program.minimum_spend_minor,
+        qualifying_item_id=program.qualifying_item_id,
+        qualifying_item_type_id=program.qualifying_item_type_id,
+        summary=_summary(db, program),
+        reward_expires_days=program.reward_expires_days,
+        is_active=program.is_active,
+        sort_order=program.sort_order,
+        choices=_choices_out(db, program),
     )
 
 
@@ -234,166 +391,164 @@ def _offer_out(offer: Offer, now: datetime) -> OfferAdminOut:
     )
 
 
-def _clash(db: Session, restaurant_id: UUID, item_id: UUID, points: int, skip: UUID | None):
-    """The same dish twice at one threshold is a mistake, not two rewards.
-
-    Checked for the message; the partial unique index is the guarantee, and
-    it covers live rows only so a retired reward may be created again.
-    """
-    query = select(Reward.id).where(
-        Reward.item_id == item_id,
-        Reward.points_required == points,
-        Reward.deleted_at.is_(None),
-    )
-    if skip is not None:
-        query = query.where(Reward.id != skip)
-    if db.execute(query).scalar_one_or_none() is not None:
-        raise errors.validation_error(
-            "That dish is already a reward at that number of points."
-        )
+# --------------------------------------------------------------- programs
 
 
-# ---------------------------------------------------------------- rewards
-
-
-@router.get("/restaurants/{restaurant_id}/rewards", response_model=RewardListOut)
-def list_rewards(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
-    """One restaurant's reward ladder, lowest threshold first, with the menu
-    the form needs.
+@router.get("/restaurants/{restaurant_id}/rewards", response_model=ProgramListOut)
+def list_programs(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
+    """One restaurant's loyalty programs, with the menu the form needs.
 
     Not audited: a read of the platform's own configuration that exposes
     nothing a customer typed and no money that moved.
     """
     with tenant_session(restaurant_id) as db:
         restaurant = _restaurant(db, restaurant_id)
-        rows = db.execute(
-            select(Reward, Item)
-            .join(Item, Item.id == Reward.item_id)
-            .where(Reward.deleted_at.is_(None))
-            .order_by(Reward.points_required, Reward.sort_order, Reward.created_at, Reward.id)
-            .limit(MAX_REWARDS)
-        ).all()
+        programs = db.execute(
+            select(LoyaltyProgram)
+            .where(LoyaltyProgram.deleted_at.is_(None))
+            .order_by(LoyaltyProgram.sort_order, LoyaltyProgram.created_at, LoyaltyProgram.id)
+            .limit(MAX_PROGRAMS)
+        ).scalars().all()
         dishes = db.execute(
             select(Item).where(Item.deleted_at.is_(None)).order_by(Item.name, Item.id)
         ).scalars().all()
-        return RewardListOut(
+        headings = db.execute(
+            select(ItemType)
+            .where(ItemType.deleted_at.is_(None))
+            .order_by(ItemType.sort_order, ItemType.id)
+        ).scalars().all()
+        return ProgramListOut(
             restaurant_name=restaurant["name"],
             currency=restaurant["currency"],
             items=[
                 MenuDishOut(id=d.id, name=d.name, base_price_minor=d.base_price_minor)
                 for d in dishes
             ],
-            rewards=[_reward_out(reward, item) for reward, item in rows],
+            headings=[MenuHeadingOut(id=h.id, name=h.name) for h in headings],
+            programs=[_program_out(db, p) for p in programs],
         )
 
 
 @router.post(
-    "/restaurants/{restaurant_id}/rewards",
-    response_model=RewardAdminOut,
-    status_code=201,
+    "/restaurants/{restaurant_id}/rewards", response_model=ProgramOut, status_code=201
 )
-def create_reward(
-    restaurant_id: UUID, body: RewardIn, admin: User = Depends(require_platform_admin)
+def create_program(
+    restaurant_id: UUID, body: ProgramIn, admin: User = Depends(require_platform_admin)
 ):
-    """Put a dish on the ladder at a threshold."""
+    """Start a loyalty program. It runs from the moment it is saved, unless
+    it was saved switched off."""
     with tenant_session(restaurant_id) as db:
         _restaurant(db, restaurant_id)
         live = db.execute(
-            select(func.count()).select_from(Reward).where(Reward.deleted_at.is_(None))
+            select(func.count())
+            .select_from(LoyaltyProgram)
+            .where(LoyaltyProgram.deleted_at.is_(None))
         ).scalar_one()
-        if live >= MAX_REWARDS:
+        if live >= MAX_PROGRAMS:
             raise errors.validation_error(
-                f"That is {MAX_REWARDS} rewards. Retire one before adding another."
+                f"That is {MAX_PROGRAMS} programs. Retire one before adding another."
             )
-        item = _dish(db, body.item_id)
-        _clash(db, restaurant_id, body.item_id, body.points_required, None)
+        item_id, type_id = _qualifier(db, body)
 
-        reward = Reward(
+        program = LoyaltyProgram(
             restaurant_id=restaurant_id,
-            item_id=item.id,
-            points_required=body.points_required,
-            sort_order=body.sort_order,
+            name=body.name,
+            purchase_type=body.purchase_type,
+            required_count=body.required_count,
+            minimum_spend_minor=(
+                body.minimum_spend_minor
+                if body.purchase_type == PurchaseType.COMPLETED_ORDERS.value
+                else 0
+            ),
+            qualifying_item_id=item_id,
+            qualifying_item_type_id=type_id,
+            reward_expires_days=body.reward_expires_days,
             is_active=body.is_active,
+            sort_order=body.sort_order,
         )
-        db.add(reward)
+        db.add(program)
         db.flush()
+        _set_choices(db, restaurant_id, program, body.choices)
 
         with system_session() as platform:
             _audit(
-                platform, admin, "SUPER_ADMIN_CREATE_REWARD",
+                platform, admin, "SUPER_ADMIN_CREATE_LOYALTY_PROGRAM",
                 {
                     "restaurant_id": str(restaurant_id),
-                    "reward_id": str(reward.id),
-                    "item": item.name,
-                    "points_required": reward.points_required,
+                    "program_id": str(program.id),
+                    "name": program.name,
+                    "purchase_type": program.purchase_type,
+                    "required_count": program.required_count,
                 },
             )
-        log.info(
-            "reward %s at %s points created on restaurant %s",
-            item.name, reward.points_required, restaurant_id,
-        )
-        return _reward_out(reward, item)
+        log.info("loyalty program %r created on restaurant %s", program.name, restaurant_id)
+        return _program_out(db, program)
 
 
 @router.patch(
-    "/restaurants/{restaurant_id}/rewards/{reward_id}", response_model=RewardAdminOut
+    "/restaurants/{restaurant_id}/rewards/{program_id}", response_model=ProgramOut
 )
-def update_reward(
+def update_program(
     restaurant_id: UUID,
-    reward_id: UUID,
-    body: RewardPatch,
+    program_id: UUID,
+    body: ProgramPatch,
     admin: User = Depends(require_platform_admin),
 ):
-    """Change a reward: its dish, its threshold, its order, or switch it off."""
+    """Change a program.
+
+    What a program counts cannot change: the cards already filling against
+    it were earned under the old rule, and rewriting the rule under them
+    would silently restate what every customer has done. Retire it and start
+    another instead.
+    """
     changes = body.model_dump(exclude_unset=True)
     if not changes:
         raise errors.validation_error("No changes to save.")
+    choices = changes.pop("choices", None)
 
     with tenant_session(restaurant_id) as db:
         _restaurant(db, restaurant_id)
-        reward = _reward(db, reward_id)
-        item = _dish(db, changes.get("item_id") or reward.item_id)
-        _clash(
-            db, restaurant_id, item.id,
-            changes.get("points_required") or reward.points_required,
-            reward.id,
-        )
+        program = _program(db, program_id)
         for field, value in changes.items():
-            setattr(reward, field, value)
+            setattr(program, field, value)
+        if choices is not None:
+            _set_choices(db, restaurant_id, program, choices)
         db.flush()
 
         with system_session() as platform:
             _audit(
-                platform, admin, "SUPER_ADMIN_UPDATE_REWARD",
+                platform, admin, "SUPER_ADMIN_UPDATE_LOYALTY_PROGRAM",
                 {
                     "restaurant_id": str(restaurant_id),
-                    "reward_id": str(reward.id),
+                    "program_id": str(program.id),
                     **{k: str(v) for k, v in changes.items()},
                 },
             )
-        return _reward_out(reward, item)
+        return _program_out(db, program)
 
 
-@router.delete("/restaurants/{restaurant_id}/rewards/{reward_id}", status_code=204)
-def delete_reward(
-    restaurant_id: UUID, reward_id: UUID, admin: User = Depends(require_platform_admin)
+@router.delete("/restaurants/{restaurant_id}/rewards/{program_id}", status_code=204)
+def delete_program(
+    restaurant_id: UUID, program_id: UUID, admin: User = Depends(require_platform_admin)
 ):
-    """Take a reward off the ladder.
+    """Retire a program.
 
-    A soft delete, like a coupon's: orders that were given this dish free
-    keep their own line and their own figures, and the row stays so an
-    operator asking what the ladder used to offer gets an answer.
+    Soft, and the ledger is untouched: stamps already earned stay earned and
+    rewards already won stay spendable. Ending a promotion is not the same
+    as taking back what it gave, and a customer holding a free burger should
+    still get it.
     """
     with tenant_session(restaurant_id) as db:
         _restaurant(db, restaurant_id)
-        reward = _reward(db, reward_id)
-        reward.deleted_at = func.now()
+        program = _program(db, program_id)
+        program.deleted_at = func.now()
+        program.is_active = False
         db.flush()
 
         with system_session() as platform:
             _audit(
-                platform, admin, "SUPER_ADMIN_DELETE_REWARD",
-                {"restaurant_id": str(restaurant_id), "reward_id": str(reward_id)},
+                platform, admin, "SUPER_ADMIN_DELETE_LOYALTY_PROGRAM",
+                {"restaurant_id": str(restaurant_id), "program_id": str(program_id)},
             )
     return None
 

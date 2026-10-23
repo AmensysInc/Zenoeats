@@ -7,7 +7,7 @@ import { usePortalQuery } from "@/features/storefront/storefrontApi";
  *
  * Two jobs, and neither is decoration.
  *
- * The allergen notice. Zenoeats does not cook the food, does not inspect the
+ * The allergen notice. ZenoEats does not cook the food, does not inspect the
  * kitchen and cannot verify an ingredient list, so the only honest thing to
  * say is "ask the restaurant" -- and it has to be said where someone about to
  * order will see it, not only inside a policy they will not open. It names
@@ -29,7 +29,7 @@ export function CustomerFooter() {
   // under every page that has no bar at all.
   const count = useAppSelector(selectCartCount);
   // The same cached read every other customer component makes, so this costs
-  // no request of its own. "Contact us" means the restaurant, not Zenoeats:
+  // no request of its own. "Contact us" means the restaurant, not ZenoEats:
   // the notice above has just told them to ask about an ingredient, and the
   // kitchen is the only party that can answer.
   const { data } = usePortalQuery();
@@ -80,8 +80,8 @@ export function CustomerFooter() {
         <div className="space-y-1 pt-1 text-center">
           {/* Read at render rather than written in: a hard-coded year is
               wrong every January and nobody notices until a customer does. */}
-          <p>© {new Date().getFullYear()} Zenoeats. All rights reserved.</p>
-          <p className="font-semibold text-ink">Powered by Zenoeats</p>
+          <p>© {new Date().getFullYear()} ZenoEats. All rights reserved.</p>
+          <p className="font-semibold text-ink">Powered by ZenoEats</p>
         </div>
       </div>
     </footer>

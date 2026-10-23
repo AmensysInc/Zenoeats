@@ -62,7 +62,7 @@ function Brand() {
       <span className="brand-mark" aria-hidden="true">
         z
       </span>
-      Zenoeats
+      ZenoEats
     </div>
   );
 }

@@ -1,6 +1,6 @@
 """Coupons, created by the platform rather than by the restaurant.
 
-A promotion code is a Zenoeats decision here, not a tenant's: the people who
+A promotion code is a ZenoEats decision here, not a tenant's: the people who
 run the platform set them up on a restaurant's behalf, and the restaurant's
 own portal has no coupon screen at all. Which is why this is mounted on the
 admin router, behind require_platform_admin, on admin.<root domain>.

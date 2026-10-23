@@ -52,34 +52,57 @@ export type CouponList = {
   coupons: Coupon[];
 };
 
-/** One dish on the ladder, as the admin list shows it. */
-export type Reward = {
-  id: string;
+/** One dish a program's reward may be taken as. */
+export type ProgramChoice = {
   item_id: string;
   item_name: string;
-  points_required: number;
-  sort_order: number;
-  is_active: boolean;
-  /** Whether the kitchen can serve it. A reward on a sold-out dish stays on
-   *  the ladder and cannot be claimed, which an operator should see rather
-   *  than discover. */
-  item_is_available: boolean;
+  is_available: boolean;
 };
 
-export type RewardDraft = {
-  item_id: string;
-  points_required: number;
-  sort_order?: number;
+/** A loyalty program as the admin list shows it.
+ *
+ *  `summary` is the rule in a sentence, built server-side so this list and
+ *  anything later read it the same way rather than each reassembling it from
+ *  five fields. */
+export type LoyaltyProgram = {
+  id: string;
+  name: string;
+  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM";
+  required_count: number;
+  minimum_spend_minor: number;
+  qualifying_item_id: string | null;
+  qualifying_item_type_id: string | null;
+  summary: string;
+  reward_expires_days: number | null;
+  is_active: boolean;
+  sort_order: number;
+  choices: ProgramChoice[];
+};
+
+export type ProgramDraft = {
+  name: string;
+  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM";
+  required_count: number;
+  minimum_spend_minor?: number;
+  /** MENU_ITEM only, and exactly one of the two: a named dish counts only
+   *  itself, a named heading counts everything filed under it. */
+  qualifying_item_id?: string | null;
+  qualifying_item_type_id?: string | null;
+  reward_expires_days?: number | null;
   is_active?: boolean;
+  sort_order?: number;
+  /** The dishes the reward may be taken as. At least one. */
+  choices: string[];
 };
 
 export type MenuDish = { id: string; name: string; base_price_minor: number };
 
-export type RewardList = {
+export type ProgramList = {
   restaurant_name: string;
   currency: string;
   items: MenuDish[];
-  rewards: Reward[];
+  headings: MenuHeading[];
+  programs: LoyaltyProgram[];
 };
 
 /** An offer as the admin list shows it. Named AdminOffer because the
@@ -454,15 +477,15 @@ export const adminApi = api.injectEndpoints({
     // --- rewards and offers ------------------------------------------------
     //
     // The platform's to create, for the reason coupons are: what a promotion
-    // costs is Zenoeats' business as much as the kitchen's. No screen for
+    // costs is ZenoEats' business as much as the kitchen's. No screen for
     // either in the restaurant portal, and no endpoint behind one.
 
-    rewards: build.query<RewardList, string>({
+    rewards: build.query<ProgramList, string>({
       query: (id) => ({ url: `/admin/restaurants/${id}/rewards` }),
       providesTags: (_r, _e, id) => [{ type: "Reward", id }],
     }),
 
-    createReward: build.mutation<Reward, { id: string; draft: RewardDraft }>({
+    createReward: build.mutation<LoyaltyProgram, { id: string; draft: ProgramDraft }>({
       query: ({ id, draft }) => ({
         url: `/admin/restaurants/${id}/rewards`,
         method: "POST",
@@ -472,8 +495,8 @@ export const adminApi = api.injectEndpoints({
     }),
 
     updateReward: build.mutation<
-      Reward,
-      { id: string; rewardId: string; patch: Partial<RewardDraft> }
+      LoyaltyProgram,
+      { id: string; rewardId: string; patch: Partial<ProgramDraft> }
     >({
       query: ({ id, rewardId, patch }) => ({
         url: `/admin/restaurants/${id}/rewards/${rewardId}`,

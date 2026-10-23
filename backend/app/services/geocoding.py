@@ -276,7 +276,7 @@ def _contact() -> str:
 
 
 def _user_agent() -> str:
-    return f"Zenoeats/1.0 ({_contact()})"
+    return f"ZenoEats/1.0 ({_contact()})"
 
 
 def _claim_the_second() -> bool:

@@ -206,7 +206,7 @@ function StorefrontEditor({ initial }: { initial: StorefrontSettings }) {
             <p className="field-hint">{MAP_STYLES.find((s) => s.key === mapStyle)?.hint}</p>
             <MapStylePreview styleKey={mapStyle} theme={theme} pins={mapPins(theme, mapPinsThemed)} />
             <Toggle label="Use my palette for the map pins" checked={mapPinsThemed} onChange={setMapPinsThemed} />
-            <p className="field-hint">Off keeps the Zenoeats pins, which is the safer choice if your brand colour is close to the colour of a road.</p>
+            <p className="field-hint">Off keeps the ZenoEats pins, which is the safer choice if your brand colour is close to the colour of a road.</p>
 
             <Save disabled={off} busy={busy === "Delivery map"} onClick={() => void save("Delivery map", async () => {
               const result = await saveMap({ map_style_key: mapStyle, map_pins_themed: mapPinsThemed }).unwrap();
@@ -214,9 +214,9 @@ function StorefrontEditor({ initial }: { initial: StorefrontSettings }) {
             })} />
           </fieldset>
         </SettingsCard>
-        <SettingsCard id="storefront-brand" title="Brand" subtitle="Choose a palette and font pairing, or keep the Zenoeats default.">
+        <SettingsCard id="storefront-brand" title="Brand" subtitle="Choose a palette and font pairing, or keep the ZenoEats default.">
           <fieldset disabled={!!busy} className="min-w-0 space-y-4">
-          <Field label="Palette"><select className="field" value={theme === null ? "default" : PALETTES.find((p) => same({ ...p.theme, font_pair: theme.font_pair }, theme))?.name ?? "custom"} onChange={(e) => setTheme(e.target.value === "default" ? null : { ...(PALETTES.find((p) => p.name === e.target.value)?.theme ?? chosenTheme), font_pair: chosenTheme.font_pair })}><option value="default">Zenoeats default</option>{PALETTES.map((p) => <option key={p.name}>{p.name}</option>)}<option value="custom">Custom</option></select></Field>
+          <Field label="Palette"><select className="field" value={theme === null ? "default" : PALETTES.find((p) => same({ ...p.theme, font_pair: theme.font_pair }, theme))?.name ?? "custom"} onChange={(e) => setTheme(e.target.value === "default" ? null : { ...(PALETTES.find((p) => p.name === e.target.value)?.theme ?? chosenTheme), font_pair: chosenTheme.font_pair })}><option value="default">ZenoEats default</option>{PALETTES.map((p) => <option key={p.name}>{p.name}</option>)}<option value="custom">Custom</option></select></Field>
           <div className="grid grid-cols-2 gap-4">{(["brand", "hero", "accent", "paper"] as const).map((key) => <Field key={key} label={key.charAt(0).toUpperCase() + key.slice(1)}><input aria-label={`${key} colour`} className="h-11 w-full" type="color" value={chosenTheme[key]} onChange={(e) => setTheme({ ...chosenTheme, [key]: e.target.value })} /><span className="text-caption">{chosenTheme[key]}</span></Field>)}</div>
           <ul className="text-caption" aria-live="polite">{checks.map((check) => <li key={check.name} className={check.ratio < 4.5 ? "text-danger" : "text-muted"}>{check.name}: {check.ratio.toFixed(2)}:1 - {check.ratio >= 4.5 ? "Pass" : "Needs 4.5:1"}</li>)}</ul>
           <Field label="Font pairing"><select className="field" value={chosenTheme.font_pair} onChange={(e) => setTheme({ ...chosenTheme, font_pair: e.target.value as FontPair })}>{Object.entries(FONT_PAIRS).map(([value, font]) => <option key={value} value={value}>{font.label}</option>)}</select></Field>

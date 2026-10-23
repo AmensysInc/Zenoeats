@@ -66,7 +66,7 @@ def test_every_request_identifies_this_deployment(monkeypatch):
     geocoding._nominatim("1800 Greenville Ave, Dallas, TX")
 
     agent = seen["headers"]["User-Agent"]
-    assert "Zenoeats" in agent
+    assert "ZenoEats" in agent
     assert "ops@example.com" in agent, "their policy wants a way to reach us"
     assert seen["url"].startswith("https://nominatim.openstreetmap.org/")
 

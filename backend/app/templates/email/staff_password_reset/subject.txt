@@ -1,1 +1,1 @@
-Your password for {{ restaurant_name }} on Zenoeats was reset
+Your password for {{ restaurant_name }} on ZenoEats was reset

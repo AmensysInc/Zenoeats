@@ -39,7 +39,7 @@ from app.schemas.api import (
     ChangePasswordIn, MenuOut, StaffInviteOut, StaffLoginIn, StaffMeOut,
     StaffPasswordResetOut, known_timezone,
 )
-from app.services import geocoding, images, restaurant_profile, stripe_service, tracking, storefront
+from app.services import geocoding, images, loyalty, restaurant_profile, stripe_service, tracking, storefront
 from app.services import email as email_service
 from app.services import order_emails, staff_emails
 from app.schemas.storefront import ThemePatch, CategoryPatch, BannersIn, CollectionsIn, MapPatch, ShortcutsIn
@@ -3267,7 +3267,7 @@ def cancel_order(
     already cancelled stays with managers (POST /orders/{id}/refund).
 
     With `refund` the customer's money goes back on the same card, whole,
-    including Zenoeats' fee. Without it nothing moves and the order keeps a
+    including ZenoEats' fee. Without it nothing moves and the order keeps a
     refund to issue, which the board says out loud.
 
     The refund is asked of Stripe after the cancellation is written, never
@@ -3347,6 +3347,15 @@ def _refund(db: Session, order: Order, payment: Payment, membership, reason: str
     )
     if refund.get("status") == "succeeded":
         payment.refunded_minor = min(int(refund.get("amount") or 0), payment.amount_minor)
+    # The stamps this order earned go back with the money. A REVERSE row
+    # rather than deleting the EARN, so what happened stays legible, and
+    # floored at zero -- a customer who already spent the reward keeps the
+    # dish, because clawing back food is not a thing a restaurant can do.
+    #
+    # On acceptance rather than on the webhook: a refund Stripe has accepted
+    # is a refund, and leaving the stamps standing until a webhook lands
+    # would let a customer finish a card on an order being handed back.
+    loyalty.reverse_order(db, order)
     return None
 
 
@@ -4257,7 +4266,7 @@ def reset_staff_password(
 
     Another admin's. Admins are otherwise equal, but a reset hands over the
     login, and with it every action recorded under that person's name. Those
-    go through Zenoeats support.
+    go through ZenoEats support.
 
     A login that is also on another restaurant's team. Resetting it would let
     this restaurant's admin sign in there as that person -- the takeover the
@@ -4273,13 +4282,13 @@ def reset_staff_password(
     if target.role_code == StaffRole.ADMIN.value:
         raise errors.ApiError(
             409, "ADMIN_PASSWORD_RESET_BY_SUPPORT",
-            "An admin's password is reset by Zenoeats support, not from here.",
+            "An admin's password is reset by ZenoEats support, not from here.",
         )
     if _login_used_elsewhere(target.user_id):
         raise errors.ApiError(
             409, "LOGIN_SHARED_WITH_ANOTHER_RESTAURANT",
-            "This person also works at another Zenoeats restaurant, so their "
-            "password can only be reset by Zenoeats support.",
+            "This person also works at another ZenoEats restaurant, so their "
+            "password can only be reset by ZenoEats support.",
         )
 
     temp_password = staff_auth.generate_temp_password()

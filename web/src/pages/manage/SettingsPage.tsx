@@ -23,7 +23,7 @@ const SECTIONS = [
   ["settings-address", "Where you are"],
   ["settings-delivery", "Delivery"],
   ["settings-tax", "Tax"],
-  ["settings-platform", "Set by Zenoeats"],
+  ["settings-platform", "Set by ZenoEats"],
 ] as const;
 
 const ADDRESS_FIELDS = [
@@ -371,7 +371,7 @@ export function SettingsPage() {
 
           <SettingsCard
             id="settings-platform"
-            title="Set by Zenoeats"
+            title="Set by ZenoEats"
             subtitle="Managed by the platform team."
           >
             <dl>

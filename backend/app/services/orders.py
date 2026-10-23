@@ -217,6 +217,24 @@ def transition(order: Order, to_status: str, *, reason: str | None = None) -> No
         order.expires_at = None
     elif to_status == OrderStatus.COMPLETED.value:
         order.completed_at = now
+        # The one place an order becomes completed, so the one place stamps
+        # are earned. Here rather than at the three call sites that complete
+        # an order, because three places to remember is three places to
+        # forget, and a missed one is a customer whose card silently stops
+        # filling.
+        #
+        # The session comes off the order rather than through the signature:
+        # this function is the transition matrix and every caller passes it
+        # an attached instance. Adding a session parameter would mean
+        # changing every call site to pass what they already hold.
+        from sqlalchemy.orm import object_session
+        from app.services import loyalty
+
+        session = object_session(order)
+        if session is not None:
+            # Idempotent by constraint, so a retried transition credits
+            # nothing twice -- see services/loyalty.py.
+            loyalty.credit_order(session, order)
     elif to_status == OrderStatus.CANCELLED.value:
         order.cancelled_reason = reason
 

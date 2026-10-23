@@ -52,7 +52,7 @@ export function Shell({
 }: {
   title: string;
   titleHref?: string;
-  /** The Zenoeats tile before the wordmark. The platform only: a restaurant's
+  /** The ZenoEats tile before the wordmark. The platform only: a restaurant's
    *  portal carries the restaurant's name, never a substituted logo. */
   brandMark?: boolean;
   nav: NavItem[];

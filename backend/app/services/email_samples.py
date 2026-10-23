@@ -68,7 +68,7 @@ def _staff(kind: str, **kw) -> tuple[str, str, str]:
 
 
 def _code(purpose: str) -> tuple[str, str, str]:
-    """A sign-in code from Clerk, as Zenoeats sends it."""
+    """A sign-in code from Clerk, as ZenoEats sends it."""
     out = email_templates.render("customer_code", purpose=purpose, code="482915")
     return out.subject, out.html, out.text
 
