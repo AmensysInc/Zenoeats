@@ -392,15 +392,21 @@ _PURGE_ORDER = [
     "sent_emails",
     # Before orders: a payment points at the order it paid for.
     "payments",
+    # Before orders too, and for the same reason: a won reward names the
+    # order that spent it, and every stamp names the order that earned it.
+    # The ledger and the cards go before the programs they belong to, which
+    # in turn go before the menu their choices name.
+    "loyalty_rewards",
+    "loyalty_transactions",
+    "customer_loyalty",
+    "loyalty_program_items",
+    "loyalty_programs",
     "orders",
     # After orders, which point at the coupon they used. The scope rows go
     # first: they name both the coupon and a heading, and the headings are
     # deleted further down.
     "coupon_item_types",
     "coupons",
-    # After orders too: an order names the dish it was given free. Before
-    # menu_items, which a reward names.
-    "rewards",
     # Nothing points at an offer, so its place here is only "before the
     # restaurant row itself".
     "offers",
@@ -934,7 +940,7 @@ def start_stripe_onboarding(
     admin: User = Depends(require_platform_admin),
 ):
     """Create or reuse the connected account and return a hosted onboarding
-    link. Zenoeats never touches KYC data.
+    link. ZenoEats never touches KYC data.
 
     Where Stripe sends the operator back is decided here, not by the caller.
     Both URLs used to arrive as query parameters, so anyone who could make

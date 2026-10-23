@@ -221,7 +221,7 @@ export function LocationsPage() {
       <footer className="border-t border-[rgb(var(--ze-footer-line))]">
         <div className="mx-auto flex w-full max-w-[1336px] flex-col items-start justify-between gap-4 px-[19px] py-7 text-caption text-[rgb(var(--ze-footer-text))] sm:flex-row sm:items-center sm:px-7 xl:px-10">
           <p className="font-display text-xl font-bold tracking-[-.8px] text-brick">
-            Zenoeats<span className="text-accent">.</span>
+            ZenoEats<span className="text-accent">.</span>
           </p>
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-1" aria-label="Policies">
             <a className="link text-caption" href="/legal/privacy.html">Privacy</a>
@@ -412,7 +412,7 @@ function PlatformHeader() {
     <header className="border-b border-hairline bg-surface">
       <div className="mx-auto flex w-full max-w-[1336px] items-center justify-between gap-4 px-[19px] py-[15px] sm:px-7 sm:py-[17px] xl:px-10">
         <p className="font-display text-[22px] font-bold tracking-[-.8px] text-brick sm:text-2xl">
-          Zenoeats<span className="text-accent">.</span>
+          ZenoEats<span className="text-accent">.</span>
         </p>
         <p className="hidden text-caption text-muted sm:block">
           Order online for pick-up or delivery

@@ -1,4 +1,4 @@
-"""Zenoeats' application fee on each order.
+"""ZenoEats' application fee on each order.
 
 Money arithmetic in minor units, so every case is exact: no float, no
 rounding that drifts a cent per thousand orders.
@@ -79,7 +79,7 @@ def test_a_fee_is_sent_to_stripe_only_when_there_is_one(fee, monkeypatch):
 def test_stripe_is_never_asked_to_send_its_own_receipt(fee, monkeypatch):
     """In live mode a receipt_email makes Stripe email a receipt whatever the
     account's settings say, and another for each refund -- a second copy of
-    what Zenoeats' own confirmation and refund emails already say."""
+    what ZenoEats' own confirmation and refund emails already say."""
     calls = []
     monkeypatch.setattr(
         stripe_service.stripe.PaymentIntent, "create",

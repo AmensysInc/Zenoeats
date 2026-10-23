@@ -236,7 +236,7 @@ export function StaffPage() {
                 ? issued.email_configured
                   ? `We're emailing them the sign-in link and this temporary password${issuedIsResend ? " — a new one; any earlier password no longer works" : ""}. It's also shown here once, in case the email doesn't arrive, and can't be looked up again. They choose their own at first sign-in, and this one stops working then.`
                   : "Give them this temporary password yourself. It's shown once and can't be looked up again. They choose their own at first sign-in."
-                : `${issued.email_configured ? "We're emailing them the sign-in link. " : ""}They already have a Zenoeats staff login and sign in with the password they have. If they've lost it and work only here, you can reset it from the team list; otherwise Zenoeats support can.`}
+                : `${issued.email_configured ? "We're emailing them the sign-in link. " : ""}They already have a ZenoEats staff login and sign in with the password they have. If they've lost it and work only here, you can reset it from the team list; otherwise ZenoEats support can.`}
             </p>
             {issued.email_configured && (
               // Sending happens a moment later, and can still be refused; the
@@ -253,7 +253,7 @@ export function StaffPage() {
           restaurant&apos;s sign-in page — we email them the link when email is set up —
           and accepts it there before the role becomes active. Someone new also needs the
           temporary password shown here. It goes in the same email when email is set up;
-          otherwise pass it on yourself. Someone who already works at another Zenoeats
+          otherwise pass it on yourself. Someone who already works at another ZenoEats
           restaurant signs in with the password they have.
         </p>
       </Panel>
@@ -410,7 +410,7 @@ export function StaffPage() {
                               {resending === m.id ? "resending…" : "resend invite"}
                             </button>
                           )}
-                          {/* An admin's password goes through Zenoeats support,
+                          {/* An admin's password goes through ZenoEats support,
                               so one admin cannot sign in as another. */}
                           {m.role_code !== "ADMIN" && (
                             <button type="button" className="link min-h-[30px] text-caption" onClick={() => openConfirm(m.id, "reset")}>

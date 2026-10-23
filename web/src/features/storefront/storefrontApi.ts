@@ -1,5 +1,5 @@
 import { api } from "@/services/api";
-import type { Amounts, AppliedCoupon, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Offer, Order, OrderSummary, PlatformLocation, Portal, Rewards } from "@/types";
+import type { Amounts, AppliedCoupon, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Offer, Order, OrderSummary, PlatformLocation, Portal, Loyalty } from "@/types";
 
 export type QuoteItem = {
   menu_item_id: string;
@@ -43,14 +43,14 @@ export const storefrontApi = api.injectEndpoints({
       providesTags: ["Menu"],
     }),
 
-    /** This restaurant's reward ladder, and the caller's standing in it.
+    /** This restaurant's loyalty programs, and the caller's cards.
      *
      *  `customerAuth` because the balance is the point: without the token the
      *  server answers with the ladder and `collecting: false`, which is a
      *  different and less useful page. It does not refuse an anonymous
      *  caller, so the ladder still renders for somebody deciding whether to
      *  make an account. */
-    rewards: build.query<Rewards, void>({
+    rewards: build.query<Loyalty, void>({
       query: () => ({ url: "/rewards", customerAuth: true }),
       providesTags: ["Rewards"],
     }),

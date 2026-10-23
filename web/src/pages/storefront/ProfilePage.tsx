@@ -548,28 +548,28 @@ function SavedItems({ currency, orderable }: { currency: string; orderable: bool
 // ----------------------------------------------------------------- rewards
 
 /**
- * What the customer has earned here, and what it is worth.
+ * The cards this customer holds here, and what each is worth.
  *
- * A point is a completed order, counted server-side from the orders
- * themselves, so this page never adds anything up and cannot disagree with
- * the kitchen about how many visits someone has made.
+ * A stamp card rather than a running total: the bar fills towards the next
+ * reward and empties when one is won, the way a paper card is handed over.
+ * Stamps are counted server-side from the orders that earned them, so this
+ * page never adds anything up.
  *
- * The ladder is shown whole, reached rungs and unreached alike. A program
- * whose unreached half is hidden is a program nobody saves towards, and the
- * point of the page is the rung above the one you are on.
+ * Programs the customer has not started are shown at zero. The point of the
+ * page is the card you have not filled yet.
  */
 function RewardsTab({ guest }: { guest: boolean }) {
-  const rewards = useRewardsQuery();
+  const loyalty = useRewardsQuery();
 
-  if (rewards.isLoading) return <StatePage busy>Loading…</StatePage>;
-  if (rewards.error) {
+  if (loyalty.isLoading) return <StatePage busy>Loading…</StatePage>;
+  if (loyalty.error) {
     return (
-      <StatePage title="Rewards are unavailable">{errorMessage(rewards.error)}</StatePage>
+      <StatePage title="Rewards are unavailable">{errorMessage(loyalty.error)}</StatePage>
     );
   }
 
-  const data = rewards.data;
-  if (!data || data.rewards.length === 0) {
+  const data = loyalty.data;
+  if (!data || data.programs.length === 0) {
     return (
       <section aria-label="Your rewards">
         <Empty>This restaurant is not running a rewards program yet.</Empty>
@@ -577,134 +577,72 @@ function RewardsTab({ guest }: { guest: boolean }) {
     );
   }
 
-  // The rungs, each with the dishes it offers. Grouped here rather than
-  // server-side because the order is already the server's and grouping is a
-  // presentation question.
-  const rungs = data.thresholds.map((points) => ({
-    points,
-    items: data.rewards.filter((r) => r.points_required === points),
-    reached: data.points >= points,
-  }));
-
-  // How far along the bar sits: towards the next rung, or full once every
-  // rung is reached.
-  const target = data.next_threshold;
-  const earnedTowards = target === null ? 1 : Math.min(1, data.points / target);
-
   return (
     <section aria-label="Your rewards">
-      <div className="rounded-panel border border-hairline bg-surface p-5 sm:p-6">
-        <p className="eyebrow text-muted">
-          {guest ? "Not collecting yet" : "Your points"}
+      {!data.collecting && (
+        <p className="mb-5 rounded-panel border border-hairline bg-surface p-5 text-sm text-muted">
+          {guest
+            ? "Stamps are saved to your account. Create one, or sign in, and every order you complete here counts towards something free."
+            : "Sign in and every order you complete here counts towards something free."}
         </p>
-        <p className="my-2 font-display text-[34px] leading-none tracking-[-1px]">
-          <span className="tnum">{data.points}</span>
-          <span className="ml-2 text-[15px] font-normal tracking-normal text-muted">
-            {data.points === 1 ? "point" : "points"}
-          </span>
-        </p>
+      )}
 
-        {/* A guest has no identity to accrue against -- the row is made per
-            checkout -- so this says so plainly rather than showing a zero
-            that looks like a start. */}
-        {!data.collecting ? (
-          <p className="text-sm text-muted">
-            Points are saved to your account. Create one, or sign in, and every
-            order you complete here counts towards a free item.
-          </p>
-        ) : target === null ? (
-          <p className="text-sm text-brick">
-            You have unlocked everything on the list. Enjoy.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-muted">
-              <span className="tnum">{data.points_to_next}</span>{" "}
-              {data.points_to_next === 1 ? "more order" : "more orders"} until{" "}
-              <span className="tnum">{target}</span> points.
-            </p>
-            {/* aria-hidden: the sentence above already says it, and a
-                progress bar read out as a percentage says it worse. */}
+      {data.programs.map((card) => {
+        const toGo = Math.max(0, card.required_count - card.current_count);
+        const filled = card.required_count
+          ? Math.min(1, card.current_count / card.required_count)
+          : 0;
+        return (
+          <div
+            key={card.program_id}
+            className="mb-5 rounded-panel border border-hairline bg-surface p-5 sm:p-6"
+          >
+            <p className="eyebrow text-muted">{card.name}</p>
+
+            {card.rewards_ready > 0 ? (
+              <p className="my-2 font-display text-[26px] leading-[1.15] tracking-[-.6px] text-brick">
+                {card.rewards_ready === 1
+                  ? "You have a free item waiting"
+                  : `You have ${card.rewards_ready} free items waiting`}
+              </p>
+            ) : (
+              <p className="my-2 font-display text-[26px] leading-[1.15] tracking-[-.6px]">
+                <span className="tnum">{card.current_count}</span>
+                <span className="text-muted"> of </span>
+                <span className="tnum">{card.required_count}</span>
+              </p>
+            )}
+
+            {/* aria-hidden: the sentence below says it, and a bar read out
+                as a percentage says it worse. */}
             <div
               aria-hidden="true"
-              className="mt-3 h-2 overflow-hidden rounded-full bg-[rgb(var(--ze-shortcut-ground))]"
+              className="mt-1 h-2 overflow-hidden rounded-full bg-[rgb(var(--ze-shortcut-ground))]"
             >
               <div
                 className="h-full rounded-full bg-brick transition-[width] duration-500 ease-standard"
-                style={{ width: `${Math.round(earnedTowards * 100)}%` }}
+                style={{ width: `${Math.round(filled * 100)}%` }}
               />
             </div>
-          </>
-        )}
-      </div>
 
-      <h2 className="mb-1 mt-7 font-display text-[22px] leading-[1.2] tracking-[-.4px]">
-        What you can get
-      </h2>
-      <p className="mb-4 text-caption text-muted">
-        One free item per order. A reward stays yours once you reach it.
-      </p>
+            <p className="mt-3 text-sm text-muted">
+              {card.rewards_ready > 0
+                ? "Claim it at checkout on your next order."
+                : toGo === 0
+                  ? "One more qualifying order."
+                  : `Only ${toGo} more to go.`}
+            </p>
 
-      {rungs.map((rung) => (
-        <div key={rung.points} className="mt-5">
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            <span className="tnum">{rung.points}</span> points
-            {rung.reached ? (
-              <span className="rounded-[5px] bg-brickSoft px-[7px] py-1 text-[11px] font-[650] text-brick">
-                Unlocked
-              </span>
-            ) : (
-              <span className="text-caption font-normal text-muted">
-                {/* Counted from the balance, not from the rung below: what a
-                    customer wants to know is how many more orders. */}
-                {rung.points - data.points} to go
-              </span>
+            {card.choices.length > 0 && (
+              <p className="mt-2 text-caption text-muted">
+                Choose from{" "}
+                {card.choices.map((c) => c.item_name).join(", ")}
+                {"."}
+              </p>
             )}
-          </p>
-          <ul className="flex flex-col">
-            {rung.items.map((reward) => (
-              <li
-                key={reward.id}
-                className={`flex items-center gap-4 border-t border-hairline py-4 ${
-                  rung.reached ? "" : "opacity-[.55]"
-                }`}
-              >
-                {reward.image_url ? (
-                  <MenuImage
-                    src={reward.image_url}
-                    className="h-16 w-16 shrink-0 rounded-button bg-paper object-cover"
-                  />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="grid h-16 w-16 shrink-0 place-items-center rounded-button bg-paper text-muted"
-                  >
-                    <Icon name="tag" className="h-6 w-6" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-[650]">{reward.item_name}</span>
-                  {/* Two separate reasons, said separately: a dish you have
-                      not earned and a dish the kitchen has run out of are
-                      not the same disappointment. */}
-                  <span className="block text-caption text-muted">
-                    {!reward.is_available
-                      ? "Sold out right now"
-                      : reward.is_claimable
-                        ? "Yours to claim"
-                        : `Reach ${reward.points_required} points`}
-                  </span>
-                </span>
-                {reward.is_claimable && (
-                  <span className="rounded-[5px] border border-brick px-[7px] py-1 text-[11px] font-[650] text-brick">
-                    Free
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+          </div>
+        );
+      })}
     </section>
   );
 }

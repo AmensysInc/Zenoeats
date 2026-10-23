@@ -344,38 +344,50 @@ export type Order = {
   refund_minor: number | null;
 };
 
-/** One dish the rewards program gives away, at the threshold it is given at.
+/** One dish a loyalty reward may be taken as.
  *
- *  `is_available` is whether the kitchen can serve it; `is_claimable` is
- *  whether this customer may take it on this order. Two flags rather than
- *  one, so a card can say "3 more orders" or "sold out" instead of one word
- *  covering both. */
-export type Reward = {
-  id: string;
+ *  `is_available` is whether the kitchen can serve it. A choice stays listed
+ *  when sold out -- it is part of the program -- but cannot be taken today. */
+export type RewardChoice = {
   item_id: string;
   item_name: string;
-  points_required: number;
   image_url: string | null;
   is_available: boolean;
-  is_claimable: boolean;
 };
 
-/** A customer's standing in one restaurant's program.
+/** One card a customer holds.
  *
- *  `points` is their completed orders here, counted server-side rather than
- *  stored. `collecting` is false without an account: a guest row lives for
- *  one checkout, so a balance of zero there is not progress and the page
- *  should invite rather than report it.
+ *  `current_count` is stamps on the card now, not stamps ever earned: winning
+ *  a reward takes its stamps off, the way a paper card is handed over.
+ *  `rewards_ready` is how many filled cards are waiting to be spent, which is
+ *  a different number and can be more than one. */
+export type LoyaltyCard = {
+  program_id: string;
+  name: string;
+  required_count: number;
+  current_count: number;
+  rewards_ready: number;
+  choices: RewardChoice[];
+};
+
+/** A reward won and not yet spent, as checkout offers it. */
+export type SpendableReward = {
+  id: string;
+  program_id: string;
+  /** Null where the program sets no expiry, which is the kinder default. */
+  expires_at: string | null;
+  choices: RewardChoice[];
+};
+
+/** A customer's standing in one restaurant's loyalty programs.
  *
- *  `next_threshold` and `points_to_next` are both null once every rung is
- *  reached -- "0 more orders" is not progress either. */
-export type Rewards = {
-  points: number;
+ *  `collecting` is false without an account: a guest row lives for one
+ *  checkout, so there is no card and a zero there is not progress. The
+ *  programs are still listed, because they are the reason to make one. */
+export type Loyalty = {
   collecting: boolean;
-  thresholds: number[];
-  next_threshold: number | null;
-  points_to_next: number | null;
-  rewards: Reward[];
+  programs: LoyaltyCard[];
+  rewards: SpendableReward[];
 };
 
 /** Something the storefront advertises, for a while. Carries no discount and

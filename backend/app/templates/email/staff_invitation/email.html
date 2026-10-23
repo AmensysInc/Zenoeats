@@ -24,7 +24,7 @@
 {% elif has_temporary_password %}
 <p>Your manager will give you a temporary password. You'll choose your own the first time you sign in, then accept the invitation.</p>
 {% else %}
-<p>Sign in with the Zenoeats staff password you already use, then accept the invitation.</p>
+<p>Sign in with the ZenoEats staff password you already use, then accept the invitation.</p>
 {% endif %}
 {{ ui.button(sign_in_url, "Sign in to " ~ restaurant_name) }}
 <p style="color:{{ ui.muted }};font-size:13px;margin-top:24px">If you weren't expecting this, you can ignore it. The invitation gives no access until it's accepted.</p>

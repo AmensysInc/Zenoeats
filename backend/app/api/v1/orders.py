@@ -41,7 +41,7 @@ from app.schemas.api import (
 from app.core.tenant import extract_slug
 from app.services import (
     account_emails, clerk_customers, coupons, customer_profile, delivery, guest_customers,
-    rewards,
+    loyalty,
     stripe_service, terms, tracking,
 )
 from app.services.orders import DeliveryDetails, create_pending_order, refund_minor
@@ -166,9 +166,8 @@ def quote_cart(
     reward_item_id = None
     if body.reward_item_id is not None:
         try:
-            reward_item_id = rewards.refuse_unless_claimable(
-                db, user, body.reward_item_id
-            ).item_id
+            loyalty.refuse_unless_spendable(db, user, body.reward_item_id)
+            reward_item_id = body.reward_item_id
         except errors.ApiError:
             reward_item_id = None
 
@@ -397,10 +396,12 @@ def create_order(
     # so a reward the storefront offered a few minutes ago is re-earned now
     # or not given.
     reward_item_id = None
+    spending = None
     if body.reward_item_id is not None:
-        reward_item_id = rewards.refuse_unless_claimable(
-            db, user, body.reward_item_id
-        ).item_id
+        # The reward this dish is charged against. Held until the order row
+        # exists, because a reward can only point at an order that is there.
+        spending = loyalty.refuse_unless_spendable(db, user, body.reward_item_id)
+        reward_item_id = body.reward_item_id
 
     cart = price_cart(
         db, restaurant, lines, combos,
@@ -457,6 +458,12 @@ def create_order(
     # New pickup forms send an empty address, while older clients may still
     # provide one. Preserve a supplied snapshot without requiring it.
     order.contact_address = body.contact.address or None
+    # The reward is spent here, against an order that now exists. One reward
+    # per order is enforced by a unique index on redeemed_order_id, and the
+    # free dish itself was already priced into the cart above -- this is what
+    # stops the same reward being spent on a second order.
+    if spending is not None:
+        loyalty.mark_redeemed(db, spending, order, reward_item_id)
     db.flush()
     db.refresh(order)
     # An order-specific address must not overwrite a registered profile.

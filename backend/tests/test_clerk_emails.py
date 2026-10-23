@@ -34,7 +34,7 @@ def _event(delivered_by_clerk=False, slug="verification_code", **data):
         "body": f"<p>Clerk's own body with {CODE}</p>",
         "body_plain": f"Clerk's own body with {CODE}",
         "delivered_by_clerk": delivered_by_clerk,
-        "data": {"otp_code": CODE, "app": {"name": "Zenoeats"}},
+        "data": {"otp_code": CODE, "app": {"name": "ZenoEats"}},
     }
     values.update(data)
     return {"type": "email.created", "object": "event", "data": values}
@@ -162,7 +162,7 @@ def test_a_verification_code_is_sent_in_zenoeats_words(sendgrid):
     [call] = sendgrid.calls
     body = call["json"]
     assert body["personalizations"] == [{"to": [{"email": "sam@example.com"}]}]
-    assert body["subject"] == "Your Zenoeats verification code"
+    assert body["subject"] == "Your ZenoEats verification code"
     # The code is in the email, never in its subject.
     assert CODE in body["content"][0]["value"] and CODE not in body["subject"]
     assert "Clerk's own body" not in body["content"][1]["value"]
@@ -171,7 +171,7 @@ def test_a_verification_code_is_sent_in_zenoeats_words(sendgrid):
 def test_a_reset_code_says_what_it_is_for(sendgrid):
     clerk_emails.send(clerk_emails.seal(_event(slug="reset_password_code")["data"]), "msg_2")
     [call] = sendgrid.calls
-    assert call["json"]["subject"] == "Reset your Zenoeats password"
+    assert call["json"]["subject"] == "Reset your ZenoEats password"
     assert "choose a new password" in call["json"]["content"][0]["value"]
 
 

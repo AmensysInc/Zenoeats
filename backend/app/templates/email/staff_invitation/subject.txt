@@ -1,1 +1,1 @@
-You're invited to join {{ restaurant_name }} on Zenoeats
+You're invited to join {{ restaurant_name }} on ZenoEats
