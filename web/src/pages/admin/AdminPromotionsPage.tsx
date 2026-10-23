@@ -77,9 +77,25 @@ export function AdminPromotionsPage() {
       <ProgramsSection
         restaurantId={id}
         loading={rewards.isLoading}
-        programs={rewards.data?.programs ?? []}
+        programs={(rewards.data?.programs ?? []).filter(
+          (p) => p.purchase_type !== "REFERRAL",
+        )}
         dishes={rewards.data?.items ?? []}
         headings={rewards.data?.headings ?? []}
+        currency={rewards.data?.currency ?? "USD"}
+        onError={setError}
+        onSay={setAnnouncement}
+      />
+
+      <hr className="my-9 border-hairline" />
+
+      <ReferralSection
+        restaurantId={id}
+        loading={rewards.isLoading}
+        offer={(rewards.data?.programs ?? []).find(
+          (p) => p.purchase_type === "REFERRAL",
+        )}
+        dishes={rewards.data?.items ?? []}
         currency={rewards.data?.currency ?? "USD"}
         onError={setError}
         onSay={setAnnouncement}
@@ -443,6 +459,203 @@ function ProgramForm({
         </button>
       </div>
     </form>
+  );
+}
+
+// --------------------------------------------------------------- referrals
+
+/**
+ * Bring a friend, get something free.
+ *
+ * A block of its own rather than a row in the loyalty list, because an
+ * operator thinks of it as its own offer and because there is at most one:
+ * two running at once would pay twice for the same friend with no way to
+ * say which was meant. Underneath it is the same engine -- a program whose
+ * qualifying purchase is a person -- which is why what it pays out in is
+ * chosen exactly as a stamp card's is.
+ *
+ * NOTHING HERE SENDS A MESSAGE. The customer shares their own link from
+ * their own phone; there is no SMS in this stack and none is wanted. The
+ * copy below says so, because an operator switching this on will otherwise
+ * reasonably expect the server to text people.
+ */
+function ReferralSection({
+  restaurantId,
+  loading,
+  offer,
+  dishes,
+  currency,
+  onError,
+  onSay,
+}: {
+  restaurantId: string;
+  loading: boolean;
+  offer: LoyaltyProgram | undefined;
+  dishes: MenuDish[];
+  currency: string;
+  onError: (message: string | null) => void;
+  onSay: (message: string) => void;
+}) {
+  const [create, { isLoading: creating }] = useCreateRewardMutation();
+  const [update] = useUpdateRewardMutation();
+  const [retire] = useRetireRewardMutation();
+  const [busy, setBusy] = useState(false);
+  const [friends, setFriends] = useState("1");
+  const [choices, setChoices] = useState<string[]>([]);
+
+  function toggle(itemId: string) {
+    setChoices((prev) =>
+      prev.includes(itemId) ? prev.filter((i) => i !== itemId) : [...prev, itemId],
+    );
+  }
+
+  async function start(event: React.FormEvent) {
+    event.preventDefault();
+    onError(null);
+    const required = Number(friends);
+    if (!Number.isInteger(required) || required < 1) {
+      return onError("Friends required has to be a whole number, 1 or more.");
+    }
+    if (choices.length === 0) {
+      return onError("Choose at least one dish the reward can be taken as.");
+    }
+    setBusy(true);
+    try {
+      await create({
+        id: restaurantId,
+        draft: {
+          name: "Refer a friend",
+          purchase_type: "REFERRAL",
+          required_count: required,
+          choices,
+        },
+      }).unwrap();
+      onSay("Referral offer started.");
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function act(what: () => Promise<unknown>, said: string) {
+    setBusy(true);
+    onError(null);
+    try {
+      await what();
+      onSay(said);
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="referrals-heading">
+      <h2
+        id="referrals-heading"
+        className="font-display text-[24px] leading-[1.2] tracking-[-.5px]"
+      >
+        Referrals
+      </h2>
+      <p className="mb-4 mt-1 max-w-prose text-caption text-muted">
+        A customer shares their own link. When somebody who has never ordered
+        here uses it and buys something, the customer who shared it wins a free
+        dish. The link is sent by the customer from their own phone — nothing
+        is texted or emailed from here.
+      </p>
+
+      {loading ? (
+        <Loading />
+      ) : offer ? (
+        <div className="flex flex-wrap items-center gap-3 border-t border-hairline py-4">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-[650]">{offer.name}</span>
+            <span className="block max-w-prose text-caption text-muted">
+              {offer.summary}
+            </span>
+            {!offer.is_active && (
+              <span className="block text-caption text-muted">
+                Switched off — no new referrals are being counted
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className="btn-quiet btn-compact"
+            disabled={busy}
+            onClick={() =>
+              act(
+                () =>
+                  update({
+                    id: restaurantId,
+                    rewardId: offer.id,
+                    patch: { is_active: !offer.is_active },
+                  }).unwrap(),
+                offer.is_active ? "Referrals switched off." : "Referrals switched on.",
+              )
+            }
+          >
+            {offer.is_active ? "Switch off" : "Switch on"}
+          </button>
+          {/* Rewards already won stay spendable: ending a promotion is not
+              the same as taking back what it gave. */}
+          <button
+            type="button"
+            className="btn-quiet btn-compact"
+            disabled={busy}
+            onClick={() =>
+              act(
+                () => retire({ id: restaurantId, rewardId: offer.id }).unwrap(),
+                "Referral offer retired.",
+              )
+            }
+          >
+            Retire
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={start} noValidate>
+          <div className="flex flex-wrap items-end gap-4">
+            <label className="w-[170px]">
+              <span className="label">Friends required</span>
+              <input
+                className="field mt-[7px]"
+                inputMode="numeric"
+                value={friends}
+                onChange={(e) => setFriends(e.target.value)}
+              />
+            </label>
+          </div>
+          <fieldset className="mt-4">
+            <legend className="label">Free reward — the customer picks one</legend>
+            <div className="mt-[7px] flex flex-wrap gap-2">
+              {dishes.map((dish) => {
+                const on = choices.includes(dish.id);
+                return (
+                  <button
+                    key={dish.id}
+                    type="button"
+                    aria-pressed={on}
+                    className="chip"
+                    onClick={() => toggle(dish.id)}
+                  >
+                    {dish.name}
+                    <span className="tnum opacity-70">
+                      · {money(dish.base_price_minor, currency)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+          <button type="submit" className="btn-primary mt-5" disabled={creating || busy}>
+            {creating ? "Starting…" : "Start referral offer"}
+          </button>
+        </form>
+      )}
+    </section>
   );
 }
 

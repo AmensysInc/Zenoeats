@@ -322,7 +322,13 @@ def _set_choices(db: Session, restaurant_id: UUID, program: LoyaltyProgram, item
 def _summary(db: Session, program: LoyaltyProgram) -> str:
     """The rule in a sentence, built server-side so the admin list and any
     later digest read it the same way."""
-    if program.purchase_type == PurchaseType.COMPLETED_ORDERS.value:
+    if program.purchase_type == PurchaseType.REFERRAL.value:
+        friends = (
+            "a friend who orders" if program.required_count == 1
+            else f"{program.required_count} friends who order"
+        )
+        earning = f"bringing {friends} for the first time"
+    elif program.purchase_type == PurchaseType.COMPLETED_ORDERS.value:
         spend = (
             f" of at least {program.minimum_spend_minor / 100:.2f}"
             if program.minimum_spend_minor
@@ -343,6 +349,8 @@ def _summary(db: Session, program: LoyaltyProgram) -> str:
         if program.reward_expires_days
         else ""
     )
+    if program.purchase_type == PurchaseType.REFERRAL.value:
+        return f"For {earning}, the customer may have {reward} free{lapses}."
     return f"After {earning}, the customer may have {reward} free{lapses}."
 
 
@@ -448,6 +456,20 @@ def create_program(
             raise errors.validation_error(
                 f"That is {MAX_PROGRAMS} programs. Retire one before adding another."
             )
+        if body.purchase_type == PurchaseType.REFERRAL.value:
+            running = db.execute(
+                select(func.count())
+                .select_from(LoyaltyProgram)
+                .where(
+                    LoyaltyProgram.purchase_type == PurchaseType.REFERRAL.value,
+                    LoyaltyProgram.deleted_at.is_(None),
+                )
+            ).scalar_one()
+            if running:
+                raise errors.validation_error(
+                    "This restaurant already has a referral offer. Change it, or "
+                    "retire it before starting another."
+                )
         item_id, type_id = _qualifier(db, body)
 
         program = LoyaltyProgram(

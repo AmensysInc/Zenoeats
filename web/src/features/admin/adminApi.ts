@@ -67,7 +67,9 @@ export type ProgramChoice = {
 export type LoyaltyProgram = {
   id: string;
   name: string;
-  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM";
+  /** REFERRAL counts people rather than purchases; it has its own block
+   *  on the admin page and at most one may run. */
+  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM" | "REFERRAL";
   required_count: number;
   minimum_spend_minor: number;
   qualifying_item_id: string | null;
@@ -81,7 +83,7 @@ export type LoyaltyProgram = {
 
 export type ProgramDraft = {
   name: string;
-  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM";
+  purchase_type: "COMPLETED_ORDERS" | "MENU_ITEM" | "REFERRAL";
   required_count: number;
   minimum_spend_minor?: number;
   /** MENU_ITEM only, and exactly one of the two: a named dish counts only
