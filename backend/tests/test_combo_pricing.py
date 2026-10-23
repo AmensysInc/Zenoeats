@@ -165,10 +165,12 @@ class FakeChoice:
 
 
 class FakeSlot:
-    def __init__(self, item_type, items, upcharges=None):
+    def __init__(self, item_type, items, upcharges=None, optional=False, skip_credit=0):
         self.id = uuid.uuid4()
         self.item_type = item_type
         self.item_type_id = item_type.id
+        self.is_optional = optional
+        self.skip_credit_minor = skip_credit
         upcharges = upcharges or {}
         self.choices = [FakeChoice(i, upcharges.get(i.name, 0)) for i in items]
 
@@ -579,6 +581,117 @@ def test_an_option_inside_a_fixed_price_combo_costs_what_it_does_outside(jrs_mea
     _combo, _burger, fries, _cheese_fries, _drink, large = jrs_meal
     cart = _fixed(jrs_meal, fries, drink_options=[large])
     assert cart.total_minor == 959
+
+
+# --- a course the customer may leave out (0051) -----------------------------
+
+
+def _optional_drink_meal(kind="PERCENT", value=1000, skip_credit=0):
+    """The burger meal again, with the drink as a course that may be skipped."""
+    burger = FakeItem("Smash Burger", 1000)
+    tea = FakeItem("Iced Tea", 300, DRINKS)
+    fries = FakeItem("Fries", 400, SIDES)
+    combo = FakeCombo(
+        "Burger Meal",
+        [
+            FakeSlot(FOOD, [burger]),
+            FakeSlot(DRINKS, [tea], optional=True, skip_credit=skip_credit),
+            FakeSlot(SIDES, [fries]),
+        ],
+        kind=kind,
+        value=value,
+    )
+    return burger, tea, fries, combo
+
+
+def _without_drink(parts):
+    """Order the meal naming no choice for the drink."""
+    from app.services.pricing import price_cart
+
+    burger, tea, fries, combo = parts
+    raw = {
+        "combo_id": str(combo.id),
+        "quantity": 1,
+        "selections": [
+            {"slot_id": str(combo.slots[0].id), "menu_item_id": str(burger.id)},
+            {"slot_id": str(combo.slots[2].id), "menu_item_id": str(fries.id)},
+        ],
+    }
+    return price_cart(FakeSession([burger, tea, fries], combo), FakeRestaurant(), [], [raw])
+
+
+def test_an_optional_course_may_be_left_out():
+    """The burger and the fries and nothing to drink is an order a customer
+    regularly means to place, and the deal still applies to what is left."""
+    cart = _without_drink(_optional_drink_meal())
+    # The drink's own price is simply not there: $14 of food, not $17.
+    assert cart.subtotal_minor == 1400
+    assert cart.total_minor == 1260  # 10% off the two courses taken
+
+
+def test_a_skipped_course_is_not_on_the_order():
+    """Nothing was chosen, so there is nothing for the kitchen to make."""
+    cart = _without_drink(_optional_drink_meal())
+    assert [line.name for line in cart.lines] == ["Smash Burger", "Fries"]
+
+
+def test_leaving_a_course_out_credits_a_set_price():
+    """A set price is a number, not a sum of parts, so the restaurant says
+    what the course was worth and that is what comes off."""
+    # $9.99 for the meal, a dollar back for taking no drink.
+    cart = _without_drink(_optional_drink_meal(kind="FIXED_PRICE", value=999, skip_credit=100))
+    assert cart.subtotal_minor == 1400
+    assert cart.total_minor == 899
+
+
+def test_a_credit_is_ignored_where_the_parts_price_themselves():
+    """A percentage already drops the drink's own price from the subtotal.
+    Reading the credit too would take the drink off twice."""
+    with_credit = _without_drink(_optional_drink_meal(skip_credit=100))
+    without = _without_drink(_optional_drink_meal(skip_credit=0))
+    assert with_credit.total_minor == without.total_minor == 1260
+
+
+def test_a_credit_larger_than_the_set_price_costs_nothing_rather_than_paying():
+    """The floor is the same one a set price above the parts gets: absorb the
+    mistake, never hand money back."""
+    cart = _without_drink(_optional_drink_meal(kind="FIXED_PRICE", value=500, skip_credit=900))
+    assert cart.total_minor == 0
+
+
+def test_a_required_course_is_still_refused_when_left_out():
+    """Optional is per slot. Making the drink skippable must not quietly make
+    the food skippable too."""
+    burger, tea, fries, combo = _optional_drink_meal()
+    from app.services.pricing import price_cart
+
+    raw = {
+        "combo_id": str(combo.id),
+        "quantity": 1,
+        # The drink, but no food.
+        "selections": [
+            {"slot_id": str(combo.slots[1].id), "menu_item_id": str(tea.id)},
+            {"slot_id": str(combo.slots[2].id), "menu_item_id": str(fries.id)},
+        ],
+    }
+    with pytest.raises(errors.ApiError) as caught:
+        price_cart(FakeSession([burger, tea, fries], combo), FakeRestaurant(), [], [raw])
+    assert "Food" in str(caught.value.detail)
+
+
+def test_a_combo_with_every_course_left_out_is_refused():
+    """A deal on an empty bag. The builder refuses to make one; the pricing
+    refuses to sell one if it exists."""
+    from app.services.pricing import price_cart
+
+    burger = FakeItem("Smash Burger", 1000)
+    combo = FakeCombo("Nothing Meal", [FakeSlot(FOOD, [burger], optional=True)], kind="PERCENT", value=1000)
+    raw = {"combo_id": str(combo.id), "quantity": 1, "selections": []}
+    with pytest.raises(errors.ApiError) as caught:
+        price_cart(FakeSession([burger], combo), FakeRestaurant(), [], [raw])
+    assert "not ready to order" in str(caught.value.detail)
+
+
 
 
 # --- a dish given away by the rewards program (0052) -----------------------

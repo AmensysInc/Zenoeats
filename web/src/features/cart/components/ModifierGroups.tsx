@@ -13,23 +13,31 @@ import { isIncluded, type Selection } from "../modifiers";
  * `scope` disambiguates the radio inputs. Two slots of one combo can offer
  * the same item, and radios sharing a name would act as one group across
  * both, so choosing light ice for the drink would clear it for the other.
+ *
+ * `omit` names groups something else has already answered -- a combo sized
+ * as a whole answers each course's size group -- so the choice is not put
+ * twice, in two places, where the two could disagree. The group is still
+ * selected and still priced; only this list leaves it out.
  */
 export function ModifierGroups({
   item,
   currency,
   selected,
   scope,
+  omit,
   onToggle,
 }: {
   item: Item;
   currency: string;
   selected: Selection;
   scope: string;
+  omit?: readonly string[];
   onToggle: (group: Item["modifier_groups"][number], option: Option) => void;
 }) {
+  const hidden = new Set(omit ?? []);
   return (
     <>
-      {item.modifier_groups.map((group) => {
+      {item.modifier_groups.filter((group) => !hidden.has(group.name)).map((group) => {
         const chosen = selected.get(group.name) ?? [];
         const atMax =
           group.selection_type === "MULTI" && group.max_select > 0 && chosen.length >= group.max_select;

@@ -31,20 +31,15 @@ and keeping it separate means a poster can be written by someone who is not
 allowed to move a price.
 
 Revision ID: 0052
-Revises: 0050
+Revises: 0051
 
-NOTE ON THE GAP. This revises 0050, not 0051: 0051 (a combo course a customer
-may leave out) is still on its own branch and unmerged. The ids are kept
-distinct rather than both claiming 0051, so the two can never collide
-silently -- but whichever branch merges second leaves alembic with two heads
-and must be rebased by pointing its down_revision at the other. One line.
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision = "0052"
-down_revision = "0050"
+down_revision = "0051"
 branch_labels = None
 depends_on = None
 

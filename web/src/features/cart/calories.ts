@@ -39,11 +39,18 @@ export function selectionCalories(item: Item, selected: Selection): number | nul
 /**
  * Whether choosing could raise this item's figure, so the menu card says
  * "from 310 kcal" rather than stating 310 for a large portion too.
+ *
+ * `settled` names groups whose answer is already known -- a combo sized as a
+ * whole has settled each course's size -- so they no longer make the figure
+ * a floor. Without this a sized course would read "from 680 kcal" when 680
+ * is exactly what it is.
  */
-export function canAddCalories(item: Item): boolean {
+export function canAddCalories(item: Item, settled: readonly string[] = []): boolean {
   const included = new Set(item.included_option_ids);
-  return item.modifier_groups.some((group) =>
-    group.options.some((o) => !included.has(o.id) && (o.calories_delta ?? 0) > 0),
+  return item.modifier_groups.some(
+    (group) =>
+      !settled.includes(group.name) &&
+      group.options.some((o) => !included.has(o.id) && (o.calories_delta ?? 0) > 0),
   );
 }
 

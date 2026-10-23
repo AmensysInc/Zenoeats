@@ -285,6 +285,11 @@ type Draft = {
   /** Fixed-price combos only: what choosing an item adds, typed as "1.00",
    *  keyed by item id. Blank means nothing extra. */
   upcharges: Record<string, string>;
+  /** Courses the customer may leave out, keyed by item type id. */
+  optional: Record<string, boolean>;
+  /** Fixed-price combos only: what leaving a course out takes off, typed as
+   *  "1.00", keyed by item type id. Blank means nothing off. */
+  skipCredits: Record<string, string>;
   /** The deal's own photo. Uploaded as it is chosen, attached on save, so
    *  cancelling the form leaves the menu as it was. */
   image: ImageDraft;
@@ -293,10 +298,16 @@ type Draft = {
 function seed(combo: BuilderCombo | undefined, meals: Meal[]): Draft {
   const picked: Record<string, string[]> = {};
   const upcharges: Record<string, string> = {};
+  const optional: Record<string, boolean> = {};
+  const skipCredits: Record<string, string> = {};
   for (const slot of combo?.slots ?? []) {
     picked[slot.item_type_id] = [...slot.item_ids];
     for (const [itemId, minor] of Object.entries(slot.upcharges ?? {})) {
       upcharges[itemId] = minorToDeltaInput(minor);
+    }
+    if (slot.is_optional) optional[slot.item_type_id] = true;
+    if (slot.skip_credit_minor) {
+      skipCredits[slot.item_type_id] = minorToDeltaInput(slot.skip_credit_minor);
     }
   }
 
@@ -313,6 +324,8 @@ function seed(combo: BuilderCombo | undefined, meals: Meal[]): Draft {
         : minorToDeltaInput(combo.discount_value),
     picked,
     upcharges,
+    optional,
+    skipCredits,
   };
 }
 
@@ -400,6 +413,7 @@ function ComboForm({
       .filter((t) => (draft.picked[t.id] ?? []).length > 0)
       .map((t) => ({
         item_type_id: t.id,
+        is_optional: draft.optional[t.id] === true,
         // Only choices this period still serves. A tick left over from before
         // an item was taken off the period is not on screen to untick, and the
         // server refuses it, so it is dropped here rather than failing a save
@@ -427,7 +441,30 @@ function ComboForm({
           if (minor > 0) charged[id] = minor;
         }
         slot.upcharges = charged;
+
+        // What leaving this course out gives back. Only a set price needs
+        // it: the other kinds lose the dish's own price from the subtotal
+        // and need no figure stated.
+        if (slot.is_optional) {
+          const typed = (draft.skipCredits[slot.item_type_id] ?? "").trim();
+          if (typed) {
+            const minor = deltaToMinor(typed);
+            if (minor === null || minor < 0) {
+              const name = headings.find((t) => t.id === slot.item_type_id)?.name ?? "that course";
+              onError(`Enter what leaving ${name} out takes off as a plain amount, like 1.00.`);
+              return;
+            }
+            slot.skip_credit_minor = minor;
+          }
+        }
       }
+    }
+
+    // Something has to be ordered. The server refuses such a combo too, but
+    // saying so here names the fix while the form is still open.
+    if (slots.length > 0 && slots.every((slot) => slot.is_optional)) {
+      onError("At least one course has to be one the customer must take.");
+      return;
     }
 
     if (!slots.length) {
@@ -621,8 +658,8 @@ function ComboForm({
       <fieldset>
         <legend className="mb-1 text-sm font-semibold">What this combo includes</legend>
         <p className="max-w-prose text-caption text-muted">
-          Tick the items a customer may choose from. Every type you tick becomes one required
-          choice.
+          Tick the items a customer may choose from. Every type you tick becomes one
+          choice, required unless you let the customer leave it out.
         </p>
 
         {!draft.mealId ? (
@@ -665,6 +702,49 @@ function ComboForm({
                       );
                     })}
                   </div>
+
+                  {/* Only once the course is part of the combo: there is
+                      nothing to make optional until something is ticked. */}
+                  {picked.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 text-caption">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          disabled={saving}
+                          checked={draft.optional[type.id] === true}
+                          onChange={(e) =>
+                            setDraft((d) => ({
+                              ...d,
+                              optional: { ...d.optional, [type.id]: e.target.checked },
+                            }))
+                          }
+                        />
+                        A customer may leave this out
+                      </label>
+                      {/* A credit only means something on a set price, and
+                          only on a course that can actually be declined. */}
+                      {draft.optional[type.id] === true &&
+                        draft.discountKind === "FIXED_PRICE" && (
+                          <label className="flex items-center gap-2 text-caption">
+                            Leaving it out takes off
+                            <input
+                              className="field w-[110px]"
+                              inputMode="decimal"
+                              placeholder="1.00"
+                              disabled={saving}
+                              value={draft.skipCredits[type.id] ?? ""}
+                              onChange={(e) =>
+                                setDraft((d) => ({
+                                  ...d,
+                                  skipCredits: { ...d.skipCredits, [type.id]: e.target.value },
+                                }))
+                              }
+                            />
+                          </label>
+                        )}
+                    </div>
+                  )}
                 </div>
               );
             })}

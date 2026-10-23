@@ -440,9 +440,11 @@ def combo_discount_minor(
     FIXED_PRICE is expressed as a discount too, so the order, the receipt and
     the reports keep one shape: the items at their own prices, and what the
     deal took off. The deal costs `value` plus `extras_minor` -- the chosen
-    dishes' upcharges and what their options added. Never more than the same
-    food bought separately, so a set price above the parts takes nothing off
-    rather than adding to the bill.
+    dishes' upcharges, what their options added, and less the credit for any
+    optional course left out, which is why that figure may be negative.
+    Never more than the same food bought separately, so a set price above the
+    parts takes nothing off rather than adding to the bill, and a set price
+    credited below zero costs nothing rather than paying the customer.
     """
     if items_subtotal_minor <= 0:
         return 0
@@ -508,9 +510,11 @@ def _price_combo(
     if not combo.is_available:
         raise errors.item_unavailable(f"{combo.name} is not available right now.")
 
-    # One selection per slot, no more and no fewer. Both directions are
-    # checked: a missing slot is an incomplete meal deal sold at meal-deal
-    # price, and an extra one is an item smuggled in under the discount.
+    # One selection per required slot, no more and no fewer. Both directions
+    # are checked: a missing required slot is an incomplete meal deal sold at
+    # meal-deal price, and an extra one is an item smuggled in under the
+    # discount. An optional slot may be left out, and says what that is
+    # worth -- see skip_credit_minor and 0051.
     chosen: dict[UUID, dict] = {}
     for selection in raw.get("selections") or []:
         slot_id = UUID(str(selection["slot_id"]))
@@ -534,9 +538,21 @@ def _price_combo(
     # difference inside a meal as it is outside one).
     extras = 0
 
+    # What skipping optional courses takes off a set price. Collected here
+    # and applied through extras below, which is the thing that adjusts that
+    # price: an upcharge raises it, a skipped course lowers it.
+    skip_credits = 0
+
     for slot in combo.slots:
         selection = chosen.get(slot.id)
         if selection is None:
+            if slot.is_optional:
+                # The customer left this course out, which this combo allows.
+                # Nothing is priced and nothing is served; the credit is what
+                # a set price gives back for it, and the other kinds need no
+                # figure because the dish's price was never in the subtotal.
+                skip_credits += slot.skip_credit_minor
+                continue
             # No article in front of the type name: it is the restaurant's own
             # word and may be plural, so "a Tiffins" is a sentence this cannot
             # write. The name goes after "from", where any name reads.
@@ -603,14 +619,16 @@ def _price_combo(
         )
 
     if not lines:
-        # A combo with no slots is a discount attached to nothing. It cannot
-        # be built through the portal and must not be orderable if one exists.
+        # A combo with no slots is a discount attached to nothing, and so is
+        # one whose every course was optional and left out: either way there
+        # is no food to sell. Neither can be built through the portal and
+        # neither must be orderable if one exists.
         raise errors.item_unavailable(f"{combo.name} is not ready to order.")
 
     # Rounded once per combo and then multiplied, not the other way round.
     # Rounding the total of ten combos gives a different answer from ten
     # rounded combos, and the receipt shows the per-combo figure.
     discount_each = combo_discount_minor(
-        combo.discount_kind, combo.discount_value, items_subtotal, extras
+        combo.discount_kind, combo.discount_value, items_subtotal, extras - skip_credits
     )
     return lines, discount_each * quantity

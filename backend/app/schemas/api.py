@@ -197,7 +197,7 @@ class SectionOut(BaseModel):
 
 
 class ComboSlotOut(BaseModel):
-    """One required choice inside a combo. Exactly one item, always."""
+    """One choice inside a combo. At most one item, required unless optional."""
 
     id: UUID
     item_type_id: UUID
@@ -206,6 +206,13 @@ class ComboSlotOut(BaseModel):
     # Item id -> what choosing it adds to a FIXED_PRICE combo, in minor units.
     # Only the dishes that cost extra; absent means nothing on top.
     upcharges: dict[UUID, int] = Field(default_factory=dict)
+    # Whether this course may be left out. The storefront offers it as a
+    # choice beside the dishes; the pricing accepts a combo that names none.
+    is_optional: bool = False
+    # What leaving it out takes off a FIXED_PRICE combo, in minor units. The
+    # other kinds drop the dish's own price from the subtotal instead, so
+    # this stays zero and unread for them.
+    skip_credit_minor: int = 0
 
 
 class ComboOut(BaseModel):

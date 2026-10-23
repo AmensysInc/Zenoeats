@@ -529,12 +529,18 @@ class Combo(Base, TimestampMixin):
 
 
 class ComboSlot(Base, TimestampMixin):
-    """One required choice inside a combo: pick a food, pick a drink.
+    """One choice inside a combo: pick a food, pick a drink.
 
-    Always exactly one, always required. A combo that lets you skip the drink
-    is two combos, and a slot that takes two drinks is a different product
-    with a different price -- neither is what "meal deal" means, and both
-    would need pricing rules this does not have.
+    At most one, and required unless the slot says otherwise. A slot that
+    takes two drinks is still a different product with a different price,
+    and still not what "meal deal" means.
+
+    An optional slot is a course the customer may leave out -- the burger
+    and the fries and nothing to drink. It was once true that "a combo that
+    lets you skip the drink is two combos"; that worked and left the
+    restaurant maintaining two of everything, so a slot now carries the
+    choice itself. See 0051, and skip_credit_minor below for what leaving a
+    course out is worth.
 
     One slot per item type, enforced by the unique constraint, because that is
     how the builder reads: the types are the rows, and ticking items into a
@@ -550,6 +556,11 @@ class ComboSlot(Base, TimestampMixin):
     __tablename__ = "combo_slots"
     __table_args__ = (
         UniqueConstraint("combo_id", "item_type_id", name="uq_combo_slot_type"),
+        CheckConstraint("skip_credit_minor >= 0", name="ck_combo_slot_skip_credit_non_negative"),
+        CheckConstraint(
+            "is_optional OR skip_credit_minor = 0",
+            name="ck_combo_slot_credit_needs_optional",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -563,6 +574,23 @@ class ComboSlot(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("item_types.id"), nullable=False, index=True
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Whether the customer may order this combo without filling this slot.
+    # A required slot refuses a combo that names no choice for it, which is
+    # what stops an incomplete meal deal selling at meal-deal price.
+    is_optional: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    # What leaving this course out takes off a FIXED_PRICE combo, in minor
+    # units. Only that kind needs it: a set price is a number rather than a
+    # sum of parts, so there is nothing to subtract unless the restaurant
+    # says what the course was worth. The other kinds ignore it -- the
+    # dish's own price simply is not in the subtotal, and the bill falls by
+    # it without anyone stating a figure. Constrained to zero on a required
+    # slot, where it could never be earned.
+    skip_credit_minor: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     combo: Mapped["Combo"] = relationship(back_populates="slots")
     item_type: Mapped["ItemType"] = relationship()
