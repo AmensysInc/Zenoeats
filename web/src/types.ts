@@ -406,3 +406,28 @@ export type Offer = {
   starts_at: string | null;
   ends_at: string | null;
 };
+
+/** One invitation a customer has sent. Only QUALIFIED has paid. */
+export type Invitation = {
+  id: string;
+  invitee_name: string | null;
+  status: "SENT" | "JOINED" | "QUALIFIED";
+  qualified_at: string | null;
+};
+
+/** What a customer needs to bring a friend.
+ *
+ *  `share_url` is the whole mechanism: the customer sends it themselves from
+ *  their own phone, to somebody who knows their number. Nothing is messaged
+ *  from the server.
+ *
+ *  `running` is false where the restaurant has no referral offer; the page
+ *  then says so rather than handing out a link that wins nothing. */
+export type Referrals = {
+  running: boolean;
+  collecting: boolean;
+  code: string | null;
+  share_url: string | null;
+  reward_name: string | null;
+  invitations: Invitation[];
+};

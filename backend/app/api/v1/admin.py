@@ -396,6 +396,9 @@ _PURGE_ORDER = [
     # order that spent it, and every stamp names the order that earned it.
     # The ledger and the cards go before the programs they belong to, which
     # in turn go before the menu their choices name.
+    # Before orders too: a qualified referral names the order that paid it.
+    "referrals",
+    "referral_codes",
     "loyalty_rewards",
     "loyalty_transactions",
     "customer_loyalty",

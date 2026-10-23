@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
-    TenantContext, TenantDb, current_restaurant, optional_current_user, resolve_tenant,
+    TenantContext, TenantDb, current_restaurant, get_current_user,
+    optional_current_user, resolve_tenant,
 )
 from app.config import settings
 from app.core import google_oauth
@@ -21,10 +22,14 @@ from app.models import (
     User,
 )
 from app.schemas.api import (
-    BrandOut, LocationOut, LocationsOut, LoyaltyOut, LoyaltyProgramOut, MenuOut,
-    OfferOut, OffersOut, PortalOut, RewardChoiceOut, SpendableRewardOut,
+    BrandOut, InvitationOut, InviteIn, LocationOut, LocationsOut, LoyaltyOut,
+    LoyaltyProgramOut, MenuOut, OfferOut, OffersOut, PortalOut, ReferralOut,
+    RewardChoiceOut, SpendableRewardOut,
 )
-from app.services import delivery, images, loyalty, offers as offers_service, storefront
+from app.services import (
+    delivery, images, loyalty, offers as offers_service,
+    referrals as referrals_service, storefront,
+)
 from app.services.menu import load_menu
 
 router = APIRouter(tags=["portal"])
@@ -249,3 +254,99 @@ def get_offers(db: Session = TenantDb):
             for offer in offers_service.live(db)
         ]
     )
+
+
+@router.get(
+    "/referrals",
+    response_model=ReferralOut,
+    dependencies=[Depends(per_ip("referrals", limit=120))],
+)
+def get_referrals(
+    request: Request,
+    restaurant: Restaurant = Depends(current_restaurant),
+    user: User | None = Depends(optional_current_user),
+    db: Session = TenantDb,
+):
+    """The customer's referral link, and how their invitations have gone.
+
+    The link is made on first read rather than by a separate step: a page
+    that asks you to press a button before it will show you your own link
+    has added a step for nothing.
+
+    Answers for an anonymous caller with `collecting: false` and no link, so
+    the page can explain the offer to somebody deciding whether to make an
+    account.
+    """
+    offer = referrals_service.program(db)
+    if offer is None:
+        return ReferralOut(running=False, collecting=False)
+
+    collecting = loyalty.collects(user)
+    reward = ", ".join(c.item_name for c in loyalty.choices_for(db, offer.id)) or None
+    if not collecting:
+        return ReferralOut(running=True, collecting=False, reward_name=reward)
+
+    code = referrals_service.code_for(db, restaurant.id, user)
+    return ReferralOut(
+        running=True,
+        collecting=True,
+        code=code,
+        # Built from the request so it is the host this browser actually
+        # reached, the same reason the location picker stopped using a
+        # template -- see core/tenant.storefront_url_for.
+        share_url=f"{storefront_url_for(request, restaurant.slug)}/?ref={code}",
+        reward_name=reward,
+        invitations=[
+            InvitationOut(
+                id=i.id,
+                invitee_name=i.invitee_name,
+                status=i.status,
+                qualified_at=i.qualified_at,
+            )
+            for i in referrals_service.invitations(db, user)
+        ],
+    )
+
+
+@router.post(
+    "/referrals/invite",
+    response_model=ReferralOut,
+    status_code=201,
+    dependencies=[Depends(per_ip("referral-invite", limit=60))],
+)
+def record_invite(
+    request: Request,
+    body: InviteIn,
+    restaurant: Restaurant = Depends(current_restaurant),
+    user: User = Depends(get_current_user),
+    db: Session = TenantDb,
+):
+    """Note down a friend the customer is inviting.
+
+    Writes a row and sends nothing. The storefront then hands the customer a
+    prefilled message for their own phone to send, which is the whole of the
+    delivery mechanism -- see services/referrals.py.
+    """
+    referrals_service.invite(db, restaurant.id, user, name=body.name, phone=body.phone)
+    return get_referrals(request, restaurant, user, db)
+
+
+@router.post(
+    "/referrals/claim",
+    dependencies=[Depends(per_ip("referral-claim", limit=60))],
+)
+def claim_referral(
+    code: str,
+    restaurant: Restaurant = Depends(current_restaurant),
+    user: User = Depends(get_current_user),
+    db: Session = TenantDb,
+):
+    """Attach an arriving customer to whoever invited them.
+
+    Answers the same way whether or not the claim stuck. Whether somebody
+    has ordered here before is their business and not the caller's, and
+    spelling out why a claim failed would describe the rules to the one
+    person trying to get round them.
+    """
+    referrals_service.claim(db, restaurant.id, code, user)
+    return {"ok": True}

@@ -28,6 +28,8 @@ import {
   useLazyCustomerOrdersQuery,
   usePortalQuery,
   usePublicMenuQuery,
+  useInviteFriendMutation,
+  useReferralsQuery,
   useRewardsQuery,
   useUpdateProfileMutation,
 } from "@/features/storefront/storefrontApi";
@@ -35,12 +37,17 @@ import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 import type { Contact, CustomerSession, Item, Meal, OrderSummary } from "@/types";
 
-type Tab = "details" | "orders" | "favourites" | "rewards";
+type Tab = "details" | "orders" | "favourites" | "rewards" | "refer";
 
-const TABS: { id: Tab; label: string; icon: "user" | "bag" | "heart" | "tag" }[] = [
+const TABS: {
+  id: Tab;
+  label: string;
+  icon: "user" | "bag" | "heart" | "tag" | "team";
+}[] = [
   { id: "details", label: "Personal details", icon: "user" },
   { id: "orders", label: "Orders", icon: "bag" },
   { id: "rewards", label: "Rewards", icon: "tag" },
+  { id: "refer", label: "Refer a friend", icon: "team" },
   { id: "favourites", label: "Favourites", icon: "heart" },
 ];
 
@@ -157,6 +164,7 @@ export function ProfilePage() {
             {tab === "details" && <DetailsTab session={session.data} slug={portal.data.slug} />}
             {tab === "orders" && <OrdersTab />}
             {tab === "rewards" && <RewardsTab guest={guest} />}
+            {tab === "refer" && <ReferTab guest={guest} />}
             {tab === "favourites" && (
               <FavouritesTab
                 session={session.data}
@@ -643,6 +651,180 @@ function RewardsTab({ guest }: { guest: boolean }) {
           </div>
         );
       })}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------- refer
+
+/**
+ * Bring a friend, get something free.
+ *
+ * The customer sends the invitation themselves. There is no SMS in this
+ * stack, and a link forwarded from their own phone arrives from a number
+ * the recipient knows -- which is both likelier to be opened and not a cold
+ * message to a stranger's handset. So this page's job is to hand over a
+ * link and make it easy to send: copy it, or open the phone's own messaging
+ * app with the words already written.
+ *
+ * Recording who was invited is optional and is the customer's note to
+ * themselves. Nothing is sent to the number they type.
+ */
+function ReferTab({ guest }: { guest: boolean }) {
+  const referrals = useReferralsQuery();
+  const [invite, { isLoading: inviting }] = useInviteFriendMutation();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [said, setSaid] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (referrals.isLoading) return <StatePage busy>Loading…</StatePage>;
+
+  const data = referrals.data;
+  if (!data?.running) {
+    return (
+      <section aria-label="Refer a friend">
+        <Empty>This restaurant is not running a referral offer yet.</Empty>
+      </section>
+    );
+  }
+
+  const reward = data.reward_name ?? "something free";
+
+  if (!data.collecting) {
+    return (
+      <section aria-label="Refer a friend">
+        <p className="rounded-panel border border-hairline bg-surface p-5 text-sm text-muted">
+          {guest
+            ? `Create an account and you can invite a friend. When they order for the first time, you get ${reward} free.`
+            : `Sign in to invite a friend. When they order for the first time, you get ${reward} free.`}
+        </p>
+      </section>
+    );
+  }
+
+  const link = data.share_url ?? "";
+  // The customer's own messaging app, with the words already written. An
+  // sms: link opens it; it does not send anything by itself, which is the
+  // point -- the message goes from their number, not ours.
+  const message = `Try this place — your first order and I get ${reward} free: ${link}`;
+  const smsHref = `sms:${phone ? phone.replace(/[^+\d]/g, "") : ""}?&body=${encodeURIComponent(message)}`;
+
+  async function record(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await invite({ name: name.trim() || undefined, phone: phone.trim() || undefined }).unwrap();
+      setSaid(name.trim() ? `${name.trim()} noted.` : "Invitation noted.");
+      setName("");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setSaid("Link copied.");
+    } catch {
+      // Clipboard access is refused in plenty of ordinary situations --
+      // an insecure origin, a browser that asks first. The link is on
+      // screen and selectable, so this is a convenience that failed
+      // rather than a thing that broke.
+      setSaid("Copy the link above.");
+    }
+  }
+
+  return (
+    <section aria-label="Refer a friend">
+      <p className="sr-only" aria-live="polite">{said}</p>
+      <ErrorNote message={error} />
+
+      <div className="rounded-panel border border-hairline bg-surface p-5 sm:p-6">
+        <p className="eyebrow text-muted">Your invitation link</p>
+        <p className="my-2 font-display text-[22px] leading-[1.2] tracking-[-.4px]">
+          Bring a friend, get {reward} free
+        </p>
+        <p className="text-caption text-muted">
+          They order for the first time, you get the reward. Send it from your
+          own phone so they know it is from you.
+        </p>
+
+        <p className="mt-4 break-all rounded-button border border-hairline bg-paper px-3 py-[11px] font-mono text-caption">
+          {link}
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button type="button" className="btn-primary" onClick={copy}>
+            Copy link
+          </button>
+          {/* A plain link, not a fetch: it hands off to whatever app the
+              phone uses for messages. On a desktop with no such app it
+              simply does nothing, which is why Copy comes first. */}
+          <a className="btn-quiet" href={smsHref}>
+            Open in Messages
+          </a>
+        </div>
+      </div>
+
+      <form onSubmit={record} className="mt-6" noValidate>
+        <h2 className="mb-1 font-display text-[20px] leading-[1.2] tracking-[-.3px]">
+          Keep track of who you asked
+        </h2>
+        <p className="mb-3 text-caption text-muted">
+          Optional, and only for you — we do not message anyone.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[180px] flex-1">
+            <span className="label">Friend's name</span>
+            <input
+              className="field mt-[7px]"
+              maxLength={160}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="min-w-[180px] flex-1">
+            <span className="label">Their number</span>
+            <input
+              className="field mt-[7px]"
+              inputMode="tel"
+              maxLength={32}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn-quiet" disabled={inviting}>
+            {inviting ? "Saving…" : "Add"}
+          </button>
+        </div>
+      </form>
+
+      {data.invitations.length > 0 && (
+        <ul className="mt-6 flex flex-col">
+          {data.invitations.map((invitation) => (
+            <li
+              key={invitation.id}
+              className="flex items-center gap-3 border-t border-hairline py-3"
+            >
+              <span className="min-w-0 flex-1 text-sm">
+                {invitation.invitee_name ?? "Someone you invited"}
+              </span>
+              <span
+                className={`text-caption ${
+                  invitation.status === "QUALIFIED" ? "font-[650] text-brick" : "text-muted"
+                }`}
+              >
+                {invitation.status === "QUALIFIED"
+                  ? "Ordered — reward earned"
+                  : invitation.status === "JOINED"
+                    ? "Signed up, not ordered yet"
+                    : "Invited"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
