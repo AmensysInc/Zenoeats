@@ -315,9 +315,9 @@ export function StorefrontPage() {
                 Other locations
               </p>
               <a className="link" href={restaurant.platform_url}>
-                See every Zenoeats location
+                See every ZenoEats location
               </a>
-              <p className="mt-2 text-[11px]">Ordering powered by Zenoeats</p>
+              <p className="mt-2 text-[11px]">Ordering powered by ZenoEats</p>
             </div>
           </div>
         </footer>

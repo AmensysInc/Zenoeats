@@ -73,7 +73,7 @@ def _problem(status_code: int, reply: str) -> str:
             "Not delivered: the sending address is not verified with the email provider yet."
         )
     if status_code == 401 or "authorization grant" in lowered or "api key" in lowered:
-        return "Not delivered: the email provider did not accept Zenoeats' credentials."
+        return "Not delivered: the email provider did not accept ZenoEats' credentials."
     if "valid address" in lowered or ("invalid" in lowered and "email" in lowered):
         return "Not delivered: the email provider says this address is not valid."
     return f"Not delivered: the email provider refused it (HTTP {status_code})."

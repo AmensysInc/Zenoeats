@@ -32,7 +32,7 @@ type IntentBundle = {
   stripeAccountId: string;
   publishableKey: string;
   /** Sent with the card as its billing email, which Stripe screens for
-   *  fraud. Stripe sends no receipt: Zenoeats emails the confirmation. */
+   *  fraud. Stripe sends no receipt: ZenoEats emails the confirmation. */
   customerEmail?: string | null;
 };
 

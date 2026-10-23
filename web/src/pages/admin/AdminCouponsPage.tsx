@@ -20,7 +20,7 @@ import { money } from "@/utils/format";
  * One restaurant's promotion codes: what exists, what it is worth, and what
  * it has cost.
  *
- * A platform screen, because a coupon is a Zenoeats decision rather than a
+ * A platform screen, because a coupon is a ZenoEats decision rather than a
  * tenant's -- the restaurant's own portal has no coupon tab, and no endpoint
  * behind one. Reached from the restaurant's row on /admin.
  *

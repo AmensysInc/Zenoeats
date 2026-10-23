@@ -37,43 +37,94 @@ class LocationsOut(BaseModel):
 
 # ---------- Rewards and offers -------------------------------------------
 
-class RewardOut(BaseModel):
-    """One dish the program gives away, at the threshold it is given at."""
+class RewardChoiceOut(BaseModel):
+    """One dish a reward may be taken as."""
 
-    id: UUID
     item_id: UUID
     item_name: str
-    points_required: int
     image_url: str | None = None
-    # Whether the kitchen can serve it at all right now.
+    # Whether the kitchen can serve it. A choice stays listed when sold out
+    # -- it is part of the program -- but cannot be taken today.
     is_available: bool = True
-    # Whether this customer may take it on this order. False both for a dish
-    # they have not earned and for one that is sold out, which is why the
-    # two flags are separate: the card says "3 more orders" or "sold out"
-    # rather than one word for both.
-    is_claimable: bool = False
 
 
-class RewardsOut(BaseModel):
-    """A customer's standing in one restaurant's program.
+class LoyaltyProgramOut(BaseModel):
+    """One card a customer holds, as the progress bar reads it.
 
-    `points` is the number of orders they have completed here, counted at
-    read time rather than stored. `collecting` is false for a caller with no
-    account -- a guest row lives for one checkout, so there is nothing to
-    accrue against and the storefront should say so instead of showing a
-    balance of zero as though it were progress.
+    `current_count` is stamps on the card now, not stamps ever earned: a
+    reward takes its stamps off, the way a paper card is handed over.
+    `rewards_ready` is how many filled cards are waiting to be spent, which
+    is a different number and can be more than one.
     """
 
-    points: int = 0
+    program_id: UUID
+    name: str
+    required_count: int
+    current_count: int = 0
+    rewards_ready: int = 0
+    choices: list[RewardChoiceOut] = Field(default_factory=list)
+
+
+class SpendableRewardOut(BaseModel):
+    """A reward won and not yet spent, as checkout offers it."""
+
+    id: UUID
+    program_id: UUID
+    # Null where the program sets no expiry, which is the kinder default.
+    expires_at: datetime | None = None
+    choices: list[RewardChoiceOut] = Field(default_factory=list)
+
+
+class LoyaltyOut(BaseModel):
+    """A customer's standing in one restaurant's loyalty programs.
+
+    `collecting` is false for a caller with no account: a guest row lives for
+    one checkout, so there is no card and a zero there is not progress. The
+    programs are still listed, because they are the reason to make an
+    account.
+    """
+
     collecting: bool = False
-    # The rungs that exist, lowest first. Derived from the rewards, so a rung
-    # offering nothing is not a rung.
-    thresholds: list[int] = Field(default_factory=list)
-    # The next rung above the balance, and how far off it is. Both null once
-    # every rung is reached.
-    next_threshold: int | None = None
-    points_to_next: int | None = None
-    rewards: list[RewardOut] = Field(default_factory=list)
+    programs: list[LoyaltyProgramOut] = Field(default_factory=list)
+    rewards: list[SpendableRewardOut] = Field(default_factory=list)
+
+
+class InvitationOut(BaseModel):
+    """One invitation a customer has sent, as their own page shows it."""
+
+    id: UUID
+    invitee_name: str | None = None
+    # SENT, JOINED or QUALIFIED. Only the last one has paid.
+    status: str
+    qualified_at: datetime | None = None
+
+
+class ReferralOut(BaseModel):
+    """What a customer needs to bring a friend.
+
+    `share_url` is the whole point: the customer sends it themselves, from
+    their own phone, to somebody who knows their number. Nothing is messaged
+    from the server -- see services/referrals.py for why that is the design
+    rather than a shortcut.
+
+    `running` is false where the restaurant has no referral offer, and the
+    page then says so instead of handing out a link that wins nothing.
+    """
+
+    running: bool = False
+    collecting: bool = False
+    code: str | None = None
+    share_url: str | None = None
+    reward_name: str | None = None
+    invitations: list[InvitationOut] = Field(default_factory=list)
+
+
+class InviteIn(BaseModel):
+    """Who the customer says they are inviting. Both optional: they may just
+    copy the link. Kept so they can see who they asked."""
+
+    name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=32)
 
 
 class OfferOut(BaseModel):

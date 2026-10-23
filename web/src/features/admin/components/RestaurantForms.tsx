@@ -137,7 +137,7 @@ export function OwnerForm({
       <p className="mt-2 max-w-prose text-caption text-muted">
         Makes this person the restaurant&apos;s owner (ADMIN). A new address gets a
         temporary password they replace at first sign-in. Someone who already runs
-        another Zenoeats restaurant keeps their own password: they&apos;re invited
+        another ZenoEats restaurant keeps their own password: they&apos;re invited
         (and emailed, when email is set up) and accept it after signing in here. Use Reset password for an
         owner who has forgotten theirs.
       </p>
@@ -220,7 +220,7 @@ export function IssuedCredentialPanel({
         }
       >
         <p>
-          {email} already has a Zenoeats staff login, so no password was issued and theirs
+          {email} already has a ZenoEats staff login, so no password was issued and theirs
           is unchanged.{" "}
           {emailConfigured
             ? `We're emailing them an invitation to own ${restaurant.name}.`

@@ -6,7 +6,7 @@
     customer_password_reset
                        a signed, one-hour link to choose a new password
 
-A customer account is Zenoeats', not one restaurant's -- Clerk holds one
+A customer account is ZenoEats', not one restaurant's -- Clerk holds one
 sign-in for every storefront, and says nothing about which one a person
 signed up on. So the welcome is sent from the storefront itself: the first
 time a brand-new account loads a restaurant's site, that restaurant welcomes

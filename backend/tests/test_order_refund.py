@@ -286,7 +286,7 @@ def stripe_api(monkeypatch):
 
 
 def test_the_whole_charge_goes_back_with_the_platform_fee(stripe_api):
-    """The sale did not happen, so Zenoeats' commission goes back with it --
+    """The sale did not happen, so ZenoEats' commission goes back with it --
     and one order can only ever produce one refund, however many times this
     is called."""
     from app.services import stripe_service

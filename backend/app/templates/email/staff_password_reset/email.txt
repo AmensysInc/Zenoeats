@@ -1,7 +1,7 @@
 {#- The plain-text copy of email.html. Keep the two saying the same thing. -#}
 Hi{% if name %} {{ name }}{% endif %},
 
-Your password for {{ restaurant_name }} on Zenoeats was reset, and you've been signed out everywhere.
+Your password for {{ restaurant_name }} on ZenoEats was reset, and you've been signed out everywhere.
 
 {% if temporary_password %}
 Sign in with the temporary password below. You'll choose your own when you do, and this one stops working then.
