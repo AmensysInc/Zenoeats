@@ -89,6 +89,44 @@ class LoyaltyOut(BaseModel):
     rewards: list[SpendableRewardOut] = Field(default_factory=list)
 
 
+class InvitationOut(BaseModel):
+    """One invitation a customer has sent, as their own page shows it."""
+
+    id: UUID
+    invitee_name: str | None = None
+    # SENT, JOINED or QUALIFIED. Only the last one has paid.
+    status: str
+    qualified_at: datetime | None = None
+
+
+class ReferralOut(BaseModel):
+    """What a customer needs to bring a friend.
+
+    `share_url` is the whole point: the customer sends it themselves, from
+    their own phone, to somebody who knows their number. Nothing is messaged
+    from the server -- see services/referrals.py for why that is the design
+    rather than a shortcut.
+
+    `running` is false where the restaurant has no referral offer, and the
+    page then says so instead of handing out a link that wins nothing.
+    """
+
+    running: bool = False
+    collecting: bool = False
+    code: str | None = None
+    share_url: str | None = None
+    reward_name: str | None = None
+    invitations: list[InvitationOut] = Field(default_factory=list)
+
+
+class InviteIn(BaseModel):
+    """Who the customer says they are inviting. Both optional: they may just
+    copy the link. Kept so they can see who they asked."""
+
+    name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=32)
+
+
 class OfferOut(BaseModel):
     """Something the storefront tells a customer, for a while.
 

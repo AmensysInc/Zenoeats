@@ -235,6 +235,11 @@ def transition(order: Order, to_status: str, *, reason: str | None = None) -> No
             # Idempotent by constraint, so a retried transition credits
             # nothing twice -- see services/loyalty.py.
             loyalty.credit_order(session, order)
+            # And whoever brought this customer, if anybody did. Separate
+            # because it pays a different person than the one who ordered.
+            from app.services import referrals
+
+            referrals.credit_referrer(session, order)
     elif to_status == OrderStatus.CANCELLED.value:
         order.cancelled_reason = reason
 

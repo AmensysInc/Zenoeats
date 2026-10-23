@@ -190,53 +190,93 @@ def credit_order(session: Session, order: Order) -> list[LoyaltyReward]:
     now = datetime.now(timezone.utc)
 
     for program in active_programs(session):
+        # A referral program is credited by whoever was brought, not by the
+        # person ordering, so it is not this order's business -- see
+        # services/referrals.py, which calls credit_program directly.
+        if program.purchase_type == PurchaseType.REFERRAL.value:
+            continue
         stamps = _stamps_for(session, program, order)
         if stamps <= 0:
             continue
-
-        # The ledger row first, and inside a savepoint: its unique index is
-        # what makes this idempotent, and a duplicate must leave the rest of
-        # the transaction usable rather than poisoning it.
-        try:
-            with session.begin_nested():
-                session.add(
-                    LoyaltyTransaction(
-                        restaurant_id=order.restaurant_id,
-                        program_id=program.id,
-                        customer_user_id=order.customer_user_id,
-                        order_id=order.id,
-                        stamps=stamps,
-                        reason=StampReason.EARN.value,
-                    )
-                )
-        except IntegrityError:
-            # Already credited. Nothing to do, and nothing wrong.
-            continue
-
-        card = _card(session, program.id, order.customer_user_id, order.restaurant_id)
-        card.current_count += stamps
-        # A card that fills more than once in a single order pays out more
-        # than once: nine burgers onto a card holding nine is two rewards,
-        # and a loop rather than an if is the only honest reading of that.
-        while card.current_count >= program.required_count:
-            card.current_count -= program.required_count
-            reward = LoyaltyReward(
-                restaurant_id=order.restaurant_id,
-                program_id=program.id,
+        issued.extend(
+            credit_program(
+                session,
+                program,
                 customer_user_id=order.customer_user_id,
-                status=RewardStatus.ISSUED.value,
-                issued_at=now,
-                expires_at=(
-                    now + timedelta(days=program.reward_expires_days)
-                    if program.reward_expires_days
-                    else None
-                ),
+                order=order,
+                stamps=stamps,
+                now=now,
             )
-            session.add(reward)
-            issued.append(reward)
-        card.updated_at = now
+        )
 
     session.flush()
+    return issued
+
+
+def credit_program(
+    session: Session,
+    program: LoyaltyProgram,
+    *,
+    customer_user_id: UUID,
+    order: Order,
+    stamps: int,
+    now: datetime | None = None,
+) -> list[LoyaltyReward]:
+    """Put stamps on one card and issue whatever they fill.
+
+    The whole of the earning guarantee, in one place so every kind of
+    program gets it: a referral is credited through here too, which is why
+    it inherits the idempotency and the lock without restating either.
+
+    `order` is the purchase being credited -- for a referral that is the
+    friend's order, not the referrer's, which is exactly what makes the
+    ledger's unique index do the right thing: that order can credit this
+    program once and never again.
+    """
+    moment = now or datetime.now(timezone.utc)
+    issued: list[LoyaltyReward] = []
+
+    # The ledger row first, and inside a savepoint: its unique index is what
+    # makes this idempotent, and a duplicate must leave the rest of the
+    # transaction usable rather than poisoning it.
+    try:
+        with session.begin_nested():
+            session.add(
+                LoyaltyTransaction(
+                    restaurant_id=order.restaurant_id,
+                    program_id=program.id,
+                    customer_user_id=customer_user_id,
+                    order_id=order.id,
+                    stamps=stamps,
+                    reason=StampReason.EARN.value,
+                )
+            )
+    except IntegrityError:
+        # Already credited. Nothing to do, and nothing wrong.
+        return issued
+
+    card = _card(session, program.id, customer_user_id, order.restaurant_id)
+    card.current_count += stamps
+    # A card that fills more than once in a single order pays out more than
+    # once: nine burgers onto a card holding nine is two rewards, and a loop
+    # rather than an if is the only honest reading of that.
+    while card.current_count >= program.required_count:
+        card.current_count -= program.required_count
+        reward = LoyaltyReward(
+            restaurant_id=order.restaurant_id,
+            program_id=program.id,
+            customer_user_id=customer_user_id,
+            status=RewardStatus.ISSUED.value,
+            issued_at=moment,
+            expires_at=(
+                moment + timedelta(days=program.reward_expires_days)
+                if program.reward_expires_days
+                else None
+            ),
+        )
+        session.add(reward)
+        issued.append(reward)
+    card.updated_at = moment
     return issued
 
 

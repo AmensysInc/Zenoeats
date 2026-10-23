@@ -3,6 +3,7 @@ import { usePortalQuery } from "@/features/storefront/storefrontApi";
 import { CustomerFooter } from "@/features/storefront/components/CustomerFooter";
 import { attachFont, themeVariables } from "@/features/storefront/theme";
 import { rememberBrand, rememberRestaurantName } from "@/utils/restaurantName";
+import { useReferralCode } from "@/features/storefront/useReferralCode";
 import { Outlet } from "react-router-dom";
 
 /**
@@ -16,6 +17,9 @@ import { Outlet } from "react-router-dom";
  */
 export function CustomerSurface({ children }: { children?: ReactNode }) {
   const { data } = usePortalQuery();
+  // Every customer page, because a referral link may point at any of them:
+  // somebody shares the menu, or a dish, not only the front door.
+  useReferralCode();
   const theme = data?.storefront?.theme ?? null;
   // Kept for the sign-in pages, which are served without the app and would
   // otherwise show the platform's name until they had asked for this one.

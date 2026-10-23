@@ -1,5 +1,5 @@
 import { api } from "@/services/api";
-import type { Amounts, AppliedCoupon, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Offer, Order, OrderSummary, PlatformLocation, Portal, Loyalty } from "@/types";
+import type { Amounts, AppliedCoupon, Contact, CustomerSession, Favourite, FulfillmentType, Meal, Offer, Order, OrderSummary, PlatformLocation, Portal, Loyalty, Referrals } from "@/types";
 
 export type QuoteItem = {
   menu_item_id: string;
@@ -53,6 +53,35 @@ export const storefrontApi = api.injectEndpoints({
     rewards: build.query<Loyalty, void>({
       query: () => ({ url: "/rewards", customerAuth: true }),
       providesTags: ["Rewards"],
+    }),
+
+    /** The customer's referral link and how their invitations have gone. */
+    referrals: build.query<Referrals, void>({
+      query: () => ({ url: "/referrals", customerAuth: true }),
+      providesTags: ["Referrals"],
+    }),
+
+    /** Note down a friend being invited. Sends nothing -- the customer sends
+     *  the link themselves, from their own phone. */
+    inviteFriend: build.mutation<Referrals, { name?: string; phone?: string }>({
+      query: (body) => ({
+        url: "/referrals/invite",
+        method: "POST",
+        body,
+        customerAuth: true,
+      }),
+      invalidatesTags: ["Referrals"],
+    }),
+
+    /** Attach an arriving customer to whoever invited them. Answers the same
+     *  way whether or not it stuck, so nothing here branches on it. */
+    claimReferral: build.mutation<{ ok: boolean }, string>({
+      query: (code) => ({
+        url: `/referrals/claim?code=${encodeURIComponent(code)}`,
+        method: "POST",
+        customerAuth: true,
+      }),
+      invalidatesTags: ["Referrals"],
     }),
 
     /** What the restaurant is advertising. Public, like the menu: an offer is
@@ -318,4 +347,7 @@ export const {
   useSetFavouriteMutation,
   useRewardsQuery,
   useOffersQuery,
+  useReferralsQuery,
+  useInviteFriendMutation,
+  useClaimReferralMutation,
 } = storefrontApi;

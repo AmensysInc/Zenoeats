@@ -33,16 +33,35 @@ from app.db.base import Base, TimestampMixin, uuid_pk
 class PurchaseType(str, enum.Enum):
     """What earns a stamp.
 
-    Two, because two is what the launch programs need and a third is a
-    branch in services/loyalty.py rather than a rewrite. Spend accumulation
-    -- "spend a hundred dollars, get five back" -- is the obvious next one
-    and is deliberately absent: it counts money rather than purchases, and
-    pays in money rather than in a dish, so it needs a reward this model
-    does not have.
+    Each is a branch in services/loyalty.py rather than a scheme of its own,
+    which is the point of the engine: what is won, how it expires and how it
+    is redeemed are the same for all of them.
+
+    Spend accumulation -- "spend a hundred dollars, get five back" -- is the
+    obvious next one and is deliberately absent: it counts money rather than
+    purchases, and pays in money rather than in a dish, so it needs a reward
+    this model does not have.
     """
 
     COMPLETED_ORDERS = "COMPLETED_ORDERS"
     MENU_ITEM = "MENU_ITEM"
+    # One stamp per friend who arrives on this customer's link and buys
+    # something. What is won is the same reward a filled card wins, which is
+    # why this is a purchase type and not a scheme of its own -- see 0054.
+    REFERRAL = "REFERRAL"
+
+
+class ReferralStatus(str, enum.Enum):
+    """How far an invitation has got.
+
+    SENT is a link shared with somebody who may never use it. JOINED is a
+    customer who arrived on it. QUALIFIED is that customer having actually
+    bought something, which is the only one that pays.
+    """
+
+    SENT = "SENT"
+    JOINED = "JOINED"
+    QUALIFIED = "QUALIFIED"
 
 
 class StampReason(str, enum.Enum):
@@ -66,7 +85,7 @@ class LoyaltyProgram(Base, TimestampMixin):
     __tablename__ = "loyalty_programs"
     __table_args__ = (
         CheckConstraint(
-            "purchase_type IN ('COMPLETED_ORDERS','MENU_ITEM')",
+            "purchase_type IN ('COMPLETED_ORDERS','MENU_ITEM','REFERRAL')",
             name="ck_loyalty_purchase_type",
         ),
         CheckConstraint("required_count > 0", name="ck_loyalty_required_positive"),
@@ -78,7 +97,7 @@ class LoyaltyProgram(Base, TimestampMixin):
         CheckConstraint(
             "(purchase_type = 'MENU_ITEM'"
             " AND (qualifying_item_id IS NULL) <> (qualifying_item_type_id IS NULL))"
-            " OR (purchase_type = 'COMPLETED_ORDERS'"
+            " OR (purchase_type IN ('COMPLETED_ORDERS','REFERRAL')"
             " AND qualifying_item_id IS NULL AND qualifying_item_type_id IS NULL)",
             name="ck_loyalty_qualifier_matches_type",
         ),
@@ -293,3 +312,86 @@ class LoyaltyReward(Base, TimestampMixin):
         if self.status != RewardStatus.ISSUED.value:
             return False
         return self.expires_at is None or now < self.expires_at
+
+
+class Referral(Base, TimestampMixin):
+    """One invitation: who shared a link, who used it, and whether it paid.
+
+    The invitee's name and number are optional and are the customer's own
+    note to themselves -- the server sends nothing to either. There is no SMS
+    in this stack and sending business SMS in the US needs a vendor, a cost
+    per message and A2P registration with documented opt-in; a link forwarded
+    by a friend from their own phone arrives from a number the recipient
+    knows, which is both likelier to be read and not a cold message to a
+    stranger. See 0054.
+    """
+
+    __tablename__ = "referrals"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('SENT','JOINED','QUALIFIED')", name="ck_referral_status"
+        ),
+        CheckConstraint(
+            "invitee_user_id IS NULL OR invitee_user_id <> referrer_user_id",
+            name="ck_referral_not_self",
+        ),
+        CheckConstraint(
+            "(status = 'QUALIFIED' AND qualifying_order_id IS NOT NULL"
+            " AND qualified_at IS NOT NULL)"
+            " OR (status <> 'QUALIFIED' AND qualifying_order_id IS NULL"
+            " AND qualified_at IS NULL)",
+            name="ck_referral_qualified_complete",
+        ),
+        Index(
+            "uq_referral_invitee", "restaurant_id", "invitee_user_id",
+            unique=True, postgresql_where=text("invitee_user_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    referrer_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    invitee_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    invitee_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    invitee_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=ReferralStatus.SENT.value
+    )
+    qualifying_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id"), nullable=True
+    )
+    qualified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ReferralCode(Base):
+    """The link one customer shares at one restaurant.
+
+    A table of its own because a code identifies a person while an invitation
+    is an event: carrying the code on every invitation made a customer's
+    second invitation collide with their first, which is a thing the model
+    should not have been able to express.
+
+    One row per customer per restaurant, and unique across the restaurant so
+    a claim resolves to exactly one person.
+    """
+
+    __tablename__ = "referral_codes"
+
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+    )
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
