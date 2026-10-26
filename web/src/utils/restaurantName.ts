@@ -3,7 +3,7 @@
  * browser so a page can show it before it has asked the API.
  *
  * The customer sign-in pages are plain HTML served by nginx, which knows
- * nothing about restaurants. They used to render the platform's "Zenoeats"
+ * nothing about restaurants. They used to render the platform's "ZenoEats"
  * wordmark and swap in the restaurant's name once /portal answered, so every
  * customer saw the wrong name first -- for a second on a laptop, longer on a
  * phone on restaurant wifi. Almost everyone reaches those pages from the

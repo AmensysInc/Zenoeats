@@ -244,7 +244,7 @@ def test_a_provider_refusal_is_explained_without_its_raw_reply():
 
 @pytest.mark.parametrize("status, reply, expected", [
     (401, '{"errors":[{"message":"The provided authorization grant is invalid, expired, '
-          'or revoked","field":null}]}', "did not accept Zenoeats' credentials"),
+          'or revoked","field":null}]}', "did not accept ZenoEats' credentials"),
     (400, '{"errors":[{"message":"Does not contain a valid address.",'
           '"field":"personalizations.0.to.0.email"}]}', "address is not valid"),
     (413, '{"errors":[{"message":"too big"}]}', "refused it (HTTP 413)"),

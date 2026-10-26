@@ -29,7 +29,7 @@ import {
   contactInputId,
 } from "@/features/storefront/contact";
 import type { PaymentHandoff } from "./PaymentPage";
-import type { Amounts, AppliedCoupon, Contact, FulfillmentType } from "@/types";
+import type { Amounts, AppliedCoupon, Contact, FulfillmentType, SpendableReward } from "@/types";
 import { readCheckoutDraft, saveCheckoutDraft } from "@/features/storefront/checkoutDraft";
 import { loadGooglePlaces, type PlacesAutocomplete } from "@/services/googleMaps";
 import { BackLink } from "@/components/common/BackLink";
@@ -690,7 +690,7 @@ export function CheckoutPage() {
             )}
 
             <RewardField
-              rewards={(rewards.data?.rewards ?? []).filter((r) => r.is_claimable)}
+              rewards={rewards.data?.rewards ?? []}
               chosen={rewardItemId}
               onChoose={setRewardItemId}
             />
@@ -777,7 +777,7 @@ export function CheckoutPage() {
             <p className="field-hint">Line prices are previews. Your total is confirmed before payment.</p>
             {/* Shown where the order is actually placed, not only in a policy
                 nobody opens. A paid order is generally too late to cancel --
-                the kitchen starts on it -- and the restaurant, not Zenoeats,
+                the kitchen starts on it -- and the restaurant, not ZenoEats,
                 issues any refund, so both belong in front of the button. */}
             <p className="field-hint mt-3">
               By continuing you agree to our{" "}
@@ -1048,40 +1048,51 @@ function Row({ label, value, valueClass = "" }: { label: string; value: string; 
 }
 
 /**
- * The free dish, where one has been earned.
+ * The free dish, where one has been won.
  *
- * Shown only when there is something to take: a customer who has earned
- * nothing is not told what they are missing on the page where they are
- * paying. One at a time, because the program gives one dish per order, and
- * the choice is undoable right up to the moment the order is placed.
+ * Shown only when the customer holds a reward: somebody mid-way through a
+ * card is not told what they are missing on the page where they are paying.
+ * One dish per order, so the choices across every held reward are offered as
+ * one list and picking one unpicks the rest.
  *
- * The server checks the choice again against the customer's completed
- * orders, so this is a request rather than a decision. A reward withdrawn
- * from the ladder between loading the page and paying is dropped from the
- * quote rather than refused: the rest of the cart still has a price.
+ * The server checks the choice again against what they hold, so this is a
+ * request rather than a decision. A reward that lapsed between loading the
+ * page and paying is dropped from the quote rather than refusing the cart.
  */
 function RewardField({
   rewards,
   chosen,
   onChoose,
 }: {
-  rewards: { item_id: string; item_name: string; points_required: number }[];
+  rewards: SpendableReward[];
   chosen: string | null;
   onChoose: (itemId: string | null) => void;
 }) {
-  if (rewards.length === 0) return null;
+  // One row per dish, however many rewards offer it: a customer holding two
+  // burger rewards wants one burger line, not the same line twice.
+  const offered = new Map<string, { name: string; expires: string | null }>();
+  for (const reward of rewards) {
+    for (const choice of reward.choices) {
+      if (!choice.is_available || offered.has(choice.item_id)) continue;
+      offered.set(choice.item_id, { name: choice.item_name, expires: reward.expires_at });
+    }
+  }
+  if (offered.size === 0) return null;
 
+  const held = rewards.length;
   return (
     <fieldset className="mt-5">
       <legend className="mb-1 text-sm font-semibold">
         Your reward
-        <span className="text-caption font-normal text-muted"> · One per order</span>
+        <span className="text-caption font-normal text-muted">
+          {held > 1 ? ` · ${held} waiting, one per order` : " · One per order"}
+        </span>
       </legend>
-      {rewards.map((reward) => {
-        const picked = chosen === reward.item_id;
+      {[...offered.entries()].map(([itemId, dish]) => {
+        const picked = chosen === itemId;
         return (
           <label
-            key={reward.item_id}
+            key={itemId}
             className={`mt-2 flex min-h-[52px] cursor-pointer items-center gap-3 rounded-button border px-3 py-[11px] transition-colors duration-color ease-standard ${
               picked ? "border-brick bg-brickSoft/60" : "border-hairline"
             }`}
@@ -1092,16 +1103,21 @@ function RewardField({
               className="h-5 w-5 shrink-0"
               checked={picked}
               // Clicking the chosen one again takes it off, so a customer
-              // who changes their mind is not stuck with a free dish they
-              // did not want on this order.
-              onChange={() => onChoose(picked ? null : reward.item_id)}
+              // who changes their mind is not stuck spending a reward on
+              // this order.
+              onChange={() => onChoose(picked ? null : itemId)}
               onClick={() => picked && onChoose(null)}
             />
             <span className="min-w-0 flex-1 text-sm">
-              {reward.item_name}
-              <span className="block text-caption text-muted">
-                Earned at {reward.points_required} points
-              </span>
+              {dish.name}
+              {dish.expires && (
+                <span className="block text-caption text-muted">
+                  Use by {new Date(dish.expires).toLocaleDateString(undefined, {
+                    day: "numeric",
+                    month: "long",
+                  })}
+                </span>
+              )}
             </span>
             <span className="tnum ml-auto whitespace-nowrap text-caption font-[650] text-brick">
               Free

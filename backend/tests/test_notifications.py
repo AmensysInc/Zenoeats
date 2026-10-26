@@ -107,7 +107,7 @@ def test_the_invitation_carries_the_temporary_password_it_issued():
         restaurant_name="Spice House", slug="spicehouse", role_code="KITCHEN",
         has_temporary_password=True, temporary_password="AB12-CD34-EF56",
     )
-    assert subject == "You're invited to join Spice House on Zenoeats"
+    assert subject == "You're invited to join Spice House on ZenoEats"
     assert "kitchen staff" in body_text
     assert "/manage/login" in body_html
     assert "Temporary password: AB12-CD34-EF56" in body_text
@@ -133,7 +133,7 @@ def test_a_password_in_the_invitation_is_escaped():
         # A login still to be set up, but no password to hand -- an owner
         # invitation, or a task queued before invitations carried one.
         (True, "manager will give you a temporary password"),
-        # Someone who already works at another Zenoeats restaurant.
+        # Someone who already works at another ZenoEats restaurant.
         (False, "password you already use"),
     ],
 )
@@ -164,7 +164,7 @@ def sendgrid(monkeypatch):
 
     monkeypatch.setattr(email.httpx, "post", post)
     monkeypatch.setattr(settings, "SENDGRID_API_KEY", "SG.test_key")
-    monkeypatch.setattr(settings, "EMAIL_FROM", "Zenoeats <orders@zenoeats.com>")
+    monkeypatch.setattr(settings, "EMAIL_FROM", "ZenoEats <orders@zenoeats.com>")
     monkeypatch.setattr(settings, "EMAIL_REPLY_TO", "")
     return SimpleNamespace(calls=calls, answer=answer)
 
@@ -187,7 +187,7 @@ def test_a_message_is_sent_as_sendgrid_expects_it(sendgrid):
     assert call["url"] == "https://api.sendgrid.com/v3/mail/send"
     assert call["headers"]["Authorization"] == "Bearer SG.test_key"
     assert body["personalizations"] == [{"to": [{"email": "sam@example.com"}]}]
-    assert body["from"] == {"email": "orders@zenoeats.com", "name": "Zenoeats"}
+    assert body["from"] == {"email": "orders@zenoeats.com", "name": "ZenoEats"}
     assert body["subject"] == "Hi"
     # Plain text first: SendGrid refuses the other order.
     assert body["content"] == [

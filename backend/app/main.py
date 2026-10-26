@@ -78,7 +78,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Zenoeats API",
+    title="ZenoEats API",
     version="1.0.0-mvp",
     # Production Swagger is restricted (section 16.3).
     docs_url=None if settings.ENV == "production" else "/docs",

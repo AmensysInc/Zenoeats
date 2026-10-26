@@ -1,5 +1,5 @@
 {#-
-  Sent when an admin, or Zenoeats support, gives a team member a new
+  Sent when an admin, or ZenoEats support, gives a team member a new
   temporary password. The old password has stopped working and every
   session they held has ended.
 
@@ -16,7 +16,7 @@
 
 {% block body %}
 <p>Hi{% if name %} {{ name }}{% endif %},</p>
-<p>Your password for {{ restaurant_name }} on Zenoeats was reset, and you've been signed out everywhere.</p>
+<p>Your password for {{ restaurant_name }} on ZenoEats was reset, and you've been signed out everywhere.</p>
 {% if temporary_password %}
 <p>Sign in with the temporary password below. You'll choose your own when you do, and this one stops working then.</p>
 <p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">Temporary password</p>

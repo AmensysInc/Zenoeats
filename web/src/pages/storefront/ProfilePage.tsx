@@ -28,6 +28,8 @@ import {
   useLazyCustomerOrdersQuery,
   usePortalQuery,
   usePublicMenuQuery,
+  useInviteFriendMutation,
+  useReferralsQuery,
   useRewardsQuery,
   useUpdateProfileMutation,
 } from "@/features/storefront/storefrontApi";
@@ -35,12 +37,17 @@ import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 import type { Contact, CustomerSession, Item, Meal, OrderSummary } from "@/types";
 
-type Tab = "details" | "orders" | "favourites" | "rewards";
+type Tab = "details" | "orders" | "favourites" | "rewards" | "refer";
 
-const TABS: { id: Tab; label: string; icon: "user" | "bag" | "heart" | "tag" }[] = [
+const TABS: {
+  id: Tab;
+  label: string;
+  icon: "user" | "bag" | "heart" | "tag" | "team";
+}[] = [
   { id: "details", label: "Personal details", icon: "user" },
   { id: "orders", label: "Orders", icon: "bag" },
   { id: "rewards", label: "Rewards", icon: "tag" },
+  { id: "refer", label: "Refer a friend", icon: "team" },
   { id: "favourites", label: "Favourites", icon: "heart" },
 ];
 
@@ -157,6 +164,7 @@ export function ProfilePage() {
             {tab === "details" && <DetailsTab session={session.data} slug={portal.data.slug} />}
             {tab === "orders" && <OrdersTab />}
             {tab === "rewards" && <RewardsTab guest={guest} />}
+            {tab === "refer" && <ReferTab guest={guest} />}
             {tab === "favourites" && (
               <FavouritesTab
                 session={session.data}
@@ -548,28 +556,28 @@ function SavedItems({ currency, orderable }: { currency: string; orderable: bool
 // ----------------------------------------------------------------- rewards
 
 /**
- * What the customer has earned here, and what it is worth.
+ * The cards this customer holds here, and what each is worth.
  *
- * A point is a completed order, counted server-side from the orders
- * themselves, so this page never adds anything up and cannot disagree with
- * the kitchen about how many visits someone has made.
+ * A stamp card rather than a running total: the bar fills towards the next
+ * reward and empties when one is won, the way a paper card is handed over.
+ * Stamps are counted server-side from the orders that earned them, so this
+ * page never adds anything up.
  *
- * The ladder is shown whole, reached rungs and unreached alike. A program
- * whose unreached half is hidden is a program nobody saves towards, and the
- * point of the page is the rung above the one you are on.
+ * Programs the customer has not started are shown at zero. The point of the
+ * page is the card you have not filled yet.
  */
 function RewardsTab({ guest }: { guest: boolean }) {
-  const rewards = useRewardsQuery();
+  const loyalty = useRewardsQuery();
 
-  if (rewards.isLoading) return <StatePage busy>Loading…</StatePage>;
-  if (rewards.error) {
+  if (loyalty.isLoading) return <StatePage busy>Loading…</StatePage>;
+  if (loyalty.error) {
     return (
-      <StatePage title="Rewards are unavailable">{errorMessage(rewards.error)}</StatePage>
+      <StatePage title="Rewards are unavailable">{errorMessage(loyalty.error)}</StatePage>
     );
   }
 
-  const data = rewards.data;
-  if (!data || data.rewards.length === 0) {
+  const data = loyalty.data;
+  if (!data || data.programs.length === 0) {
     return (
       <section aria-label="Your rewards">
         <Empty>This restaurant is not running a rewards program yet.</Empty>
@@ -577,134 +585,246 @@ function RewardsTab({ guest }: { guest: boolean }) {
     );
   }
 
-  // The rungs, each with the dishes it offers. Grouped here rather than
-  // server-side because the order is already the server's and grouping is a
-  // presentation question.
-  const rungs = data.thresholds.map((points) => ({
-    points,
-    items: data.rewards.filter((r) => r.points_required === points),
-    reached: data.points >= points,
-  }));
-
-  // How far along the bar sits: towards the next rung, or full once every
-  // rung is reached.
-  const target = data.next_threshold;
-  const earnedTowards = target === null ? 1 : Math.min(1, data.points / target);
-
   return (
     <section aria-label="Your rewards">
-      <div className="rounded-panel border border-hairline bg-surface p-5 sm:p-6">
-        <p className="eyebrow text-muted">
-          {guest ? "Not collecting yet" : "Your points"}
+      {!data.collecting && (
+        <p className="mb-5 rounded-panel border border-hairline bg-surface p-5 text-sm text-muted">
+          {guest
+            ? "Stamps are saved to your account. Create one, or sign in, and every order you complete here counts towards something free."
+            : "Sign in and every order you complete here counts towards something free."}
         </p>
-        <p className="my-2 font-display text-[34px] leading-none tracking-[-1px]">
-          <span className="tnum">{data.points}</span>
-          <span className="ml-2 text-[15px] font-normal tracking-normal text-muted">
-            {data.points === 1 ? "point" : "points"}
-          </span>
-        </p>
+      )}
 
-        {/* A guest has no identity to accrue against -- the row is made per
-            checkout -- so this says so plainly rather than showing a zero
-            that looks like a start. */}
-        {!data.collecting ? (
-          <p className="text-sm text-muted">
-            Points are saved to your account. Create one, or sign in, and every
-            order you complete here counts towards a free item.
-          </p>
-        ) : target === null ? (
-          <p className="text-sm text-brick">
-            You have unlocked everything on the list. Enjoy.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-muted">
-              <span className="tnum">{data.points_to_next}</span>{" "}
-              {data.points_to_next === 1 ? "more order" : "more orders"} until{" "}
-              <span className="tnum">{target}</span> points.
-            </p>
-            {/* aria-hidden: the sentence above already says it, and a
-                progress bar read out as a percentage says it worse. */}
+      {data.programs.map((card) => {
+        const toGo = Math.max(0, card.required_count - card.current_count);
+        const filled = card.required_count
+          ? Math.min(1, card.current_count / card.required_count)
+          : 0;
+        return (
+          <div
+            key={card.program_id}
+            className="mb-5 rounded-panel border border-hairline bg-surface p-5 sm:p-6"
+          >
+            <p className="eyebrow text-muted">{card.name}</p>
+
+            {card.rewards_ready > 0 ? (
+              <p className="my-2 font-display text-[26px] leading-[1.15] tracking-[-.6px] text-brick">
+                {card.rewards_ready === 1
+                  ? "You have a free item waiting"
+                  : `You have ${card.rewards_ready} free items waiting`}
+              </p>
+            ) : (
+              <p className="my-2 font-display text-[26px] leading-[1.15] tracking-[-.6px]">
+                <span className="tnum">{card.current_count}</span>
+                <span className="text-muted"> of </span>
+                <span className="tnum">{card.required_count}</span>
+              </p>
+            )}
+
+            {/* aria-hidden: the sentence below says it, and a bar read out
+                as a percentage says it worse. */}
             <div
               aria-hidden="true"
-              className="mt-3 h-2 overflow-hidden rounded-full bg-[rgb(var(--ze-shortcut-ground))]"
+              className="mt-1 h-2 overflow-hidden rounded-full bg-[rgb(var(--ze-shortcut-ground))]"
             >
               <div
                 className="h-full rounded-full bg-brick transition-[width] duration-500 ease-standard"
-                style={{ width: `${Math.round(earnedTowards * 100)}%` }}
+                style={{ width: `${Math.round(filled * 100)}%` }}
               />
             </div>
-          </>
-        )}
+
+            <p className="mt-3 text-sm text-muted">
+              {card.rewards_ready > 0
+                ? "Claim it at checkout on your next order."
+                : toGo === 0
+                  ? "One more qualifying order."
+                  : `Only ${toGo} more to go.`}
+            </p>
+
+            {card.choices.length > 0 && (
+              <p className="mt-2 text-caption text-muted">
+                Choose from{" "}
+                {card.choices.map((c) => c.item_name).join(", ")}
+                {"."}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------- refer
+
+/**
+ * Bring a friend, get something free.
+ *
+ * The customer sends the invitation themselves. There is no SMS in this
+ * stack, and a link forwarded from their own phone arrives from a number
+ * the recipient knows -- which is both likelier to be opened and not a cold
+ * message to a stranger's handset. So this page's job is to hand over a
+ * link and make it easy to send: copy it, or open the phone's own messaging
+ * app with the words already written.
+ *
+ * Recording who was invited is optional and is the customer's note to
+ * themselves. Nothing is sent to the number they type.
+ */
+function ReferTab({ guest }: { guest: boolean }) {
+  const referrals = useReferralsQuery();
+  const [invite, { isLoading: inviting }] = useInviteFriendMutation();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [said, setSaid] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (referrals.isLoading) return <StatePage busy>Loading…</StatePage>;
+
+  const data = referrals.data;
+  if (!data?.running) {
+    return (
+      <section aria-label="Refer a friend">
+        <Empty>This restaurant is not running a referral offer yet.</Empty>
+      </section>
+    );
+  }
+
+  const reward = data.reward_name ?? "something free";
+
+  if (!data.collecting) {
+    return (
+      <section aria-label="Refer a friend">
+        <p className="rounded-panel border border-hairline bg-surface p-5 text-sm text-muted">
+          {guest
+            ? `Create an account and you can invite a friend. When they order for the first time, you get ${reward} free.`
+            : `Sign in to invite a friend. When they order for the first time, you get ${reward} free.`}
+        </p>
+      </section>
+    );
+  }
+
+  const link = data.share_url ?? "";
+  // The customer's own messaging app, with the words already written. An
+  // sms: link opens it; it does not send anything by itself, which is the
+  // point -- the message goes from their number, not ours.
+  const message = `Try this place — your first order and I get ${reward} free: ${link}`;
+  const smsHref = `sms:${phone ? phone.replace(/[^+\d]/g, "") : ""}?&body=${encodeURIComponent(message)}`;
+
+  async function record(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await invite({ name: name.trim() || undefined, phone: phone.trim() || undefined }).unwrap();
+      setSaid(name.trim() ? `${name.trim()} noted.` : "Invitation noted.");
+      setName("");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setSaid("Link copied.");
+    } catch {
+      // Clipboard access is refused in plenty of ordinary situations --
+      // an insecure origin, a browser that asks first. The link is on
+      // screen and selectable, so this is a convenience that failed
+      // rather than a thing that broke.
+      setSaid("Copy the link above.");
+    }
+  }
+
+  return (
+    <section aria-label="Refer a friend">
+      <p className="sr-only" aria-live="polite">{said}</p>
+      <ErrorNote message={error} />
+
+      <div className="rounded-panel border border-hairline bg-surface p-5 sm:p-6">
+        <p className="eyebrow text-muted">Your invitation link</p>
+        <p className="my-2 font-display text-[22px] leading-[1.2] tracking-[-.4px]">
+          Bring a friend, get {reward} free
+        </p>
+        <p className="text-caption text-muted">
+          They order for the first time, you get the reward. Send it from your
+          own phone so they know it is from you.
+        </p>
+
+        <p className="mt-4 break-all rounded-button border border-hairline bg-paper px-3 py-[11px] font-mono text-caption">
+          {link}
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-3">
+          <button type="button" className="btn-primary" onClick={copy}>
+            Copy link
+          </button>
+          {/* A plain link, not a fetch: it hands off to whatever app the
+              phone uses for messages. On a desktop with no such app it
+              simply does nothing, which is why Copy comes first. */}
+          <a className="btn-quiet" href={smsHref}>
+            Open in Messages
+          </a>
+        </div>
       </div>
 
-      <h2 className="mb-1 mt-7 font-display text-[22px] leading-[1.2] tracking-[-.4px]">
-        What you can get
-      </h2>
-      <p className="mb-4 text-caption text-muted">
-        One free item per order. A reward stays yours once you reach it.
-      </p>
+      <form onSubmit={record} className="mt-6" noValidate>
+        <h2 className="mb-1 font-display text-[20px] leading-[1.2] tracking-[-.3px]">
+          Keep track of who you asked
+        </h2>
+        <p className="mb-3 text-caption text-muted">
+          Optional, and only for you — we do not message anyone.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[180px] flex-1">
+            <span className="label">Friend's name</span>
+            <input
+              className="field mt-[7px]"
+              maxLength={160}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="min-w-[180px] flex-1">
+            <span className="label">Their number</span>
+            <input
+              className="field mt-[7px]"
+              inputMode="tel"
+              maxLength={32}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn-quiet" disabled={inviting}>
+            {inviting ? "Saving…" : "Add"}
+          </button>
+        </div>
+      </form>
 
-      {rungs.map((rung) => (
-        <div key={rung.points} className="mt-5">
-          <p className="flex items-center gap-2 text-sm font-semibold">
-            <span className="tnum">{rung.points}</span> points
-            {rung.reached ? (
-              <span className="rounded-[5px] bg-brickSoft px-[7px] py-1 text-[11px] font-[650] text-brick">
-                Unlocked
+      {data.invitations.length > 0 && (
+        <ul className="mt-6 flex flex-col">
+          {data.invitations.map((invitation) => (
+            <li
+              key={invitation.id}
+              className="flex items-center gap-3 border-t border-hairline py-3"
+            >
+              <span className="min-w-0 flex-1 text-sm">
+                {invitation.invitee_name ?? "Someone you invited"}
               </span>
-            ) : (
-              <span className="text-caption font-normal text-muted">
-                {/* Counted from the balance, not from the rung below: what a
-                    customer wants to know is how many more orders. */}
-                {rung.points - data.points} to go
-              </span>
-            )}
-          </p>
-          <ul className="flex flex-col">
-            {rung.items.map((reward) => (
-              <li
-                key={reward.id}
-                className={`flex items-center gap-4 border-t border-hairline py-4 ${
-                  rung.reached ? "" : "opacity-[.55]"
+              <span
+                className={`text-caption ${
+                  invitation.status === "QUALIFIED" ? "font-[650] text-brick" : "text-muted"
                 }`}
               >
-                {reward.image_url ? (
-                  <MenuImage
-                    src={reward.image_url}
-                    className="h-16 w-16 shrink-0 rounded-button bg-paper object-cover"
-                  />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="grid h-16 w-16 shrink-0 place-items-center rounded-button bg-paper text-muted"
-                  >
-                    <Icon name="tag" className="h-6 w-6" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-[650]">{reward.item_name}</span>
-                  {/* Two separate reasons, said separately: a dish you have
-                      not earned and a dish the kitchen has run out of are
-                      not the same disappointment. */}
-                  <span className="block text-caption text-muted">
-                    {!reward.is_available
-                      ? "Sold out right now"
-                      : reward.is_claimable
-                        ? "Yours to claim"
-                        : `Reach ${reward.points_required} points`}
-                  </span>
-                </span>
-                {reward.is_claimable && (
-                  <span className="rounded-[5px] border border-brick px-[7px] py-1 text-[11px] font-[650] text-brick">
-                    Free
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+                {invitation.status === "QUALIFIED"
+                  ? "Ordered — reward earned"
+                  : invitation.status === "JOINED"
+                    ? "Signed up, not ordered yet"
+                    : "Invited"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

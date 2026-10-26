@@ -1,6 +1,6 @@
 # Email templates
 
-Every email Zenoeats sends is a folder here:
+Every email ZenoEats sends is a folder here:
 
 | Folder | Sent when |
 | --- | --- |
@@ -15,7 +15,7 @@ Every email Zenoeats sends is a folder here:
 | `staff_joined/` | Someone accepts an invitation (to the team member who invited them) |
 | `staff_role_changed/` | An admin changes a team member's role |
 | `staff_removed/` | An admin takes a team member off the team |
-| `staff_password_reset/` | An admin, or Zenoeats support, resets a team member's password |
+| `staff_password_reset/` | An admin, or ZenoEats support, resets a team member's password |
 | `refund_failed/` | A cancellation went through but Stripe refused its refund (to every admin and manager) |
 | `customer_welcome/` | A new customer account (under a day old) first opens a restaurant's storefront |
 | `account_closed/` | A customer closes their account, or it is deleted in Clerk |

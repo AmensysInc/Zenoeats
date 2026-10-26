@@ -547,61 +547,6 @@ class SentEmail(Base):
     )
 
 
-class Reward(Base, TimestampMixin):
-    """One dish a customer may have free once they have earned enough points.
-
-    A point is an order. The balance is not kept anywhere: it is the number
-    of orders that customer has completed at that restaurant, which the
-    orders table already knows. A column beside it would be a second truth
-    about the same fact and the two would part company the first time an
-    order was cancelled -- the same reason coupon redemptions are counted
-    from the orders rather than stored.
-
-    THE LADDER IS THE ROWS. There is no table of tiers: a threshold exists
-    because some dish names it. Ten, twenty, thirty-five, fifty are whatever
-    numbers the restaurant typed, and a tier with no dish in it is not a tier
-    a customer could see anyway.
-
-    REACHING A THRESHOLD UNLOCKS IT FOR GOOD -- nothing is deducted, so a
-    customer at fifty points still has everything the ten-point threshold
-    offers. The cap is per order instead (orders.reward_item_id): one free
-    dish a visit, however much they have earned.
-
-    The same dish may sit at several thresholds. "Free fries at ten" and
-    "free fries at fifty" are both allowed and only the reached one matters;
-    the same dish twice at one threshold is a mistake and the unique index
-    refuses it.
-    """
-
-    __tablename__ = "rewards"
-    __table_args__ = (
-        Index(
-            "uq_reward_item_per_threshold",
-            "restaurant_id", "points_required", "item_id",
-            unique=True,
-            postgresql_where=text("deleted_at IS NULL"),
-        ),
-        CheckConstraint("points_required > 0", name="ck_reward_points_positive"),
-    )
-
-    id: Mapped[uuid.UUID] = uuid_pk()
-    restaurant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
-    )
-    # The number of completed orders this dish becomes free at.
-    points_required: Mapped[int] = mapped_column(Integer, nullable=False)
-    item_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("menu_items.id"), nullable=False
-    )
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # Off without being deleted: a reward withdrawn for a month keeps its
-    # place in the ladder and its history.
-    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-
 class Offer(Base, TimestampMixin):
     """Something the storefront tells a customer, for a while.
 

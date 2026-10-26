@@ -16,7 +16,7 @@
 
 {% block body %}
 <p>Hi{% if name %} {{ name }}{% endif %},</p>
-<p>Somebody asked to reset the password for your Zenoeats account. Choose a new one here:</p>
+<p>Somebody asked to reset the password for your ZenoEats account. Choose a new one here:</p>
 {{ ui.button(reset_url, "Choose a new password") }}
 <p style="margin:16px 0 0;color:{{ ui.muted }};font-size:13px">
   This link works once and expires in {{ expires_in_minutes }} minutes.

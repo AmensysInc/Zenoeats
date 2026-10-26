@@ -137,7 +137,7 @@ def test_closing_tells_them_once_with_the_address_sealed(
 
 
 def test_an_account_deleted_in_clerk_is_told_by_the_webhook(queued_emails):
-    """No storefront was involved, so the email is Zenoeats', not a
+    """No storefront was involved, so the email is ZenoEats', not a
     restaurant's."""
     from app.db.base import utcnow
     from app.db.session import system_session
@@ -168,7 +168,7 @@ def test_an_account_deleted_in_clerk_is_told_by_the_webhook(queued_emails):
 def test_the_closed_email_without_a_restaurant_reads_on_its_own():
     _, body_html, body_text = account_emails.compose("account_closed", name="Sam",
                                                      restaurant_name=None)
-    assert "Your Zenoeats account has been closed." in body_text
+    assert "Your ZenoEats account has been closed." in body_text
     assert "which you used" not in body_text
 
 

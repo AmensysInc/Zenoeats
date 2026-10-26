@@ -1,4 +1,4 @@
-"""The emails Zenoeats itself sends, and what they share.
+"""The emails ZenoEats itself sends, and what they share.
 
 Order confirmations and staff invitations are composed here; the emails
 that follow an order afterwards are in order_emails.py, built on the helpers

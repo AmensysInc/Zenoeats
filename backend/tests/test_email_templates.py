@@ -50,7 +50,7 @@ def test_only_the_html_is_escaped():
         temporary_password=None, has_temporary_password=False,
         sign_in_url="https://tomjerry.zenoeats.com/manage/login?a=1&b=2",
     )
-    assert out.subject == "You're invited to join Tom & Jerry's on Zenoeats"
+    assert out.subject == "You're invited to join Tom & Jerry's on ZenoEats"
     assert "Tom & Jerry's has invited you" in out.text
     assert "a <manager>" in out.text
     assert "Tom &amp; Jerry&#39;s" in out.html

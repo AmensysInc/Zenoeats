@@ -34,8 +34,12 @@ from app.models.commerce import (
     OrderStatus,
     Offer,
     RestaurantOrderCounter,
-    Reward,
     SentEmail,
+)
+from app.models.loyalty import (
+    CustomerLoyalty, LoyaltyProgram, LoyaltyProgramItem, LoyaltyReward,
+    LoyaltyTransaction, PurchaseType, Referral, ReferralCode, ReferralStatus, RewardStatus,
+    StampReason,
 )
 from app.models.identity import RestaurantUser, StaffRole, StaffStatus, User, UserKind
 from app.models.payments import (
@@ -73,7 +77,11 @@ __all__ = [
     "ItemIncludedOption",
     "ModifierGroupItemType",
     "Coupon", "CouponItemType",
-    "Reward", "Offer",
+    "Offer",
+    "LoyaltyProgram", "LoyaltyProgramItem", "LoyaltyTransaction",
+    "CustomerLoyalty", "LoyaltyReward",
+    "PurchaseType", "StampReason", "RewardStatus",
+    "Referral", "ReferralCode", "ReferralStatus",
     "Order", "OrderItem", "OrderItemModifier", "OrderStatus", "OrderEvent", "OrderEventAction",
     "FulfillmentType",
     "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS", "SentEmail",

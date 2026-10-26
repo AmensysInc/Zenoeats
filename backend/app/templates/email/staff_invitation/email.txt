@@ -8,7 +8,7 @@ Temporary password: {{ temporary_password }}
 {% elif has_temporary_password %}
 Your manager will give you a temporary password. You'll choose your own the first time you sign in, then accept the invitation.
 {% else %}
-Sign in with the Zenoeats staff password you already use, then accept the invitation.
+Sign in with the ZenoEats staff password you already use, then accept the invitation.
 {% endif %}
 
 Sign in: {{ sign_in_url }}

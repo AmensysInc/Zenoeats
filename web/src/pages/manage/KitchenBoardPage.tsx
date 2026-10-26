@@ -758,7 +758,7 @@ function ReasonForm({
             paid with.
           </p>
           <p className="note">
-            Your Zenoeats fee comes back too. The order stays cancelled either way.
+            Your ZenoEats fee comes back too. The order stays cancelled either way.
           </p>
         </>
       ) : cancel ? (
@@ -779,7 +779,7 @@ function ReasonForm({
               <span>
                 <span className="font-semibold">Refund the customer in full</span>
                 <span className="field-hint block">
-                  Straight back to their card, your Zenoeats fee included. Leave it unticked for a
+                  Straight back to their card, your ZenoEats fee included. Leave it unticked for a
                   no-show you are charging for.
                 </span>
               </span>

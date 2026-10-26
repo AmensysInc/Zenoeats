@@ -139,6 +139,7 @@ export const api = createApi({
     // ladder must not refetch a storefront's.
     "Reward",
     "Offer",
+    "Referrals",
   ],
   endpoints: () => ({}),
 });
