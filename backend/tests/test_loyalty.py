@@ -22,6 +22,47 @@ from app.services import loyalty
 # --------------------------------------------------------------- fixtures
 
 
+def _make_restaurant(s, label):
+    """A throwaway restaurant, rather than one a seed script may or may not
+    have made: CI starts from an empty database. Removed by _drop_restaurant."""
+    from app.models import Restaurant, RestaurantStatus
+
+    restaurant = Restaurant(
+        slug=f"{label}-{uuid.uuid4().hex[:8]}", name=f"{label.title()} Test",
+        status=RestaurantStatus.ACTIVE.value, timezone="UTC", currency="USD",
+    )
+    s.add(restaurant)
+    s.flush()
+    return restaurant.id
+
+
+def _make_dishes(db, rid, count):
+    """A heading and `count` dishes under it, as (item_id, item_type_id)."""
+    type_id = uuid.uuid4()
+    db.execute(
+        text("insert into item_types (id, restaurant_id, name, sort_order) "
+             "values (:t, :r, 'Food', 0)"),
+        {"t": str(type_id), "r": str(rid)},
+    )
+    dishes = []
+    for n in range(count):
+        item_id = uuid.uuid4()
+        db.execute(
+            text("insert into menu_items (id, restaurant_id, name, item_type_id, "
+                 "base_price_minor, currency, is_available, tax_exempt, sort_order) "
+                 "values (:i, :r, :n, :t, 1000, 'USD', true, false, :o)"),
+            {"i": str(item_id), "r": str(rid), "n": f"Dish {n}", "t": str(type_id), "o": n},
+        )
+        dishes.append((item_id, type_id))
+    return dishes
+
+
+def _drop_restaurant(db, rid):
+    for table in ("menu_items", "item_types"):
+        db.execute(text(f"delete from {table} where restaurant_id = :r"), {"r": str(rid)})
+    db.execute(text("delete from restaurants where id = :r"), {"r": str(rid)})
+
+
 @pytest.fixture
 def shop():
     """A restaurant, a customer, and two dishes to build programs from.
@@ -32,9 +73,7 @@ def shop():
     Everything tenant-owned is cleaned up the same way it was made.
     """
     with system_session() as s:
-        rid = s.execute(
-            text("select id from restaurants where slug='spicehouse'")
-        ).scalar_one()
+        rid = _make_restaurant(s, "loyalty")
         # One well-known customer rather than a fresh one per test. The
         # system role may insert a users row and may not delete one, so a
         # new id each run would leave a trail; a fixed id is created once
@@ -52,12 +91,7 @@ def shop():
         s.commit()
 
     with tenant_session(rid) as db:
-        dishes = db.execute(
-            text(
-                "select id, item_type_id from menu_items "
-                "where deleted_at is null order by name limit 2"
-            )
-        ).all()
+        dishes = _make_dishes(db, rid, 2)
         db.commit()
 
     yield {
@@ -84,6 +118,7 @@ def shop():
                  "(select id from loyalty_programs where name like 'TEST %')")
         )
         db.execute(text("delete from loyalty_programs where name like 'TEST %'"))
+        _drop_restaurant(db, rid)
         db.commit()
 
 
