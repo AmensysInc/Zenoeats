@@ -45,7 +45,11 @@ export function formatPhone(value: string): string {
   const northAmerican = digits.length > 10 && digits.startsWith("1")
     ? digits.slice(1, 11)
     : digits.slice(0, 10);
-  const prefix = digits.startsWith("1") && digits.length > 10 ? "+1 " : "";
+  // +1 once the number is whole, not while it is being typed. A partial
+  // string is as likely to be the start of an international number, and
+  // announcing a country after four digits guesses out loud -- "+1 (447) 9"
+  // for somebody halfway through a London number.
+  const prefix = northAmerican.length === 10 ? "+1 " : "";
   if (northAmerican.length <= 3) return prefix + northAmerican;
   if (northAmerican.length <= 6)
     return `${prefix}(${northAmerican.slice(0, 3)}) ${northAmerican.slice(3)}`;

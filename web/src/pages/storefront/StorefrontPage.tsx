@@ -292,10 +292,33 @@ export function StorefrontPage() {
                   Find us
                 </p>
                 {restaurant.pickup_address && (
-                  <p className="flex items-start gap-2 [overflow-wrap:anywhere]">
+                  /* The address opens directions rather than sitting there
+                     as text somebody has to retype into their phone.
+
+                     A plain Maps URL, which needs no API key: a key buys an
+                     embedded, interactive map (services/googleMaps.ts loads
+                     one for order tracking), and this is a hand-off to
+                     whatever already does navigation on the device. On a
+                     phone that is the Maps app rather than the website.
+
+                     Opened in a new tab so a customer mid-order does not
+                     lose their cart to a detour into Maps. */
+                  <a
+                    className="link flex items-start gap-2 [overflow-wrap:anywhere]"
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                      restaurant.pickup_address,
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     <Icon name="store" className="mt-[3px] h-3.5 w-3.5 shrink-0" />
-                    {restaurant.pickup_address}
-                  </p>
+                    <span>
+                      {restaurant.pickup_address}
+                      <span className="block text-[11px] text-[rgb(var(--ze-menu-muted))]">
+                        Get directions
+                      </span>
+                    </span>
+                  </a>
                 )}
                 {restaurant.phone && (
                   <p className="mt-1.5 flex items-center gap-2">
