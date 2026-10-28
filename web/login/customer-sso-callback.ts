@@ -1,5 +1,5 @@
 import { getClerk } from "@/services/clerk";
-import { accountUrl, nextPath, paintWordmarks } from "./customer-shared";
+import { accountUrl, apiSessionLive, nextPath, paintWordmarks } from "./customer-shared";
 
 /**
  * Where Google, Apple or Facebook send the browser back to, by way of Clerk.
@@ -36,8 +36,11 @@ void (async () => {
       signUpFallbackRedirectUrl: nextPath(),
     });
     // handleRedirectCallback navigates by itself. Arriving here signed in
-    // means it had nowhere to send us; carry on to the destination.
-    if (clerk.user) window.location.replace(nextPath());
+    // means it had nowhere to send us; carry on to the destination -- once
+    // the API has agreed there is a session, so a provider leg that Clerk
+    // finished but the API will not accept lands on the sign-in page rather
+    // than in a loop between it and checkout.
+    if (clerk.user && (await apiSessionLive(clerk))) window.location.replace(nextPath());
     else backToSignIn();
   } catch {
     backToSignIn();

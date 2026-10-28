@@ -6,7 +6,7 @@ import { useCustomerSessionQuery } from "@/features/storefront/storefrontApi";
 import { AgreeToTerms } from "@/features/storefront/components/AgreeToTerms";
 import { takeOrderToken } from "@/features/storefront/orderToken";
 import { StatePage } from "@/components/common/Feedback";
-import { Booting, toLogin, useReconnect, type Reconnect } from "./guardParts";
+import { Booting, loginSucceeded, SendToLogin, useReconnect, type Reconnect } from "./guardParts";
 
 /**
  * The customer guard. The two operator portals have their own, in
@@ -58,6 +58,9 @@ export function RequireCustomer({
 
   useEffect(() => {
     if (data) {
+      // An answer, so whatever round trip to sign-in got us here is over and
+      // the loop breaker's count means nothing now.
+      loginSucceeded();
       dispatch(
         sessionEstablished({
           portal: "customer",
@@ -87,7 +90,8 @@ export function RequireCustomer({
   // Nobody yet. The sign-in page offers both an account and continuing as a
   // guest, so this is the right destination even where Clerk is unconfigured
   // and an account is not on offer at all.
-  if (error instanceof ApiError && error.status === 401) return toLogin("/account/sign-in");
+  if (error instanceof ApiError && error.status === 401)
+    return <SendToLogin loginPath="/account/sign-in" />;
   if (error) return <SignInUnreachable retry={refetch} retrying={isFetching} />;
   return <Booting />;
 }

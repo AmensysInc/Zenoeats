@@ -1,6 +1,7 @@
 import { errorMessage, request } from "@/services/apiClient";
 import {
-  MIN_PASSWORD_LENGTH, activateAndContinue, clerkErrorMessage, el, loadClerk, wireGoogleButton,
+  MIN_PASSWORD_LENGTH, activateAndContinue, apiSessionLive, clerkErrorMessage, el, loadClerk,
+  wireGoogleButton,
   nextPath, paintWordmarks, params, readCode, showMessage, wireSocialButtons, wirePasswordPair,
   withNext,
   type ClerkInstance,
@@ -109,7 +110,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 void loadClerk(errorBox).then((clerk) => {
-  if (clerk) start(clerk);
+  if (clerk) void start(clerk);
 });
 
 function show(section: "form" | "continue" | "code"): void {
@@ -123,8 +124,11 @@ function splitName(full: string): { firstName?: string; lastName?: string } {
   return firstName ? { firstName, lastName: rest.join(" ") || undefined } : {};
 }
 
-function start(clerk: ClerkInstance): void {
-  if (clerk.user) {
+async function start(clerk: ClerkInstance): Promise<void> {
+  // Signed in already -- if the API agrees. See apiSessionLive: a Clerk
+  // record the API will not accept must not be allowed to bounce somebody
+  // back to a page that will only send them here again.
+  if (clerk.user && (await apiSessionLive(clerk))) {
     window.location.replace(nextPath());
     return;
   }

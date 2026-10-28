@@ -1,6 +1,6 @@
 import { errorMessage, request } from "@/services/apiClient";
 import {
-  RETURN_ERRORS, activateAndContinue, clerkErrorMessage, el, loadClerk, nextPath, wireGoogleButton,
+  RETURN_ERRORS, activateAndContinue, apiSessionLive, clerkErrorMessage, el, loadClerk, nextPath, wireGoogleButton,
   paintRestaurantName, paintWordmarks, params, readCode, showMessage, wireSocialButtons,
   withNext,
   type ClerkInstance,
@@ -211,12 +211,18 @@ function setBusy(busy: boolean): void {
 }
 
 void loadClerk(errorBox).then((clerk) => {
-  if (clerk) start(clerk);
+  if (clerk) void start(clerk);
 });
 
-function start(clerk: ClerkInstance): void {
-  // Already signed in: this page has nothing to offer.
-  if (clerk.user) {
+async function start(clerk: ClerkInstance): Promise<void> {
+  // Already signed in: this page has nothing to offer -- but only if the API
+  // says so too. Taking Clerk's word for it was half of a redirect loop:
+  // checkout asks the API, is told nobody is signed in and sends the customer
+  // here; here asked Clerk, was told somebody is, and sent them back. Nothing
+  // on either page was wrong on its own, and together they flipped between
+  // the two until the customer gave up. Asking the same side as the guard is
+  // what makes the two agree.
+  if (clerk.user && (await apiSessionLive(clerk))) {
     window.location.replace(nextPath());
     return;
   }

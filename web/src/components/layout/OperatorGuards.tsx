@@ -13,7 +13,7 @@ import { ManageShell } from "@/features/restaurant/components/ManageShell";
 import { ErrorNote, StatePage } from "@/components/common/Feedback";
 import { Icon } from "@/components/common/icons";
 import { AuthLayout } from "./AuthLayout";
-import { Booting, isRefusal, toLogin, Unreachable } from "./guardParts";
+import { Booting, isRefusal, loginSucceeded, SendToLogin, Unreachable } from "./guardParts";
 
 /**
  * Route guards for the two credentialed portals.
@@ -38,14 +38,17 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   const { data, error, isLoading, isFetching, refetch } = useAdminMeQuery();
 
   useEffect(() => {
-    if (data) dispatch(sessionEstablished({ portal: "admin", email: data.email }));
-    else if (error) dispatch(sessionEnded());
+    if (data) {
+      loginSucceeded();
+      dispatch(sessionEstablished({ portal: "admin", email: data.email }));
+    } else if (error) dispatch(sessionEnded());
   }, [data, error, dispatch]);
 
   // "Not asked yet" is not "not signed in". Redirecting during the first
   // request would bounce an authenticated operator to the login page.
   if (isLoading) return <Booting />;
-  if (error instanceof ApiError && error.status === 401) return toLogin("/admin/login");
+  if (error instanceof ApiError && error.status === 401)
+    return <SendToLogin loginPath="/admin/login" />;
   if (isRefusal(error)) return <Refused message={error.message} />;
   if (error) return <Unreachable retry={refetch} retrying={isFetching} />;
   return <>{children}</>;
@@ -64,6 +67,7 @@ export function RequireStaff({
 
   useEffect(() => {
     if (data) {
+      loginSucceeded();
       dispatch(
         sessionEstablished({
           portal: "staff",
@@ -79,7 +83,8 @@ export function RequireStaff({
   }, [data, error, dispatch]);
 
   if (isLoading) return <Booting />;
-  if (error instanceof ApiError && error.status === 401) return toLogin("/manage/login");
+  if (error instanceof ApiError && error.status === 401)
+    return <SendToLogin loginPath="/manage/login" />;
   if (isRefusal(error)) return <Refused message={error.message} signOut />;
   if (error) return <Unreachable retry={refetch} retrying={isFetching} />;
 
