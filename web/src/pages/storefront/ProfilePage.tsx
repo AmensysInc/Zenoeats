@@ -104,8 +104,12 @@ export function ProfilePage() {
   const guest = session.data.is_guest;
   const monogram = initials(session.data.full_name);
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       <CustomerHeader restaurant={portal.data} />
       <main className={`${column} pb-[70px] pt-3 sm:pt-6`}>
         <CustomerAccountBar />
@@ -177,7 +181,7 @@ export function ProfilePage() {
           </div>
         </div>
       </main>
-    </div>
+    </>
   );
 }
 

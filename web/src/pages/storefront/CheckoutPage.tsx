@@ -466,8 +466,12 @@ export function CheckoutPage() {
   // then the food is known and the rest is not, so the rest says so.
   const pending = delivering && !priced;
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       <CustomerHeader restaurant={restaurant} />
       <main className={`${column} pb-[50px] pt-3 sm:pb-[70px] sm:pt-6`}>
         <CustomerAccountBar />
@@ -792,7 +796,7 @@ export function CheckoutPage() {
           </aside>
         </div>
       </main>
-    </div>
+    </>
   );
 }
 

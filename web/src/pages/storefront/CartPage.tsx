@@ -50,8 +50,12 @@ export function CartPage() {
   // and edit, and checkout is what refuses.
   const orderable = !!portal.data?.is_orderable && !!portal.data?.accepting_orders;
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="min-h-screen bg-paper">
+    <>
       {portal.data && <CustomerHeader restaurant={portal.data} />}
 
       {/* No bottom padding: the footer below brings its own, and the two
@@ -124,6 +128,6 @@ export function CartPage() {
           </>
         )}
       </main>
-    </div>
+    </>
   );
 }

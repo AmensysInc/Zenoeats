@@ -157,8 +157,12 @@ export function OrderPage() {
   const step = steps.indexOf(order.status);
   const ready = order.status === "READY_FOR_PICKUP" || order.status === "READY_FOR_DELIVERY";
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       {/* No account row and no sign-in prompt: opened from a guest's email,
           the link itself is the credential. */}
       {portal.data && <CustomerHeader restaurant={portal.data} />}
@@ -310,7 +314,7 @@ export function OrderPage() {
         </section>
       </div>
       </main>
-    </div>
+    </>
   );
 }
 
