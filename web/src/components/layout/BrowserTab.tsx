@@ -1,12 +1,13 @@
 import { useEffect } from "react";
-import { useLocation, Outlet } from "react-router-dom";
+import { useLocation, Outlet, ScrollRestoration } from "react-router-dom";
 import { usePortalQuery } from "@/features/storefront/storefrontApi";
 import { documentTitle, FALLBACK_ICON, setFavicon } from "@/features/storefront/browserTab";
 import { rememberedRestaurantName } from "@/utils/restaurantName";
 
 /**
  * Keeps the browser tab honest: the page you are on, the restaurant you are
- * on it at, and the restaurant's own icon.
+ * on it at, the restaurant's own icon -- and where the page opens scrolled
+ * to.
  *
  * A layout route wrapping everything rather than a hook each page calls.
  * Every page needs this and a page that forgot would quietly show the title
@@ -23,6 +24,14 @@ import { rememberedRestaurantName } from "@/utils/restaurantName";
  * The portal is not asked for on the operator portals. They are a different
  * surface, served on hostnames where /portal resolves to no restaurant, and
  * a request that can only 404 is not worth making to title a tab.
+ *
+ * SCROLL IS A TAB-LEVEL CONCERN TOO, and it was nobody's. A client
+ * navigation changes the DOM without touching the scroll offset, so tapping
+ * the cart from halfway down a long menu opened the cart halfway down -- on
+ * a phone, below the fold, looking like an empty page with a footer. One
+ * ScrollRestoration puts new navigations at the top and gives back and
+ * forward the position they left, which is the pair of behaviours a browser
+ * would have had if the pages were documents.
  */
 export function BrowserTab() {
   const { pathname } = useLocation();
@@ -42,5 +51,10 @@ export function BrowserTab() {
     setFavicon(logo || FALLBACK_ICON);
   }, [logo]);
 
-  return <Outlet />;
+  return (
+    <>
+      <ScrollRestoration />
+      <Outlet />
+    </>
+  );
 }

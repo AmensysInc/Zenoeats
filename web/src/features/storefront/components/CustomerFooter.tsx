@@ -1,6 +1,7 @@
 import { useAppSelector } from "@/app/hooks";
 import { selectCartCount } from "@/features/cart/cartSlice";
 import { usePortalQuery } from "@/features/storefront/storefrontApi";
+import { usePageColumnClass } from "@/components/layout/pageColumn";
 
 /**
  * The foot of every customer page.
@@ -34,6 +35,9 @@ export function CustomerFooter() {
   // kitchen is the only party that can answer.
   const { data } = usePortalQuery();
   const phone = data?.phone;
+  // The column the page above is using, so this text starts on the same left
+  // edge as the order it is talking about rather than on one of its own.
+  const column = usePageColumnClass();
 
   return (
     // No top border and a small gap: the page above this already ends in a
@@ -44,10 +48,7 @@ export function CustomerFooter() {
         count > 0 ? "pb-[132px]" : "pb-8"
       }`}
     >
-      {/* The same container as the page above it -- width, gutters and
-          all -- so this text starts on the same left edge as the address
-          and the restaurant name, rather than on one of its own. */}
-      <div className="mx-auto w-full max-w-[1336px] space-y-3 px-[19px] sm:px-7 xl:px-10">
+      <div className={`${column} space-y-3`}>
         <section aria-labelledby="allergen-notice">
           <h2 id="allergen-notice" className="text-sm font-semibold text-ink">
             Food Allergies &amp; Dietary Restrictions
