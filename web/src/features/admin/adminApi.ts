@@ -169,6 +169,77 @@ export type CouponDraft = {
  *  new code is a new coupon and the old one gets retired. */
 export type CouponPatch = Partial<Omit<CouponDraft, "code">>;
 
+/** One code minted by a group, and whether anybody has spent it.
+ *
+ *  `redeemed_by` is the whole reason a group exists: an order names the code
+ *  it used, so MORE7 is traceable to whoever was handed MORE7 where one
+ *  shared code makes every redemption look alike. Null while the code is
+ *  unused, and also where a guest with no account spent it. */
+export type GroupCode = {
+  id: string;
+  code: string;
+  number: number;
+  redemptions: number;
+  discounted_minor: number;
+  redeemed_by: string | null;
+  redeemed_at: string | null;
+};
+
+/** One offer, handed out as numbered codes: "MORE" with ten uses is MORE1
+ *  through MORE10, each good once, each for one person. */
+export type CouponGroup = {
+  id: string;
+  code_prefix: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  /** How many codes were minted. Each is good once, so this is how many
+   *  people the offer is for rather than how many goes one code gets. */
+  uses: number;
+  max_per_customer: number | null;
+  is_active: boolean;
+  applies_to: MenuHeading[];
+  issued: number;
+  used: number;
+  discounted_minor: number;
+  codes: GroupCode[];
+  created_at: string;
+};
+
+export type CouponGroupList = {
+  restaurant_name: string;
+  currency: string;
+  item_types: MenuHeading[];
+  groups: CouponGroup[];
+};
+
+export type CouponGroupDraft = {
+  code_prefix: string;
+  uses: number;
+  description?: string | null;
+  percent_off_bps?: number | null;
+  amount_off_minor?: number | null;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  applies_to?: string[];
+  starts_at?: string | null;
+  ends_at?: string | null;
+  max_per_customer?: number | null;
+  is_active?: boolean;
+};
+
+/** Neither the prefix nor the count is editable: the codes have been handed
+ *  out, so renaming them would break every printed copy, and lowering the
+ *  count would have to decide which holders to cancel. */
+export type CouponGroupPatch = {
+  description?: string | null;
+  is_active?: boolean;
+};
+
 export type Restaurant = {
   id: string;
   slug: string;
@@ -478,6 +549,44 @@ export const adminApi = api.injectEndpoints({
 
     // --- rewards and offers ------------------------------------------------
     //
+    // --- group coupons ----------------------------------------------------
+    // One offer, minted as numbered codes. The codes are ordinary coupons
+    // underneath, so they share the Coupon tag: minting one changes what
+    // the coupon list would show if it did not filter them out.
+    couponGroups: build.query<CouponGroupList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/coupon-groups` }),
+      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    }),
+
+    createCouponGroup: build.mutation<CouponGroup, { id: string; draft: CouponGroupDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    updateCouponGroup: build.mutation<
+      CouponGroup,
+      { id: string; groupId: string; patch: CouponGroupPatch }
+    >({
+      query: ({ id, groupId, patch }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    retireCouponGroup: build.mutation<void, { id: string; groupId: string }>({
+      query: ({ id, groupId }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
     // The platform's to create, for the reason coupons are: what a promotion
     // costs is ZenoEats' business as much as the kitchen's. No screen for
     // either in the restaurant portal, and no endpoint behind one.
@@ -592,6 +701,10 @@ export const {
   useCreateCouponMutation,
   useUpdateCouponMutation,
   useRetireCouponMutation,
+  useCouponGroupsQuery,
+  useCreateCouponGroupMutation,
+  useUpdateCouponGroupMutation,
+  useRetireCouponGroupMutation,
   useRewardsQuery,
   useCreateRewardMutation,
   useUpdateRewardMutation,

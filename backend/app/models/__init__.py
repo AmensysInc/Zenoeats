@@ -23,6 +23,7 @@ from app.models.catalog import (
 from app.models.commerce import (
     ALLOWED_TRANSITIONS,
     Coupon,
+    CouponGroup,
     CouponItemType,
     IdempotencyKey,
     Order,
@@ -76,7 +77,7 @@ __all__ = [
     "ModifierGroup", "ModifierOption", "ItemModifierGroup", "SelectionType",
     "ItemIncludedOption",
     "ModifierGroupItemType",
-    "Coupon", "CouponItemType",
+    "Coupon", "CouponGroup", "CouponItemType",
     "Offer",
     "LoyaltyProgram", "LoyaltyProgramItem", "LoyaltyTransaction",
     "CustomerLoyalty", "LoyaltyReward",

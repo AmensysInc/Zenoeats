@@ -410,6 +410,9 @@ _PURGE_ORDER = [
     # deleted further down.
     "coupon_item_types",
     "coupons",
+    # After the coupons, which point at the group that minted them. A group
+    # is only where its codes came from, so it cannot outlive them.
+    "coupon_groups",
     # Nothing points at an offer, so its place here is only "before the
     # restaurant row itself".
     "offers",

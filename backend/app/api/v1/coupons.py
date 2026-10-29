@@ -43,7 +43,10 @@ from app.api.deps import require_platform_admin
 from app.core import errors
 from app.db.base import utcnow
 from app.db.session import system_session, tenant_session
-from app.models import Coupon, CouponItemType, DiscountKind, ItemType, Order, User
+from app.models import (
+    Coupon, CouponGroup, CouponItemType, DiscountKind, ItemType, Order, User,
+)
+from app.services import coupon_groups as group_service
 from app.services import coupons as coupon_service
 
 # The audit writer the rest of the admin surface uses. Imported rather than
@@ -59,8 +62,13 @@ router = APIRouter(prefix="/admin", tags=["coupons"])
 MAX_COUPONS = 200
 
 
-class CouponIn(BaseModel):
-    """A new coupon.
+class OfferIn(BaseModel):
+    """What a coupon and a group of coupons both are: a discount and its limits.
+
+    Shared because a group mints coupons, so the two must describe a
+    discount the same way or a group would promise one thing and its codes
+    deliver another. The subclasses add what is genuinely theirs -- a code
+    and a redemption cap for one coupon, a prefix and a count for a group.
 
     THE DISCOUNT IS TWO OPTIONAL FIELDS, one of which has to be filled. A
     percentage and an amount are the two things a promotion can be, and an
@@ -78,7 +86,6 @@ class CouponIn(BaseModel):
     code has a cap of one per customer and no end date at all.
     """
 
-    code: str = Field(min_length=3, max_length=32)
     description: str | None = Field(default=None, max_length=160)
 
     # Basis points, so 1000 is 10%. The form converts; this is the unit the
@@ -98,9 +105,50 @@ class CouponIn(BaseModel):
 
     starts_at: datetime | None = None
     ends_at: datetime | None = None
-    max_redemptions: int | None = Field(default=None, gt=0)
     max_per_customer: int | None = Field(default=None, gt=0)
     is_active: bool = True
+
+    @field_validator("description")
+    @classmethod
+    def _described(cls, value: str | None) -> str | None:
+        return (value or "").strip() or None
+
+    @model_validator(mode="after")
+    def _discount_coherent(self):
+        """The rules a single field cannot see on its own."""
+        if self.percent_off_bps is None and self.amount_off_minor is None:
+            raise ValueError("Fill in either a percentage off or an amount off.")
+        if self.percent_off_bps is not None and self.amount_off_minor is not None:
+            raise ValueError(
+                "Fill in a percentage off or an amount off, not both. "
+                "For a percentage with a limit, set the ceiling instead."
+            )
+        if self.amount_off_minor is not None and self.max_discount_minor is not None:
+            # A ceiling on a flat amount is either the amount itself or lower
+            # than it, in which case the amount was a lie. Either way it is
+            # not a setting.
+            raise ValueError("A ceiling only applies to a percentage discount.")
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValueError("The end has to come after the start.")
+        return self
+
+    def stored(self) -> tuple[str, int]:
+        """The kind and value as the row holds them.
+
+        One place, so the two readings of `discount_value` cannot drift: the
+        validator above has already established that exactly one of the two
+        fields is set.
+        """
+        if self.percent_off_bps is not None:
+            return DiscountKind.PERCENT.value, self.percent_off_bps
+        return DiscountKind.AMOUNT.value, self.amount_off_minor
+
+
+class CouponIn(OfferIn):
+    """A new coupon: one code, typed by whoever was given it."""
+
+    code: str = Field(min_length=3, max_length=32)
+    max_redemptions: int | None = Field(default=None, gt=0)
 
     @field_validator("code")
     @classmethod
@@ -121,28 +169,9 @@ class CouponIn(BaseModel):
             raise ValueError("A code can only contain letters and numbers.")
         return code
 
-    @field_validator("description")
-    @classmethod
-    def _described(cls, value: str | None) -> str | None:
-        return (value or "").strip() or None
-
     @model_validator(mode="after")
-    def _coherent(self):
-        """The rules a single field cannot see on its own."""
-        if self.percent_off_bps is None and self.amount_off_minor is None:
-            raise ValueError("Fill in either a percentage off or an amount off.")
-        if self.percent_off_bps is not None and self.amount_off_minor is not None:
-            raise ValueError(
-                "Fill in a percentage off or an amount off, not both. "
-                "For a percentage with a limit, set the ceiling instead."
-            )
-        if self.amount_off_minor is not None and self.max_discount_minor is not None:
-            # A ceiling on a flat amount is either the amount itself or lower
-            # than it, in which case the amount was a lie. Either way it is
-            # not a setting.
-            raise ValueError("A ceiling only applies to a percentage discount.")
-        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
-            raise ValueError("The end has to come after the start.")
+    def _within_total(self):
+        """A per-customer cap above the total cap is not a cap at all."""
         if (
             self.max_redemptions is not None
             and self.max_per_customer is not None
@@ -150,17 +179,6 @@ class CouponIn(BaseModel):
         ):
             raise ValueError("Per-customer uses cannot exceed the total.")
         return self
-
-    def stored(self) -> tuple[str, int]:
-        """The kind and value as the row holds them.
-
-        One place, so the two readings of `discount_value` cannot drift: the
-        validator above has already established that exactly one of the two
-        fields is set.
-        """
-        if self.percent_off_bps is not None:
-            return DiscountKind.PERCENT.value, self.percent_off_bps
-        return DiscountKind.AMOUNT.value, self.amount_off_minor
 
 
 class CouponPatch(BaseModel):
@@ -327,6 +345,30 @@ def _scopes(db, coupon_ids: list[UUID], headings: list[MenuHeadingOut]) -> dict:
     return out
 
 
+def _check_headings(db, wanted: list[UUID]) -> None:
+    """Every id names a live heading of this restaurant, or say so.
+
+    Row-level security already guarantees a heading found here belongs to
+    this tenant, so what this adds is the message rather than the safety.
+    Its own function because a group checks the same thing before it has a
+    coupon to hang a scope on.
+    """
+    if not wanted:
+        return
+    live = {
+        row
+        for row in db.execute(
+            select(ItemType.id).where(
+                ItemType.id.in_(wanted), ItemType.deleted_at.is_(None)
+            )
+        ).scalars()
+    }
+    if any(one not in live for one in wanted):
+        raise errors.validation_error(
+            "One of those menu headings is not on this restaurant's menu."
+        )
+
+
 def _set_scope(db, restaurant_id: UUID, coupon: Coupon, wanted: list[UUID]) -> None:
     """Replace a coupon's scope with the headings named.
 
@@ -341,19 +383,7 @@ def _set_scope(db, restaurant_id: UUID, coupon: Coupon, wanted: list[UUID]) -> N
     if not wanted:
         return
 
-    live = {
-        row
-        for row in db.execute(
-            select(ItemType.id).where(
-                ItemType.id.in_(wanted), ItemType.deleted_at.is_(None)
-            )
-        ).scalars()
-    }
-    missing = [str(one) for one in wanted if one not in live]
-    if missing:
-        raise errors.validation_error(
-            "One of those menu headings is not on this restaurant's menu."
-        )
+    _check_headings(db, wanted)
     for item_type_id in dict.fromkeys(wanted):
         db.add(
             CouponItemType(
@@ -416,7 +446,7 @@ def list_coupons(restaurant_id: UUID, admin: User = Depends(require_platform_adm
         headings = _headings(db)
         rows = db.execute(
             select(Coupon)
-            .where(Coupon.deleted_at.is_(None))
+            .where(Coupon.deleted_at.is_(None), Coupon.group_id.is_(None))
             .order_by(Coupon.created_at.desc(), Coupon.id)
             .limit(MAX_COUPONS)
         ).scalars().all()
@@ -447,7 +477,9 @@ def create_coupon(
         _restaurant(db, restaurant_id)
 
         live = db.execute(
-            select(func.count()).select_from(Coupon).where(Coupon.deleted_at.is_(None))
+            select(func.count())
+            .select_from(Coupon)
+            .where(Coupon.deleted_at.is_(None), Coupon.group_id.is_(None))
         ).scalar_one()
         if live >= MAX_COUPONS:
             raise errors.validation_error(
@@ -620,3 +652,393 @@ def retire_coupon(
                 },
             )
         log.info("coupon %s retired on restaurant %s", coupon.code, restaurant_id)
+
+
+# ------------------------------------------------------------ group coupons ---
+#
+# One offer, handed out as numbered codes: "MORE", ten uses, mints MORE1
+# through MORE10. See services/coupon_groups.py for why the codes are
+# ordinary coupon rows and not a pattern match, and 0055 for the schema.
+#
+# Everything below is the same shape as the coupon endpoints above, on
+# purpose: same tenant session, same audit line per write, same soft delete.
+
+
+class CouponGroupIn(OfferIn):
+    """A new group, and the codes to mint from it."""
+
+    code_prefix: str = Field(min_length=2, max_length=group_service.MAX_PREFIX)
+    # How many codes to mint, which is what "uses" means for a group: each
+    # code is good once, so ten uses is ten people rather than ten goes.
+    uses: int = Field(gt=0, le=group_service.MAX_CODES)
+
+
+class CouponGroupPatch(BaseModel):
+    """An edit to a group.
+
+    Neither the prefix nor the count is here, and for the same reason the
+    coupon's code is not editable: the codes have been handed out. Changing
+    the prefix would rename codes people are holding, and lowering the count
+    would have to decide which of them to cancel.
+
+    Adding more codes to a live group is a different request with a
+    different answer, and is the `extra` endpoint below.
+    """
+
+    description: str | None = Field(default=None, max_length=160)
+    is_active: bool | None = None
+
+
+class GroupCodeOut(BaseModel):
+    """One minted code, and whether it has been spent."""
+
+    id: UUID
+    code: str
+    number: int
+    redemptions: int
+    discounted_minor: int
+    # Who used it. A group exists so that a code can be traced to a person,
+    # so this is the field the whole feature is for. None where the code is
+    # unused, or where it was spent by a guest with no account behind it.
+    redeemed_by: str | None
+    redeemed_at: datetime | None
+
+
+class CouponGroupOut(BaseModel):
+    id: UUID
+    code_prefix: str
+    description: str | None
+    discount_kind: str
+    discount_value: int
+    max_discount_minor: int | None
+    min_subtotal_minor: int
+    starts_at: datetime | None
+    ends_at: datetime | None
+    uses: int
+    max_per_customer: int | None
+    is_active: bool
+    applies_to: list[MenuHeadingOut]
+    # How many of the minted codes have been used, and what they cost.
+    issued: int
+    used: int
+    discounted_minor: int
+    codes: list[GroupCodeOut]
+    created_at: datetime
+
+
+class CouponGroupListOut(BaseModel):
+    restaurant_name: str
+    currency: str
+    item_types: list[MenuHeadingOut]
+    groups: list[CouponGroupOut]
+
+
+def _code_usage(db, group_id: UUID) -> dict:
+    """Per code: how many orders, what they took off, and who placed the
+    first of them.
+
+    One query rather than one per code. A group of five hundred codes on a
+    dashboard is five hundred round trips the obvious way, and the obvious
+    way is what gets written when this is left to the caller.
+    """
+    rows = db.execute(
+        select(
+            Order.coupon_id,
+            func.count().label("orders"),
+            func.coalesce(func.sum(Order.coupon_discount_minor), 0).label("off"),
+            func.min(Order.created_at).label("first_at"),
+        )
+        .select_from(Order)
+        .join(Coupon, Coupon.id == Order.coupon_id)
+        .where(
+            Coupon.group_id == group_id,
+            Order.status.notin_(coupon_service.SPENT_STATUSES),
+        )
+        .group_by(Order.coupon_id)
+    ).all()
+
+    # The customer who used each code, named separately: an order carries a
+    # user id, and turning five hundred of those into names is a join we
+    # only want to pay for on the codes that were actually used.
+    who = {}
+    if rows:
+        used_ids = [row.coupon_id for row in rows]
+        for coupon_id, name, email in db.execute(
+            select(Order.coupon_id, User.full_name, User.email)
+            .select_from(Order)
+            .join(User, User.id == Order.customer_user_id)
+            .where(
+                Order.coupon_id.in_(used_ids),
+                Order.status.notin_(coupon_service.SPENT_STATUSES),
+            )
+            .order_by(Order.created_at)
+        ).all():
+            who.setdefault(coupon_id, name or email)
+
+    return {
+        row.coupon_id: (row.orders, row.off, who.get(row.coupon_id), row.first_at)
+        for row in rows
+    }
+
+
+def _group_out(db, group: CouponGroup, scope: list[MenuHeadingOut]) -> CouponGroupOut:
+    minted = group_service.codes(db, group.id)
+    spent = _code_usage(db, group.id)
+    used = sum(1 for coupon in minted if coupon.id in spent)
+    return CouponGroupOut(
+        id=group.id,
+        code_prefix=group.code_prefix,
+        description=group.description,
+        discount_kind=group.discount_kind,
+        discount_value=group.discount_value,
+        max_discount_minor=group.max_discount_minor,
+        min_subtotal_minor=group.min_subtotal_minor,
+        starts_at=group.starts_at,
+        ends_at=group.ends_at,
+        uses=group.uses,
+        max_per_customer=group.max_per_customer,
+        is_active=group.is_active,
+        applies_to=scope,
+        issued=len(minted),
+        used=used,
+        discounted_minor=sum(value[1] for value in spent.values()),
+        codes=[
+            GroupCodeOut(
+                id=coupon.id,
+                code=coupon.code,
+                number=coupon.group_number or 0,
+                redemptions=spent.get(coupon.id, (0, 0, None, None))[0],
+                discounted_minor=spent.get(coupon.id, (0, 0, None, None))[1],
+                redeemed_by=spent.get(coupon.id, (0, 0, None, None))[2],
+                redeemed_at=spent.get(coupon.id, (0, 0, None, None))[3],
+            )
+            for coupon in minted
+        ],
+        created_at=group.created_at,
+    )
+
+
+def _find_group(db, group_id: UUID) -> CouponGroup:
+    group = db.execute(
+        select(CouponGroup).where(
+            CouponGroup.id == group_id, CouponGroup.deleted_at.is_(None)
+        )
+    ).scalar_one_or_none()
+    if group is None:
+        raise errors.ApiError(404, "COUPON_GROUP_NOT_FOUND", "No such coupon group.")
+    return group
+
+
+def _group_scope(db, group: CouponGroup, headings: list[MenuHeadingOut]) -> list[MenuHeadingOut]:
+    """The headings a group's codes apply to.
+
+    Read off one of the minted codes rather than stored on the group. The
+    scope lives on the coupons because that is where the checkout looks for
+    it, and a copy on the group would be a second truth about it.
+    """
+    first = db.execute(
+        select(Coupon.id)
+        .where(Coupon.group_id == group.id, Coupon.deleted_at.is_(None))
+        .order_by(Coupon.group_number)
+        .limit(1)
+    ).scalar_one_or_none()
+    if first is None:
+        return []
+    return _scopes(db, [first], headings).get(first, [])
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/coupon-groups", response_model=CouponGroupListOut
+)
+def list_coupon_groups(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
+    """Every live group of one restaurant, newest first, with each code and
+    who spent it."""
+    with tenant_session(restaurant_id) as db:
+        restaurant = _restaurant(db, restaurant_id)
+        headings = _headings(db)
+        groups = db.execute(
+            select(CouponGroup)
+            .where(CouponGroup.deleted_at.is_(None))
+            .order_by(CouponGroup.created_at.desc(), CouponGroup.id)
+            .limit(MAX_COUPONS)
+        ).scalars().all()
+        return CouponGroupListOut(
+            restaurant_name=restaurant["name"],
+            currency=restaurant["currency"],
+            item_types=headings,
+            groups=[
+                _group_out(db, group, _group_scope(db, group, headings))
+                for group in groups
+            ],
+        )
+
+
+@router.post(
+    "/restaurants/{restaurant_id}/coupon-groups",
+    response_model=CouponGroupOut,
+    status_code=201,
+)
+def create_coupon_group(
+    restaurant_id: UUID,
+    body: CouponGroupIn,
+    admin: User = Depends(require_platform_admin),
+):
+    """Create a group and mint its codes.
+
+    The codes are written here, in one transaction with the group: a group
+    that existed without them would be an offer nobody could be given, and
+    the half-minted state is the one thing worth ruling out entirely.
+    """
+    prefix = group_service.validate_prefix(body.code_prefix)
+
+    with tenant_session(restaurant_id) as db:
+        _restaurant(db, restaurant_id)
+
+        live = db.execute(
+            select(func.count())
+            .select_from(CouponGroup)
+            .where(CouponGroup.deleted_at.is_(None))
+        ).scalar_one()
+        if live >= MAX_COUPONS:
+            raise errors.validation_error(
+                f"That is {MAX_COUPONS} groups. Retire one before adding another."
+            )
+        if db.execute(
+            select(CouponGroup.id).where(
+                CouponGroup.code_prefix == prefix, CouponGroup.deleted_at.is_(None)
+            )
+        ).scalar_one_or_none() is not None:
+            raise errors.validation_error(f"A {prefix} group already exists here.")
+
+        # Before writing anything: a hand-made coupon may already hold one of
+        # the codes this would mint, and a half-written group is worse than a
+        # refused one.
+        taken = group_service.clashes(db, prefix, range(1, body.uses + 1))
+        if taken:
+            shown = ", ".join(taken[:5])
+            more = "" if len(taken) <= 5 else f" and {len(taken) - 5} more"
+            raise errors.validation_error(
+                f"That would mint codes that already exist here: {shown}{more}."
+            )
+
+        _check_headings(db, body.applies_to)
+
+        kind, value = body.stored()
+        group = CouponGroup(
+            restaurant_id=restaurant_id,
+            code_prefix=prefix,
+            description=body.description,
+            discount_kind=kind,
+            discount_value=value,
+            max_discount_minor=body.max_discount_minor,
+            min_subtotal_minor=body.min_subtotal_minor,
+            starts_at=body.starts_at,
+            ends_at=body.ends_at,
+            uses=body.uses,
+            max_per_customer=body.max_per_customer,
+            is_active=body.is_active,
+        )
+        db.add(group)
+        db.flush()
+
+        minted = group_service.mint(db, group, range(1, body.uses + 1))
+        group_service.copy_scope(db, group, minted, body.applies_to)
+        db.flush()
+
+        headings = _headings(db)
+        scope = _group_scope(db, group, headings)
+
+        with system_session() as platform:
+            _audit(
+                platform, admin, "SUPER_ADMIN_CREATE_COUPON_GROUP",
+                {
+                    "restaurant_id": str(restaurant_id),
+                    "group_id": str(group.id),
+                    "code_prefix": prefix,
+                    "uses": body.uses,
+                    "discount_kind": kind,
+                    "discount_value": value,
+                    "applies_to": [heading.name for heading in scope],
+                },
+            )
+        log.info(
+            "coupon group %s minted %d codes on restaurant %s",
+            prefix, body.uses, restaurant_id,
+        )
+        return _group_out(db, group, scope)
+
+
+@router.patch(
+    "/restaurants/{restaurant_id}/coupon-groups/{group_id}",
+    response_model=CouponGroupOut,
+)
+def update_coupon_group(
+    restaurant_id: UUID,
+    group_id: UUID,
+    body: CouponGroupPatch,
+    admin: User = Depends(require_platform_admin),
+):
+    """Pause, resume, or re-describe a group.
+
+    Switching it carries to every code it minted: a paused group whose codes
+    still worked would be a pause that paused nothing.
+    """
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise errors.validation_error("No changes to save.")
+
+    with tenant_session(restaurant_id) as db:
+        _restaurant(db, restaurant_id)
+        group = _find_group(db, group_id)
+
+        if "description" in changes:
+            group.description = (changes["description"] or "").strip() or None
+        if "is_active" in changes:
+            group_service.set_active(db, group, bool(changes["is_active"]))
+        db.flush()
+
+        headings = _headings(db)
+        scope = _group_scope(db, group, headings)
+
+        with system_session() as platform:
+            _audit(
+                platform, admin, "SUPER_ADMIN_UPDATE_COUPON_GROUP",
+                {
+                    "restaurant_id": str(restaurant_id),
+                    "group_id": str(group.id),
+                    "code_prefix": group.code_prefix,
+                    "changed": sorted(changes),
+                },
+            )
+        return _group_out(db, group, scope)
+
+
+@router.delete(
+    "/restaurants/{restaurant_id}/coupon-groups/{group_id}", status_code=204
+)
+def retire_coupon_group(
+    restaurant_id: UUID, group_id: UUID, admin: User = Depends(require_platform_admin)
+):
+    """Retire a group and every code it minted.
+
+    A soft delete, like retiring a coupon: the orders that used these codes
+    keep their own snapshot of the code and the amount, so last month's
+    receipt still reads the same. What it buys is that the codes stop
+    working and the prefix is free to be used again.
+    """
+    with tenant_session(restaurant_id) as db:
+        _restaurant(db, restaurant_id)
+        group = _find_group(db, group_id)
+        group_service.retire(db, group)
+        db.flush()
+
+        with system_session() as platform:
+            _audit(
+                platform, admin, "SUPER_ADMIN_RETIRE_COUPON_GROUP",
+                {
+                    "restaurant_id": str(restaurant_id),
+                    "group_id": str(group.id),
+                    "code_prefix": group.code_prefix,
+                },
+            )
+        log.info("coupon group %s retired on restaurant %s", group.code_prefix, restaurant_id)

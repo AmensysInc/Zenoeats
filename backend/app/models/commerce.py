@@ -353,6 +353,102 @@ class Coupon(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Minted from a group, and which number it got: MORE3 is group MORE,
+    # number 3. Both null for a coupon somebody created by hand, which is
+    # most of them. Nothing in the checkout path reads either -- a group's
+    # code is validated by exactly the same rules as any other, which is the
+    # point of making them real rows (see 0055).
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupon_groups.id"), nullable=True, index=True
+    )
+    group_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class CouponGroup(Base, TimestampMixin):
+    """One offer, handed out as numbered codes.
+
+    "MORE", ten uses, means MORE1 through MORE10: ten codes carrying the same
+    discount, each given to one person. What this buys over a single code
+    with a redemption limit is knowing *which* ten people -- the orders name
+    the code they used, so MORE7 is traceable to whoever was handed MORE7,
+    where one shared code makes every redemption look alike.
+
+    THE CODES ARE ORDINARY COUPONS. Each is a row in `coupons` carrying this
+    group's id, so the discount is priced, limited, locked and counted by
+    services/coupons.py exactly as a hand-made code is. This table holds what
+    the operator typed once; the children are what customers type.
+
+    That is also why the fields here read as duplicates of Coupon's. They are
+    not a second source of truth about a live code -- a child is minted with
+    these values and then stands on its own -- they are the template the next
+    batch is minted from, and what the screen shows when it describes the
+    group rather than its members.
+
+    EACH CHILD IS GOOD ONCE (max_redemptions = 1 at minting). Codes that
+    could each be used freely would be the same code repeated, and the
+    numbering would mean nothing.
+
+    RETIRING IS A SOFT DELETE, as it is for a coupon, and it takes the
+    children with it: the offer is over, so none of its codes should still
+    work. The rows stay for the orders that point at them.
+    """
+
+    __tablename__ = "coupon_groups"
+    __table_args__ = (
+        Index(
+            "uq_coupon_group_prefix",
+            "restaurant_id", "code_prefix",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        CheckConstraint(
+            "discount_kind IN ('PERCENT', 'AMOUNT')", name="ck_coupon_group_kind"
+        ),
+        CheckConstraint("discount_value > 0", name="ck_coupon_group_positive"),
+        CheckConstraint(
+            "discount_kind <> 'PERCENT' OR discount_value <= 10000",
+            name="ck_coupon_group_percent_range",
+        ),
+        CheckConstraint("min_subtotal_minor >= 0", name="ck_coupon_group_min"),
+        CheckConstraint(
+            "max_discount_minor IS NULL OR max_discount_minor > 0",
+            name="ck_coupon_group_ceiling",
+        ),
+        CheckConstraint(
+            "max_per_customer IS NULL OR max_per_customer > 0",
+            name="ck_coupon_group_per_customer",
+        ),
+        CheckConstraint("uses > 0 AND uses <= 500", name="ck_coupon_group_uses"),
+        CheckConstraint(
+            "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
+            name="ck_coupon_group_window",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    # What the codes are built from, stored as it will be compared.
+    code_prefix: Mapped[str] = mapped_column(String(24), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    discount_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    discount_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_discount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    min_subtotal_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # How many codes this group minted. The codes themselves are what limits
+    # redemption; this is kept so the screen can say "7 of 10 used" without
+    # having to infer the denominator.
+    uses: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_per_customer: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class CouponItemType(Base):
     """One heading a coupon applies to.
