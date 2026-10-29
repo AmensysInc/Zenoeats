@@ -405,13 +405,18 @@ _PURGE_ORDER = [
     "loyalty_program_items",
     "loyalty_programs",
     "orders",
+    # Before the users they belong to are touched by anything, and before
+    # coupons: a challenge names the customer it was sent for.
+    "phone_verifications",
     # After orders, which point at the coupon they used. The scope rows go
     # first: they name both the coupon and a heading, and the headings are
     # deleted further down.
     "coupon_item_types",
     "coupons",
     # After the coupons, which point at the group that minted them. A group
-    # is only where its codes came from, so it cannot outlive them.
+    # is only where its codes came from, so it cannot outlive them. Its
+    # scope rows go first: they name both the group and a heading.
+    "coupon_group_item_types",
     "coupon_groups",
     # Nothing points at an offer, so its place here is only "before the
     # restaurant row itself".

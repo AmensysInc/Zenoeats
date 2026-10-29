@@ -232,6 +232,13 @@ def apply(
     if not coupon.is_active:
         raise CouponRefused(UNKNOWN)
 
+    # A welcome code belongs to one customer (0056). Anybody else -- the
+    # friend they read it out to, a guest who guessed it -- gets the same
+    # sentence an unknown code gets, because "that code is somebody else's"
+    # tells a stranger the code is real and worth hunting for.
+    if coupon.customer_user_id is not None and coupon.customer_user_id != customer_user_id:
+        raise CouponRefused(UNKNOWN)
+
     now = datetime.now(timezone.utc)
     if coupon.starts_at is not None and now < coupon.starts_at:
         raise CouponRefused("That code isn't active yet.")

@@ -24,6 +24,7 @@ from app.models.commerce import (
     ALLOWED_TRANSITIONS,
     Coupon,
     CouponGroup,
+    CouponGroupItemType,
     CouponItemType,
     IdempotencyKey,
     Order,
@@ -42,7 +43,9 @@ from app.models.loyalty import (
     LoyaltyTransaction, PurchaseType, Referral, ReferralCode, ReferralStatus, RewardStatus,
     StampReason,
 )
-from app.models.identity import RestaurantUser, StaffRole, StaffStatus, User, UserKind
+from app.models.identity import (
+    PhoneVerification, RestaurantUser, StaffRole, StaffStatus, User, UserKind,
+)
 from app.models.payments import (
     ClerkEvent,
     Payment,
@@ -77,7 +80,8 @@ __all__ = [
     "ModifierGroup", "ModifierOption", "ItemModifierGroup", "SelectionType",
     "ItemIncludedOption",
     "ModifierGroupItemType",
-    "Coupon", "CouponGroup", "CouponItemType",
+    "Coupon", "CouponGroup", "CouponGroupItemType", "CouponItemType",
+    "PhoneVerification",
     "Offer",
     "LoyaltyProgram", "LoyaltyProgramItem", "LoyaltyTransaction",
     "CustomerLoyalty", "LoyaltyReward",

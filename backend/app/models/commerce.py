@@ -326,6 +326,18 @@ class Coupon(Base, TimestampMixin):
             "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
             name="ck_coupon_window",
         ),
+        # A group's codes are numbered or personal, never both and never
+        # neither: a numbered code has a position in its group, a welcome
+        # code has an owner instead, and an ordinary coupon has neither.
+        CheckConstraint(
+            "(group_id IS NULL AND group_number IS NULL"
+            " AND customer_user_id IS NULL)"
+            " OR (group_id IS NOT NULL AND group_number IS NOT NULL"
+            " AND customer_user_id IS NULL)"
+            " OR (group_id IS NOT NULL AND group_number IS NULL"
+            " AND customer_user_id IS NOT NULL)",
+            name="ck_coupon_group_membership",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -362,6 +374,14 @@ class Coupon(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("coupon_groups.id"), nullable=True, index=True
     )
     group_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Whose code this is. Set only on a welcome code, which is minted for one
+    # person and refused to everybody else -- otherwise the first customer to
+    # be told it by a friend would spend it. Null on every code anybody may
+    # type, which is most of them.
+    customer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
 
 
 class CouponGroup(Base, TimestampMixin):
@@ -418,7 +438,18 @@ class CouponGroup(Base, TimestampMixin):
             "max_per_customer IS NULL OR max_per_customer > 0",
             name="ck_coupon_group_per_customer",
         ),
-        CheckConstraint("uses > 0 AND uses <= 500", name="ck_coupon_group_uses"),
+            CheckConstraint(
+            "kind IN ('NUMBERED', 'SIGNUP')", name="ck_coupon_group_kind_value"
+        ),
+        CheckConstraint(
+            "(kind = 'NUMBERED' AND uses IS NOT NULL AND uses > 0 AND uses <= 500)"
+            " OR (kind = 'SIGNUP' AND uses IS NULL)",
+            name="ck_coupon_group_uses",
+        ),
+        CheckConstraint(
+            "valid_days IS NULL OR (valid_days > 0 AND valid_days <= 3650)",
+            name="ck_coupon_group_valid_days",
+        ),
         CheckConstraint(
             "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
             name="ck_coupon_group_window",
@@ -440,14 +471,50 @@ class CouponGroup(Base, TimestampMixin):
 
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # How many codes this group minted. The codes themselves are what limits
-    # redemption; this is kept so the screen can say "7 of 10 used" without
-    # having to infer the denominator.
-    uses: Mapped[int] = mapped_column(Integer, nullable=False)
+    # NUMBERED mints every code at once; SIGNUP mints one per customer as
+    # they arrive. Everything after minting is the same, which is why this is
+    # a column rather than a second table.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="NUMBERED")
+    # How many codes this group minted, for a numbered group. Null on a
+    # sign-up offer, which has as many codes as it has customers and cannot
+    # know that in advance.
+    uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # How long a welcome code lasts from the day it is issued. A date would
+    # be wrong: every customer gets theirs on a different day, so the offer
+    # is "30 days to use it" rather than "until March".
+    valid_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_per_customer: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CouponGroupItemType(Base):
+    """One heading a group's offer applies to.
+
+    On the group rather than only on its codes, because a sign-up offer has
+    no codes until its first customer verifies a number -- and "burgers
+    only" has to be somewhere before then. Every minted code gets a copy, so
+    the checkout keeps reading scope off the coupon in front of it.
+    """
+
+    __tablename__ = "coupon_group_item_types"
+    __table_args__ = (
+        UniqueConstraint("group_id", "item_type_id", name="uq_coupon_group_item_type"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupon_groups.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    item_type_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("item_types.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
 
 class CouponItemType(Base):

@@ -25,7 +25,9 @@ from sqlalchemy.orm import Session
 
 from app.core import errors
 from app.db.base import utcnow
-from app.models import Coupon, CouponGroup, CouponItemType, Order
+from app.models import (
+    Coupon, CouponGroup, CouponGroupItemType, CouponItemType, Order,
+)
 from app.services import coupons as coupon_service
 
 log = logging.getLogger(__name__)
@@ -186,6 +188,41 @@ def copy_scope(db: Session, group: CouponGroup, minted: list[Coupon], headings: 
                     item_type_id=heading_id,
                 )
             )
+    db.flush()
+
+
+def scope_of(db: Session, group_id: UUID) -> list[UUID]:
+    """The headings this group's offer applies to.
+
+    Held on the group because a sign-up offer has no codes until its first
+    customer arrives, and "burgers only" has to live somewhere before then.
+    Each minted code gets its own copy, so nothing downstream has to know
+    the group exists.
+    """
+    return list(
+        db.execute(
+            select(CouponGroupItemType.item_type_id).where(
+                CouponGroupItemType.group_id == group_id
+            )
+        ).scalars()
+    )
+
+
+def set_scope(db: Session, group: CouponGroup, headings: list[UUID]) -> None:
+    """Record what the group's offer applies to. Replaces whatever was there."""
+    db.execute(
+        CouponGroupItemType.__table__.delete().where(
+            CouponGroupItemType.group_id == group.id
+        )
+    )
+    for heading_id in dict.fromkeys(headings):
+        db.add(
+            CouponGroupItemType(
+                restaurant_id=group.restaurant_id,
+                group_id=group.id,
+                item_type_id=heading_id,
+            )
+        )
     db.flush()
 
 

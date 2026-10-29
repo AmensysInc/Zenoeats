@@ -3,10 +3,12 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
 
 from app.db.base import Base, TimestampMixin, uuid_pk
 
@@ -98,6 +100,12 @@ class User(Base, TimestampMixin):
     # Customers and guests: the details checkout last saved, offered again
     # next time. Null until the first order; checkout is what requires them.
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # When a code sent to that number came back. A number somebody typed is
+    # not a number somebody has, and a welcome offer given for typing one is
+    # a welcome offer given for typing anything.
+    phone_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -185,3 +193,42 @@ class RestaurantUser(Base, TimestampMixin):
     # Written for the restaurant admin, never the provider's raw reply: that
     # can name the platform's own accounts. The raw reply is in the worker log.
     invitation_email_problem: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class PhoneVerification(Base):
+    """A code sent to a handset, and what is left of the attempt to use it.
+
+    One row per customer at a time: asking for a new code replaces the old
+    one rather than leaving two valid, which would double the guesses a
+    script gets per minute.
+
+    THE CODE IS HASHED. Six digits is a password for the length of its life,
+    and a database read -- a backup, a support query, a leak -- should not
+    hand somebody else's account over.
+
+    THE NUMBER LIVES HERE until it is proved, not on the account. Writing it
+    to users.phone first would mean an unproved number sitting where the
+    receipt and the order updates are addressed from.
+    """
+
+    __tablename__ = "phone_verifications"
+    __table_args__ = (
+        CheckConstraint("attempts >= 0", name="ck_phone_verification_attempts"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, unique=True
+    )
+    phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -47,6 +47,7 @@ from app.models import (
     Coupon, CouponGroup, CouponItemType, DiscountKind, ItemType, Order, User,
 )
 from app.services import coupon_groups as group_service
+from app.services import sms
 from app.services import coupons as coupon_service
 
 # The audit writer the rest of the admin surface uses. Imported rather than
@@ -714,7 +715,7 @@ class CouponGroupOut(BaseModel):
     min_subtotal_minor: int
     starts_at: datetime | None
     ends_at: datetime | None
-    uses: int
+    uses: int | None
     max_per_customer: int | None
     is_active: bool
     applies_to: list[MenuHeadingOut]
@@ -830,21 +831,14 @@ def _find_group(db, group_id: UUID) -> CouponGroup:
 
 
 def _group_scope(db, group: CouponGroup, headings: list[MenuHeadingOut]) -> list[MenuHeadingOut]:
-    """The headings a group's codes apply to.
+    """The headings a group's offer applies to.
 
-    Read off one of the minted codes rather than stored on the group. The
-    scope lives on the coupons because that is where the checkout looks for
-    it, and a copy on the group would be a second truth about it.
+    Read from the group, which is where it is stored: a sign-up offer has no
+    codes until its first customer arrives, so a scope read off a minted code
+    would be empty for exactly the offer that most needs one.
     """
-    first = db.execute(
-        select(Coupon.id)
-        .where(Coupon.group_id == group.id, Coupon.deleted_at.is_(None))
-        .order_by(Coupon.group_number)
-        .limit(1)
-    ).scalar_one_or_none()
-    if first is None:
-        return []
-    return _scopes(db, [first], headings).get(first, [])
+    wanted = set(group_service.scope_of(db, group.id))
+    return [heading for heading in headings if heading.id in wanted]
 
 
 @router.get(
@@ -858,7 +852,10 @@ def list_coupon_groups(restaurant_id: UUID, admin: User = Depends(require_platfo
         headings = _headings(db)
         groups = db.execute(
             select(CouponGroup)
-            .where(CouponGroup.deleted_at.is_(None))
+            .where(
+                CouponGroup.deleted_at.is_(None),
+                CouponGroup.kind == "NUMBERED",
+            )
             .order_by(CouponGroup.created_at.desc(), CouponGroup.id)
             .limit(MAX_COUPONS)
         ).scalars().all()
@@ -937,10 +934,12 @@ def create_coupon_group(
             uses=body.uses,
             max_per_customer=body.max_per_customer,
             is_active=body.is_active,
+            kind="NUMBERED",
         )
         db.add(group)
         db.flush()
 
+        group_service.set_scope(db, group, body.applies_to)
         minted = group_service.mint(db, group, range(1, body.uses + 1))
         group_service.copy_scope(db, group, minted, body.applies_to)
         db.flush()
@@ -1042,3 +1041,225 @@ def retire_coupon_group(
                 },
             )
         log.info("coupon group %s retired on restaurant %s", group.code_prefix, restaurant_id)
+
+
+# ------------------------------------------------------------ welcome offer ---
+#
+# One code per new customer, earned by proving a mobile number. A coupon
+# group of kind SIGNUP (0056), so everything after minting is what a coupon
+# already does -- see services/signup_offers.py for what is actually new.
+#
+# A singleton per restaurant rather than a list: two live welcome offers
+# would both fire on the same sign-up and hand one account two codes.
+
+
+class SignupOfferIn(OfferIn):
+    """The welcome offer, as the form sets it up."""
+
+    # The codes are this plus a random suffix: WELCOME7K3M9Q. Random rather
+    # than numbered, because a personal code that read WELCOME7 would tell
+    # its holder they were the seventh customer and invite a guess at
+    # WELCOME8.
+    code_prefix: str = Field(min_length=2, max_length=group_service.MAX_PREFIX)
+    # How long one customer's code lasts from the day it is issued. A date
+    # would be a different and meaner offer: everybody signs up on a
+    # different day, so "30 days to use it" is the promise, not "until
+    # March".
+    valid_days: int | None = Field(default=None, gt=0, le=3650)
+
+
+class SignupOfferOut(BaseModel):
+    id: UUID
+    code_prefix: str
+    description: str | None
+    discount_kind: str
+    discount_value: int
+    max_discount_minor: int | None
+    min_subtotal_minor: int
+    starts_at: datetime | None
+    ends_at: datetime | None
+    valid_days: int | None
+    is_active: bool
+    applies_to: list[MenuHeadingOut]
+    # How many customers have been given a code, how many spent it, and what
+    # that cost -- the three numbers that say whether the offer is working.
+    issued: int
+    used: int
+    discounted_minor: int
+    created_at: datetime
+
+
+class SignupOfferStateOut(BaseModel):
+    """The offer, plus whether this deployment can actually run it.
+
+    `sms_configured` is false here and the screen says so rather than
+    letting somebody switch on an offer whose verification step cannot
+    send -- see services/sms.py.
+    """
+
+    restaurant_name: str
+    currency: str
+    item_types: list[MenuHeadingOut]
+    sms_configured: bool
+    offer: SignupOfferOut | None
+
+
+def _signup_out(db, group: CouponGroup, headings: list[MenuHeadingOut]) -> SignupOfferOut:
+    spent = _code_usage(db, group.id)
+    issued = db.execute(
+        select(func.count())
+        .select_from(Coupon)
+        .where(Coupon.group_id == group.id, Coupon.deleted_at.is_(None))
+    ).scalar_one()
+    return SignupOfferOut(
+        id=group.id,
+        code_prefix=group.code_prefix,
+        description=group.description,
+        discount_kind=group.discount_kind,
+        discount_value=group.discount_value,
+        max_discount_minor=group.max_discount_minor,
+        min_subtotal_minor=group.min_subtotal_minor,
+        starts_at=group.starts_at,
+        ends_at=group.ends_at,
+        valid_days=group.valid_days,
+        is_active=group.is_active,
+        applies_to=_group_scope(db, group, headings),
+        issued=issued,
+        used=len(spent),
+        discounted_minor=sum(value[1] for value in spent.values()),
+        created_at=group.created_at,
+    )
+
+
+def _signup_offer(db) -> CouponGroup | None:
+    return db.execute(
+        select(CouponGroup).where(
+            CouponGroup.kind == "SIGNUP", CouponGroup.deleted_at.is_(None)
+        )
+    ).scalar_one_or_none()
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/signup-offer", response_model=SignupOfferStateOut
+)
+def read_signup_offer(restaurant_id: UUID, admin: User = Depends(require_platform_admin)):
+    """The welcome offer, if this restaurant has one."""
+    with tenant_session(restaurant_id) as db:
+        restaurant = _restaurant(db, restaurant_id)
+        headings = _headings(db)
+        group = _signup_offer(db)
+        return SignupOfferStateOut(
+            restaurant_name=restaurant["name"],
+            currency=restaurant["currency"],
+            item_types=headings,
+            sms_configured=sms.configured(),
+            offer=None if group is None else _signup_out(db, group, headings),
+        )
+
+
+@router.put(
+    "/restaurants/{restaurant_id}/signup-offer", response_model=SignupOfferOut
+)
+def set_signup_offer(
+    restaurant_id: UUID,
+    body: SignupOfferIn,
+    admin: User = Depends(require_platform_admin),
+):
+    """Create the welcome offer, or change it.
+
+    Changing it does not touch codes already issued. A customer was given
+    theirs on the terms that were running at the time, and rewriting those
+    afterwards would change what somebody was promised -- so an edit decides
+    what the next customer gets, and the codes already out keep their own.
+    """
+    prefix = group_service.validate_prefix(body.code_prefix)
+
+    with tenant_session(restaurant_id) as db:
+        _restaurant(db, restaurant_id)
+        _check_headings(db, body.applies_to)
+
+        # A prefix a hand-made coupon or a numbered group already uses would
+        # make two different offers answer to codes that look alike.
+        clash = db.execute(
+            select(CouponGroup.id).where(
+                CouponGroup.code_prefix == prefix,
+                CouponGroup.kind == "NUMBERED",
+                CouponGroup.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise errors.validation_error(
+                f"A {prefix} group coupon already uses that prefix."
+            )
+
+        kind, value = body.stored()
+        group = _signup_offer(db)
+        created = group is None
+        if created:
+            group = CouponGroup(
+                restaurant_id=restaurant_id,
+                kind="SIGNUP",
+                code_prefix=prefix,
+                uses=None,
+            )
+            db.add(group)
+
+        group.code_prefix = prefix
+        group.description = body.description
+        group.discount_kind = kind
+        group.discount_value = value
+        group.max_discount_minor = body.max_discount_minor
+        group.min_subtotal_minor = body.min_subtotal_minor
+        group.starts_at = body.starts_at
+        group.ends_at = body.ends_at
+        group.valid_days = body.valid_days
+        group.is_active = body.is_active
+        db.flush()
+
+        group_service.set_scope(db, group, body.applies_to)
+        db.flush()
+
+        headings = _headings(db)
+        with system_session() as platform:
+            _audit(
+                platform, admin,
+                "SUPER_ADMIN_CREATE_SIGNUP_OFFER" if created
+                else "SUPER_ADMIN_UPDATE_SIGNUP_OFFER",
+                {
+                    "restaurant_id": str(restaurant_id),
+                    "group_id": str(group.id),
+                    "code_prefix": prefix,
+                    "discount_kind": kind,
+                    "discount_value": value,
+                    "valid_days": body.valid_days,
+                },
+            )
+        log.info("signup offer %s on restaurant %s", prefix, restaurant_id)
+        return _signup_out(db, group, headings)
+
+
+@router.delete("/restaurants/{restaurant_id}/signup-offer", status_code=204)
+def retire_signup_offer(
+    restaurant_id: UUID, admin: User = Depends(require_platform_admin)
+):
+    """End the welcome offer.
+
+    Codes already issued stop working with it, the same way retiring a
+    numbered group ends its codes: the offer is over. The rows stay, so the
+    orders that used them still read.
+    """
+    with tenant_session(restaurant_id) as db:
+        _restaurant(db, restaurant_id)
+        group = _signup_offer(db)
+        if group is None:
+            raise errors.ApiError(
+                404, "SIGNUP_OFFER_NOT_FOUND", "There is no welcome offer here."
+            )
+        group_service.retire(db, group)
+        db.flush()
+
+        with system_session() as platform:
+            _audit(
+                platform, admin, "SUPER_ADMIN_RETIRE_SIGNUP_OFFER",
+                {"restaurant_id": str(restaurant_id), "group_id": str(group.id)},
+            )
