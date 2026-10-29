@@ -1,5 +1,6 @@
 import { clearCheckoutDrafts } from "@/features/storefront/checkoutDraft";
-import { useEffect, useRef } from "react";
+import { loginSucceeded, mayBounce } from "./loginBounce";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/services/apiClient";
 import { StatePage } from "@/components/common/Feedback";
 import { Icon } from "@/components/common/icons";
@@ -15,13 +16,79 @@ import { Icon } from "@/components/common/icons";
  * without either dragging the other in.
  */
 
-/** Full navigation, carrying where we were headed so signing in returns there
- *  rather than dumping everyone on the portal root. */
-export function toLogin(loginPath: string): null {
-  if (loginPath === "/account/sign-in") clearCheckoutDrafts();
+/**
+ * Send this browser to `loginPath`, carrying where we were headed so signing
+ * in returns there rather than dumping everyone on the portal root.
+ *
+ * Returns false when it has done this too often for the same page too
+ * recently, having navigated nowhere -- the caller shows the dead end
+ * instead.
+ */
+export function toLogin(loginPath: string): boolean {
   const next = window.location.pathname + window.location.search;
+  if (!mayBounce(next)) return false;
+
+  if (loginPath === "/account/sign-in") clearCheckoutDrafts();
   window.location.replace(`${loginPath}?next=${encodeURIComponent(next)}`);
-  return null;
+  return true;
+}
+
+export { loginSucceeded };
+
+/**
+ * The redirect to a login page, as a rendered thing.
+ *
+ * It used to be a bare call in the middle of a guard's render, which is a
+ * side effect in a place React is free to run twice and to throw away -- so
+ * the navigation could be started more than once for one decision. Here it
+ * happens in an effect, once, after the render it belongs to has committed.
+ */
+export function SendToLogin({ loginPath }: { loginPath: string }) {
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    if (!toLogin(loginPath)) setStuck(true);
+  }, [loginPath]);
+  return stuck ? <LoopBroken loginPath={loginPath} /> : <Booting />;
+}
+
+/**
+ * The dead end, which is still better than the loop.
+ *
+ * Both ways out are a full navigation the customer chooses: going to sign-in
+ * by hand does not re-arm the count, and the menu is somewhere to be that
+ * needs no session at all.
+ */
+function LoopBroken({ loginPath }: { loginPath: string }) {
+  const customer = loginPath === "/account/sign-in";
+  return (
+    <StatePage
+      title="We couldn't finish signing you in"
+      action={
+        // Two ways out, so they need a row of their own: StatePage puts one
+        // action in a plain block and would sit these against each other.
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              loginSucceeded();
+              window.location.replace(loginPath);
+            }}
+          >
+            Sign in again
+          </button>
+          {customer && (
+            <a href="/" className="btn-quiet">
+              Back to the menu
+            </a>
+          )}
+        </div>
+      }
+    >
+      This page and the sign-in page kept handing you back to each other, so we
+      stopped. Signing in again usually settles it.
+    </StatePage>
+  );
 }
 
 export function Booting() {

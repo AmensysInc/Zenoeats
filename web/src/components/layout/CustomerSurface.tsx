@@ -5,6 +5,7 @@ import { attachFont, themeVariables } from "@/features/storefront/theme";
 import { rememberBrand, rememberRestaurantName } from "@/utils/restaurantName";
 import { useReferralCode } from "@/features/storefront/useReferralCode";
 import { Outlet } from "react-router-dom";
+import { PageColumnProvider } from "@/components/layout/pageColumn";
 
 /**
  * The customer surface: cream page and forest primary (globals.css).
@@ -46,13 +47,15 @@ export function CustomerSurface({ children }: { children?: ReactNode }) {
   }, []);
 
   return (
-    <>
+    // The provider wraps both halves on purpose: it is how the page tells the
+    // footer which column to line its allergen notice up with.
+    <PageColumnProvider>
       {/* `children` for the one route that cannot be an Outlet: "/" decides
           between a storefront and the platform picker, so it renders the
           storefront into this layout itself. Every other customer route is
           nested under it as usual. */}
       {children ?? <Outlet />}
       <CustomerFooter />
-    </>
+    </PageColumnProvider>
   );
 }

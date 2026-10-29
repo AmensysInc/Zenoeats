@@ -13,6 +13,7 @@ import {
 import { CustomerHeader } from "@/features/storefront/components/CustomerHeader";
 import { usePortalQuery } from "@/features/storefront/storefrontApi";
 import { useOpenCart } from "@/features/cart/useOpenCart";
+import { usePageColumn } from "@/components/layout/pageColumn";
 import { money } from "@/utils/format";
 
 /**
@@ -27,9 +28,16 @@ import { money } from "@/utils/format";
  * server prices the order at checkout, and its answer is what is charged --
  * which is why this page shows a subtotal and never a total.
  */
+
+/** Narrower than the menu: a list of lines and one number, read downwards.
+ *  Declared rather than written straight onto the <main> so the allergen
+ *  notice in the footer lines up with it -- see components/layout/pageColumn. */
+const CART_COLUMN = "mx-auto w-full max-w-[760px] px-5 sm:px-7";
+
 export function CartPage() {
   const portal = usePortalQuery();
   useOpenCart();
+  const column = usePageColumn(CART_COLUMN);
 
   const lines = useAppSelector(selectCartLines);
   const combos = useAppSelector(selectCartCombos);
@@ -42,11 +50,18 @@ export function CartPage() {
   // and edit, and checkout is what refuses.
   const orderable = !!portal.data?.is_orderable && !!portal.data?.accepting_orders;
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="min-h-screen bg-paper">
+    <>
       {portal.data && <CustomerHeader restaurant={portal.data} />}
 
-      <main className="mx-auto max-w-[760px] px-5 pb-16 pt-8 sm:px-7">
+      {/* No bottom padding: the footer below brings its own, and the two
+          together left a band of empty page between the checkout button and
+          the allergen notice. */}
+      <main className={`${column} pt-8`}>
         <BackLink />
         <p className="eyebrow mt-[18px] text-muted">Your order</p>
         <h1 className="mt-2 font-display text-[34px] font-bold leading-[1.1] tracking-[-1px] text-brick sm:text-[40px]">
@@ -113,6 +128,6 @@ export function CartPage() {
           </>
         )}
       </main>
-    </div>
+    </>
   );
 }

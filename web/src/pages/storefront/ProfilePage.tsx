@@ -36,6 +36,7 @@ import {
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 import type { Contact, CustomerSession, Item, Meal, OrderSummary } from "@/types";
+import { READING_COLUMN, usePageColumn } from "@/components/layout/pageColumn";
 
 type Tab = "details" | "orders" | "favourites" | "rewards" | "refer";
 
@@ -82,6 +83,7 @@ function initials(name: string | null): string {
  * and a way back to it is offered whenever there is one to go back to.
  */
 export function ProfilePage() {
+  const column = usePageColumn(READING_COLUMN);
   const [params, setParams] = useSearchParams();
   const tab: Tab = TABS.some((t) => t.id === params.get("tab"))
     ? (params.get("tab") as Tab)
@@ -102,10 +104,14 @@ export function ProfilePage() {
   const guest = session.data.is_guest;
   const monogram = initials(session.data.full_name);
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       <CustomerHeader restaurant={portal.data} />
-      <main className="mx-auto w-full max-w-[720px] px-5 pb-[70px] pt-3 sm:px-6 sm:pt-6 lg:max-w-[1040px]">
+      <main className={`${column} pb-[70px] pt-3 sm:pt-6`}>
         <CustomerAccountBar />
         <BackLink />
 
@@ -175,7 +181,7 @@ export function ProfilePage() {
           </div>
         </div>
       </main>
-    </div>
+    </>
   );
 }
 

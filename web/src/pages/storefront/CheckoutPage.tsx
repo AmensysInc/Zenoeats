@@ -33,6 +33,7 @@ import type { Amounts, AppliedCoupon, Contact, FulfillmentType, SpendableReward 
 import { readCheckoutDraft, saveCheckoutDraft } from "@/features/storefront/checkoutDraft";
 import { loadGooglePlaces, type PlacesAutocomplete } from "@/services/googleMaps";
 import { BackLink } from "@/components/common/BackLink";
+import { READING_COLUMN, usePageColumn } from "@/components/layout/pageColumn";
 
 /** The answers a delivery quote gives about the address rather than the
  *  cart. They belong beside the address field, where retyping can fix them. */
@@ -88,6 +89,7 @@ function attemptKeyFor(signature: string): string {
 }
 
 export function CheckoutPage() {
+  const column = usePageColumn(READING_COLUMN);
   const navigate = useNavigate();
 
   // Restores the saved cart. Checkout is reached by a full navigation back
@@ -464,10 +466,14 @@ export function CheckoutPage() {
   // then the food is known and the rest is not, so the rest says so.
   const pending = delivering && !priced;
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       <CustomerHeader restaurant={restaurant} />
-      <main className="mx-auto w-full max-w-[720px] px-5 pb-[50px] pt-3 sm:px-6 sm:pb-[70px] sm:pt-6 lg:max-w-[1040px]">
+      <main className={`${column} pb-[50px] pt-3 sm:pb-[70px] sm:pt-6`}>
         <CustomerAccountBar />
         <BackLink />
         <h1 className="mt-[18px] font-display text-[34px] leading-[1.12] tracking-[-1px] [overflow-wrap:anywhere] sm:mt-5 sm:text-[40px]">
@@ -790,7 +796,7 @@ export function CheckoutPage() {
           </aside>
         </div>
       </main>
-    </div>
+    </>
   );
 }
 

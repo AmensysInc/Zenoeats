@@ -22,6 +22,30 @@ export type ClerkInstance = Awaited<ReturnType<typeof getClerk>>;
 
 export { clerkErrorCode, clerkErrorMessage };
 
+/**
+ * Whether the API agrees this browser is signed in.
+ *
+ * Clerk having a user is not the same answer. Clerk keeps its own client
+ * record in this browser, and it can outlive what the API will accept -- a
+ * revoked session, a token this deployment's keys do not verify, storage a
+ * phone browser pruned on one side and not the other. When the two disagree
+ * and this page trusts Clerk alone, it sends the customer back to the page
+ * that just sent them here, which sends them back again.
+ *
+ * So the question is put to the side that decides: the API. A failure of any
+ * kind counts as "no", because the point is to stay on a page with a form on
+ * it rather than to leave on a maybe.
+ */
+export async function apiSessionLive(clerk: ClerkInstance): Promise<boolean> {
+  try {
+    const token = (await clerk.session?.getToken()) ?? null;
+    await request("/orders/session", { token });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`Missing #${id}; the page markup and script disagree.`);

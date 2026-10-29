@@ -3,6 +3,7 @@ import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route } 
 import { RequireCustomer } from "@/components/layout/Guards";
 import { HomeRoute } from "@/routes/HomeRoute";
 import { CustomerSurface } from "@/components/layout/CustomerSurface";
+import { BrowserTab } from "@/components/layout/BrowserTab";
 import { Booting } from "@/components/layout/guardParts";
 import { NotFound } from "@/routes/NotFound";
 
@@ -76,7 +77,10 @@ const ManageRoute = lazyRoute(() => import("@/routes/ManageArea"));
 const AdminRoute = lazyRoute(() => import("@/routes/AdminArea"));
 
 const router = createBrowserRouter(createRoutesFromElements(
-      <>
+      /* A pathless layout around everything, so the browser tab is titled
+         once rather than by each page remembering to. It renders nothing of
+         its own; it reads the path and names the tab. */
+      <Route element={<BrowserTab />}>
         {/* "/" is two pages behind one path: a restaurant's storefront on a
             restaurant subdomain, the location picker on the platform root.
             Which one is the server's answer, not the browser's guess, so the
@@ -143,7 +147,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         <Route path="/admin/*" element={AdminRoute} />
 
         <Route path="*" element={<NotFound />} />
-      </>
+      </Route>
 ));
 
 export function AppRoutes() { return <RouterProvider router={router} />; }

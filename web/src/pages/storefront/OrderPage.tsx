@@ -12,6 +12,7 @@ import { takeOrderToken } from "@/features/storefront/orderToken";
 import { mapPins } from "@/features/storefront/theme";
 import { isMapStyleKey, mapStyle } from "@/features/storefront/mapStyles";
 import type { OrderLine } from "@/types";
+import { READING_COLUMN, usePageColumn } from "@/components/layout/pageColumn";
 
 const STATUS_COPY: Record<string, { title: string; detail: string }> = {
   PENDING_PAYMENT: {
@@ -62,6 +63,7 @@ const DELIVERY_STEPS = [
 ];
 
 export function OrderPage() {
+  const column = usePageColumn(READING_COLUMN);
   const { orderId = "" } = useParams<{ orderId: string }>();
   // Present when the page was opened from the link in a guest's confirmation
   // email, which is the one way back to a pickup PIN from another device.
@@ -155,12 +157,16 @@ export function OrderPage() {
   const step = steps.indexOf(order.status);
   const ready = order.status === "READY_FOR_PICKUP" || order.status === "READY_FOR_DELIVERY";
 
+  // No viewport-height wrapper. The footer is a sibling of this page, so
+  // forcing the page to fill the screen left a screen's worth of nothing
+  // between the last thing on a short order and the allergen notice. The body
+  // paints the background, so nothing here needs the height.
   return (
-    <div className="flex min-h-dvh flex-col">
+    <>
       {/* No account row and no sign-in prompt: opened from a guest's email,
           the link itself is the credential. */}
       {portal.data && <CustomerHeader restaurant={portal.data} />}
-      <main className="mx-auto w-full max-w-[720px] px-5 pb-[50px] pt-6 sm:px-6 sm:pb-[70px] sm:pt-10 lg:max-w-[1040px]">
+      <main className={`${column} pb-[50px] pt-6 sm:pb-[70px] sm:pt-10`}>
       {/* Above the grid, so it reads as a way off this page rather than part
           of the order. A link, not history.back(): this page is often opened
           from a confirmation email, where there is no history to go back
@@ -308,7 +314,7 @@ export function OrderPage() {
         </section>
       </div>
       </main>
-    </div>
+    </>
   );
 }
 
