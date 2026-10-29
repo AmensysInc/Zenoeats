@@ -133,6 +133,7 @@ export const api = createApi({
     "CustomerOrders",
     "Favourites",
     "Rewards",
+    "WelcomeOffer",
     "Offers",
     // The admin-side lists, keyed by restaurant id. Separate tags from the
     // customer-side "Rewards"/"Offers" above: editing one restaurant's

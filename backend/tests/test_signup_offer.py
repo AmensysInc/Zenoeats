@@ -26,7 +26,8 @@ from tests.test_admin_restaurants import (  # noqa: F401  (fixtures)
 )
 from tests.test_checkout_contact import CONTACT, _guest, shop as base_shop  # noqa: F401
 from tests.test_coupons import (  # noqa: F401  (fixtures)
-    _admin_client, _order, _quote, _row, no_rate_limits, operator, shop, team,
+    _admin_client, _order, _publish, _quote, _row, no_rate_limits, operator,
+    shop, team,
     ADDRESS, DELIVERY, LOCATE, ORIGIN, PROFILE, ZONES, _place,
 )
 
@@ -266,3 +267,81 @@ def test_a_code_is_never_stored_in_the_clear():
     # digits is reversible from a plain digest by anybody who can run a loop.
     assert phone_verification._hash("123456") != "123456"
     assert len(phone_verification._hash("123456")) == 64
+
+
+# ------------------------------------------------------- who used what --------
+#
+# The admin's record of every redemption. Read from the orders, which is the
+# only source that stays right when one is cancelled.
+
+
+def _redemptions_at(restaurant_id, code=None) -> str:
+    at = f"/api/v1/admin/restaurants/{restaurant_id}/coupon-redemptions"
+    return f"{at}?code={code}" if code else at
+
+
+def test_every_redemption_is_recorded_with_who_used_it(shop, sending, account):
+    shop.admin.put(
+        _offer_at(shop.id), json={"code_prefix": "WELCOME", "percent_off_bps": 1000}
+    )
+    account.post("/api/v1/welcome/phone", json={"phone": "5802267925"})
+    mine = account.post(
+        "/api/v1/welcome/verify", json={"code": _code_from(sending)}
+    ).json()["code"]
+    assert _order(account, shop, coupon_code=mine).status_code == 201
+
+    listed = shop.admin.get(_redemptions_at(shop.id)).json()
+    assert listed["total_redemptions"] == 1
+    assert listed["total_discounted_minor"] > 0
+
+    row = listed["redemptions"][0]
+    assert row["code"] == mine
+    # The point of the section: a name, not just a count.
+    # An account keeps its own name; only a guest is known by what was
+    # typed at checkout.
+    assert row["customer_name"] == "Sam Taylor"
+    assert row["is_guest"] is False
+    assert row["discount_minor"] > 0
+
+
+def test_a_guest_redemption_is_listed_with_nobody_to_name(shop):
+    _publish(shop, code="OPENTOALL")
+    assert _order(_guest(shop), shop, coupon_code="OPENTOALL").status_code == 201
+
+    row = shop.admin.get(_redemptions_at(shop.id)).json()["redemptions"][0]
+    assert row["code"] == "OPENTOALL"
+    # A guest is a real row carrying the name they typed at checkout, so the
+    # name cannot tell a guest from an account -- which is why the flag is
+    # there, and what the screen reads to say "a guest".
+    assert row["customer_name"] == "Pat Customer"
+    assert row["is_guest"] is True
+
+
+def test_the_record_can_be_narrowed_to_one_code(shop):
+    _publish(shop, code="FIRSTCODE")
+    _publish(shop, code="OTHERCODE")
+    _order(_guest(shop), shop, coupon_code="FIRSTCODE")
+    _order(_guest(shop), shop, coupon_code="OTHERCODE")
+
+    only = shop.admin.get(_redemptions_at(shop.id, "firstcode")).json()
+    assert only["total_redemptions"] == 1
+    assert only["redemptions"][0]["code"] == "FIRSTCODE"
+
+
+def test_an_order_that_never_happened_is_not_a_redemption(shop):
+    """The reason redemptions are read from the orders rather than counted
+    on the coupon: a counter would still say one."""
+    from app.db.session import tenant_session
+    from sqlalchemy import text
+
+    _publish(shop, code="CANCELME")
+    placed = _order(_guest(shop), shop, coupon_code="CANCELME").json()
+    assert shop.admin.get(_redemptions_at(shop.id)).json()["total_redemptions"] == 1
+
+    with tenant_session(shop.id) as session:
+        session.execute(
+            text("UPDATE orders SET status = 'CANCELLED' WHERE id = :o"),
+            {"o": placed["order_id"]},
+        )
+
+    assert shop.admin.get(_redemptions_at(shop.id)).json()["total_redemptions"] == 0

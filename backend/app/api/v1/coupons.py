@@ -45,6 +45,7 @@ from app.db.base import utcnow
 from app.db.session import system_session, tenant_session
 from app.models import (
     Coupon, CouponGroup, CouponItemType, DiscountKind, ItemType, Order, User,
+    UserKind,
 )
 from app.services import coupon_groups as group_service
 from app.services import sms
@@ -1263,3 +1264,122 @@ def retire_signup_offer(
                 platform, admin, "SUPER_ADMIN_RETIRE_SIGNUP_OFFER",
                 {"restaurant_id": str(restaurant_id), "group_id": str(group.id)},
             )
+
+
+# -------------------------------------------------------- who used what -------
+#
+# Every coupon redemption at one restaurant, newest first: which code, which
+# order, who placed it, and what it took off.
+#
+# Read from the orders, which is the only honest source. A coupon's own
+# counter would be a second truth about something the orders already know,
+# and it would part company with them the first time one was cancelled.
+
+
+class RedemptionOut(BaseModel):
+    """One order that used a coupon."""
+
+    order_id: UUID
+    order_number: int
+    # The code as the customer typed it, from the order's own snapshot --
+    # so a retired or renamed coupon still reads correctly here.
+    code: str
+    # Who placed it. None for a guest, who has no account behind them: that
+    # is a real answer rather than a lookup that failed, and the screen says
+    # "a guest" rather than leaving a blank.
+    customer_name: str | None
+    customer_email: str | None
+    customer_phone: str | None
+    # Whether there was an account behind the order. A guest is a real row
+    # with the name they typed at checkout, so the name alone cannot tell
+    # the two apart -- and "was this a regular?" is the question an operator
+    # is actually asking.
+    is_guest: bool
+    discount_minor: int
+    order_total_minor: int
+    status: str
+    created_at: datetime
+
+
+class RedemptionListOut(BaseModel):
+    restaurant_name: str
+    currency: str
+    # Totals over everything matched, not only the page shown.
+    total_redemptions: int
+    total_discounted_minor: int
+    redemptions: list[RedemptionOut]
+
+
+# One page of history. Enough to read a promotion's whole run on most
+# restaurants, and a bound on what one request has to render.
+MAX_REDEMPTIONS = 500
+
+
+@router.get(
+    "/restaurants/{restaurant_id}/coupon-redemptions",
+    response_model=RedemptionListOut,
+)
+def list_redemptions(
+    restaurant_id: UUID,
+    code: str | None = None,
+    admin: User = Depends(require_platform_admin),
+):
+    """Every coupon redemption here, newest first.
+
+    `code` narrows it to one code, which is how a numbered group's MORE7 or
+    one customer's welcome code is traced from the dashboard.
+
+    Cancelled and expired orders are left out, for the reason redemptions
+    are counted that way everywhere else: an order that was never paid for
+    is not a promotion anybody received.
+    """
+    with tenant_session(restaurant_id) as db:
+        restaurant = _restaurant(db, restaurant_id)
+
+        where = [
+            Order.coupon_id.is_not(None),
+            Order.status.notin_(coupon_service.SPENT_STATUSES),
+        ]
+        if code:
+            where.append(Order.coupon_code == coupon_service.normalise(code))
+
+        totals = db.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(Order.coupon_discount_minor), 0),
+            ).select_from(Order).where(*where)
+        ).one()
+
+        rows = db.execute(
+            select(Order, User)
+            # Outer: a guest order has a user row of kind GUEST, and an
+            # order whose customer was since removed must still be listed --
+            # the redemption happened either way.
+            .outerjoin(User, User.id == Order.customer_user_id)
+            .where(*where)
+            .order_by(Order.created_at.desc())
+            .limit(MAX_REDEMPTIONS)
+        ).all()
+
+        return RedemptionListOut(
+            restaurant_name=restaurant["name"],
+            currency=restaurant["currency"],
+            total_redemptions=totals[0],
+            total_discounted_minor=totals[1],
+            redemptions=[
+                RedemptionOut(
+                    order_id=order.id,
+                    order_number=order.order_number,
+                    code=order.coupon_code or "",
+                    customer_name=None if user is None else user.full_name,
+                    customer_email=None if user is None else user.email,
+                    customer_phone=None if user is None else user.phone,
+                    is_guest=user is None or user.kind == UserKind.GUEST.value,
+                    discount_minor=order.coupon_discount_minor,
+                    order_total_minor=order.total_minor,
+                    status=order.status,
+                    created_at=order.created_at,
+                )
+                for order, user in rows
+            ],
+        )

@@ -31,6 +31,30 @@ export type QuoteCombo = {
  * through Clerk, so those requests carry Clerk's session token -- fetched by
  * the base query (customerAuth), never by a page.
  */
+/** What this customer can still earn here, and what stands between them
+ *  and it. Written as "what to do next" rather than as a set of flags,
+ *  because the screen has one sentence to show and working out which from
+ *  four booleans is how two screens end up disagreeing. */
+export type WelcomeOffer = {
+  headline: string | null;
+  can_earn: boolean;
+  /** False where this deployment cannot send a text at all, which the screen
+   *  says plainly rather than offering a button that cannot work. */
+  sms_available: boolean;
+  phone_verified: boolean;
+};
+
+/** A code that belongs to this customer and nobody else. */
+export type WelcomeCode = {
+  code: string;
+  description: string | null;
+  discount_kind: "PERCENT" | "AMOUNT";
+  discount_value: number;
+  min_subtotal_minor: number;
+  ends_at: string | null;
+  spent: boolean;
+};
+
 export const storefrontApi = api.injectEndpoints({
   endpoints: (build) => ({
     portal: build.query<Portal, void>({
@@ -231,6 +255,39 @@ export const storefrontApi = api.injectEndpoints({
       providesTags: ["CustomerSession"],
     }),
 
+    /** What this customer can still earn by proving a mobile number. */
+    welcomeOffer: build.query<WelcomeOffer, void>({
+      query: () => ({ url: "/welcome/offer", customerAuth: "if-signed-in" }),
+      providesTags: ["WelcomeOffer"],
+    }),
+
+    /** Text a code to the number given. */
+    startPhoneVerification: build.mutation<void, { phone: string }>({
+      query: (body) => ({
+        url: "/welcome/phone",
+        method: "POST",
+        body,
+        customerAuth: true,
+      }),
+    }),
+
+    /** Prove the number, and be given the code if one is going. */
+    verifyPhone: build.mutation<WelcomeCode | null, { code: string }>({
+      query: (body) => ({
+        url: "/welcome/verify",
+        method: "POST",
+        body,
+        customerAuth: true,
+      }),
+      invalidatesTags: ["WelcomeOffer", "CustomerSession"],
+    }),
+
+    /** Every personal code this customer holds here. */
+    welcomeCodes: build.query<WelcomeCode[], void>({
+      query: () => ({ url: "/welcome/codes", customerAuth: true }),
+      providesTags: ["WelcomeOffer"],
+    }),
+
     /** Order without an account. The session is the httpOnly cookie this
      *  sets; the body is only what the receipt will be addressed to. */
     startGuestSession: build.mutation<
@@ -346,6 +403,10 @@ export const {
   useFavouritesQuery,
   useSetFavouriteMutation,
   useRewardsQuery,
+  useWelcomeOfferQuery,
+  useWelcomeCodesQuery,
+  useStartPhoneVerificationMutation,
+  useVerifyPhoneMutation,
   useOffersQuery,
   useReferralsQuery,
   useInviteFriendMutation,
