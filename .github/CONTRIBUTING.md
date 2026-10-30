@@ -12,9 +12,10 @@ and `web/.env` from `web/.env.example`, then either everything in Docker
 emails). Use test keys only; production accounts are in the README's
 **Production setup guide**.
 
-A new setting goes in `backend/app/config.py` and in both templates:
-`.env.example` (development) and `.env.production.example` (production),
-with what it does and what is lost without it.
+A new setting goes in `backend/app/config.py`, with a comment saying what it
+does and what is lost without it. Add it to `.env.example` (development) and
+`.env.production.example` (production) only if someone has to fill it in; a
+setting with a working default stays out, so the templates stay short.
 
 Changing an email's wording is a template edit under
 `backend/app/templates/email/`; `python scripts/preview_emails.py` from
