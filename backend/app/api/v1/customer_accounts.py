@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_principal
 from app.config import settings
 from app.core import customer_auth, errors, google_oauth, ratelimit
 from app.core.logsafe import email_for_log
@@ -36,7 +36,7 @@ from app.db.base import utcnow
 from app.db.session import system_session
 from app.models import User, UserKind
 from app.schemas.api import CustomerSessionOut
-from app.services import account_emails
+from app.services import account_emails, clerk_customers
 from app.services.customer_view import session_out as _session_out
 
 log = logging.getLogger(__name__)
@@ -431,6 +431,46 @@ def change_email(body: ChangeEmailIn, user: User = Depends(get_current_user)):
 # redirect, which is why they answer 302 and never a body. That also keeps the
 # client secret and the code exchange entirely server-side -- the browser
 # never holds anything it could replay.
+
+
+@router.post(
+    "/clerk-session",
+    response_model=CustomerSessionOut,
+    # Credential-bearing but not guessable: the bearer token is already
+    # proof. The limit is here because an endpoint that mints a cookie is
+    # worth a budget whatever proves it.
+    dependencies=[Depends(per_ip("clerk_session", limit=30, window_seconds=300))],
+)
+def adopt_clerk_session(response: Response, principal=Depends(get_principal)):
+    """Turn a verified Clerk session into one of ours.
+
+    THE BUG THIS EXISTS TO FIX. A Clerk sign-in used to set no cookie of
+    ours at all: the only way the API learned about it was an Authorization
+    header the storefront attached when it thought the browser was signed
+    in. It decided that by reading __client_uat, a cookie Clerk writes on
+    the app's own origin -- which a Clerk *development* instance, whose
+    frontend API lives on clerk.accounts.dev, does not write there. So a
+    customer signed in with Google, came back to the menu, and was asked to
+    sign in again, because nothing on the page could tell that they had.
+
+    Now the social callback calls this once, at the end, and the storefront
+    is in exactly the position it is in after an email-and-password sign-in:
+    an httpOnly cookie the browser sends by itself. Nothing downstream --
+    the account panel, the checkout guard, favourites -- needs Clerk loaded,
+    needs a bearer token, or needs that cookie to be readable.
+
+    It also ends the third-party-cookie problem on phones, where Clerk's own
+    session is the thing mobile browsers block by default.
+
+    Idempotent: calling it twice reissues the cookie and changes nothing
+    else, which is what makes it safe to call on every completed sign-in.
+    """
+    user = clerk_customers.customer_for_clerk_user(
+        principal.clerk_user_id, token_email=principal.email
+    )
+    _set_session_cookie(response, user.id)
+    log.info("adopted clerk session for customer %s", user.id)
+    return _session_out(user)
 
 
 @router.get("/google/start", include_in_schema=False)
