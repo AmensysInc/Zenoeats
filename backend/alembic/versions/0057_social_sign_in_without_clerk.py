@@ -43,7 +43,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # The shape comes back; the Clerk ids and deliveries dropped above do not.
+    # The shape comes back, exactly as 0001 and 0002 left it, because their own
+    # downgrades expect to find it. The Clerk ids and deliveries do not.
     op.create_table(
         "clerk_events",
         sa.Column(
@@ -61,10 +62,16 @@ def downgrade() -> None:
     )
     op.create_index("ix_clerk_events_type", "clerk_events", ["type"])
     op.execute("GRANT SELECT, INSERT, UPDATE ON clerk_events TO zenoeats_system")
-    op.execute("GRANT SELECT, DELETE ON clerk_events TO zenoeats_app")
+    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON clerk_events TO zenoeats_app")
 
     op.add_column("users", sa.Column("clerk_user_id", sa.String(255), nullable=True))
-    op.create_index("ix_users_clerk_user_id", "users", ["clerk_user_id"], unique=True)
+    op.create_unique_constraint("users_clerk_user_id_key", "users", ["clerk_user_id"])
+    op.create_index("ix_users_clerk", "users", ["clerk_user_id"])
+    op.create_check_constraint(
+        "ck_users_has_identity",
+        "users",
+        "clerk_user_id IS NOT NULL OR email IS NOT NULL",
+    )
 
     for column in SUBJECTS:
         op.execute(f"DROP INDEX IF EXISTS uq_users_{column}")

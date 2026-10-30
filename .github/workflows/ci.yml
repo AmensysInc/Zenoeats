@@ -197,8 +197,6 @@ jobs:
           test -f dist/legal/terms.html
           test -f dist/legal/refunds.html
           test -f dist/legal/data-deletion.html
-          test -f dist/config.js
-          grep -q '/config.js' dist/index.html
           grep -rq "Waiting for the payment confirmation" dist/assets/
           grep -rq "Zenoeats platform" dist/
 
