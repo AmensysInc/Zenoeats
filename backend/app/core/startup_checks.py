@@ -2,8 +2,8 @@
 
 Checked once at import of app.main. In production a problem is fatal: an API
 that boots with an empty SESSION_SECRET hands out admin sessions anyone can
-forge, and one without Clerk configured turns every customer away -- both
-are better discovered as a failed deploy than as an incident. Outside
+forge, and one with no Stripe key cannot take a payment -- both are better
+discovered as a failed deploy than as an incident. Outside
 production the same findings are logged, so development keeps working with a
 partial .env.
 """
@@ -35,9 +35,6 @@ PUBLISHED_SECRETS = frozenset({
 def configuration_problems(settings: Settings) -> list[str]:
     """Everything wrong with a production configuration, worst first."""
     problems: list[str] = []
-
-    if settings.AUTH_DEV_BYPASS:
-        problems.append("AUTH_DEV_BYPASS must never be enabled in production.")
 
     if settings.DATABASE_URL_MIGRATE:
         problems.append(
@@ -73,23 +70,18 @@ def configuration_problems(settings: Settings) -> list[str]:
             "FIELD_ENCRYPTION_KEY is not a valid Fernet key (generate one with: make key)."
         )
 
-    # Clerk is optional now and this is no longer "nobody can sign in": the
-    # API holds customer credentials itself (core/customer_auth.py), so email
-    # and password and guest ordering both work with none of these set. What
-    # is lost is the social sign-in Clerk brokers, so say that instead -- a
-    # warning that overstates what is broken gets ignored along with the ones
-    # that do not.
-    #
-    # Reported only when the set is half-filled, which is the configuration
-    # that genuinely fails: a publishable key on the page and no secret behind
-    # it means a Google button that leads nowhere.
-    clerk = {name: bool(getattr(settings, name)) for name in
-             ("CLERK_JWKS_URL", "CLERK_ISSUER", "CLERK_SECRET_KEY")}
-    if any(clerk.values()) and not all(clerk.values()):
-        missing = ", ".join(sorted(n for n, present in clerk.items() if not present))
+    # Social sign-in is optional, provider by provider: email and password and
+    # guest ordering need none of it. Reported only when Apple's set is
+    # half-filled, which is the one that fails at the far end of the redirect
+    # rather than by simply not drawing the button.
+    apple = {name: bool(getattr(settings, name)) for name in (
+        "APPLE_OAUTH_CLIENT_ID", "APPLE_OAUTH_TEAM_ID",
+        "APPLE_OAUTH_KEY_ID", "APPLE_OAUTH_PRIVATE_KEY",
+    )}
+    if any(apple.values()) and not all(apple.values()):
+        missing = ", ".join(sorted(n for n, present in apple.items() if not present))
         problems.append(
-            f"Clerk is half-configured ({missing} missing); social sign-in will fail. "
-            "Set all three or none -- email, password and guest ordering need none of them."
+            f"Sign in with Apple is half-configured ({missing} missing). Set all four or none."
         )
 
     for name in ("STRIPE_SECRET_KEY", "STRIPE_CONNECT_WEBHOOK_SECRET"):
@@ -112,7 +104,7 @@ def configuration_problems(settings: Settings) -> list[str]:
 
 
 def _key_mode(value: str) -> str | None:
-    """'test' or 'live' from a Stripe or Clerk key's prefix; None if unset."""
+    """'test' or 'live' from a Stripe key's prefix; None if unset."""
     if "_test_" in value[:8]:
         return "test"
     if "_live_" in value[:8]:
@@ -123,7 +115,7 @@ def _key_mode(value: str) -> str | None:
 def _key_mode_problems(settings: Settings) -> list[str]:
     keys = {
         name: _key_mode(getattr(settings, name))
-        for name in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "CLERK_SECRET_KEY")
+        for name in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY")
     }
     problems: list[str] = []
 

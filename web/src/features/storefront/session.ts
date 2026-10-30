@@ -6,9 +6,7 @@ import type { CustomerSession } from "@/types";
  * Both were copied into each component that needed them -- the sign-in link
  * into AccountPanel and FavouriteButton, ending a session into AccountPanel
  * and CustomerAccountBar -- byte for byte. Copies of an auth detail are the
- * expensive kind: when the sign-out call changed from Clerk's signOut to this
- * API's own logout, every copy had to be found, and the one that was missed
- * is what put "set CLERK_PUBLISHABLE_KEY" in front of a customer.
+ * expensive kind: when one has to change, every copy has to be found.
  */
 
 /** Where "Sign in" goes, carrying the page to come back to afterwards. */

@@ -40,7 +40,7 @@ from app.schemas.api import (
 )
 from app.core.tenant import extract_slug
 from app.services import (
-    account_emails, clerk_customers, coupons, customer_profile, delivery, guest_customers,
+    account_emails, customer_records, coupons, customer_profile, delivery, guest_customers,
     loyalty,
     stripe_service, terms, tracking,
 )
@@ -279,7 +279,7 @@ def current_customer(
         full_name=user.full_name,
         phone=user.phone,
         address=user.address,
-        email_pending=clerk_customers.has_placeholder_email(user),
+        email_pending=customer_records.has_placeholder_email(user),
         is_guest=user.kind == UserKind.GUEST.value,
         terms_accepted=not terms.needs_recording(user),
     )
@@ -327,8 +327,8 @@ def start_guest_session(
 def end_guest_session(response: Response):
     """Stop being this guest.
 
-    Guests only: a signed-in customer's session is Clerk's and is ended
-    through Clerk. Clearing the cookie is irreversible by design -- nothing
+    Guests only: a signed-in customer's session ends at /customer/logout.
+    Clearing the cookie is irreversible by design -- nothing
     else can name that guest row -- so the page asks first.
     """
     response.delete_cookie(
@@ -371,14 +371,13 @@ def create_order(
         return OrderOut.model_validate(replay)
 
     # Name and phone are required by the body itself, with an address required
-    # for delivery; the email is the identity's. A signed-in customer whose
-    # address Clerk has not supplied yet has none a receipt or a restaurant
-    # could use, and every later request asks Clerk again, so this clears
-    # itself in a moment.
-    if clerk_customers.has_placeholder_email(user):
+    # for delivery; the email is the identity's. An account from before this
+    # codebase held its own credentials can carry a placeholder, which is no
+    # address a receipt or a restaurant could use.
+    if customer_records.has_placeholder_email(user):
         raise errors.ApiError(
             503, "EMAIL_PENDING",
-            "We could not confirm your email address just now. Try again in a moment.",
+            "We could not confirm your email address. Sign out and sign in again.",
         )
 
     # Priced again from the address, whatever the quote said: the fee is
@@ -453,7 +452,7 @@ def create_order(
     )
     order.contact_email = (
         body.guest_email if user.kind == UserKind.GUEST.value and body.guest_email
-        else clerk_customers.receipt_address(user)
+        else customer_records.receipt_address(user)
     )
     # New pickup forms send an empty address, while older clients may still
     # provide one. Preserve a supplied snapshot without requiring it.
@@ -549,7 +548,7 @@ def create_payment_intent(
         payment_status=payment.status,
         # For the payment's billing details, which Stripe screens for fraud.
         # Not a receipt address: Stripe sends no receipt (stripe_service).
-        customer_email=order.contact_email or clerk_customers.receipt_address(user),
+        customer_email=order.contact_email or customer_records.receipt_address(user),
     )
     idempotency.store(
         db, key=idempotency_key, actor_id=user.id, endpoint=endpoint,
@@ -574,7 +573,7 @@ def get_order(
     checked after this response has gone (see _reconcile_payment) and so
     visible to the next poll.
 
-    Two ways in. Ordinarily the caller owns the order -- a Clerk session or
+    Two ways in. Ordinarily the caller owns the order -- an account session or
     the guest cookie that created it. X-Order-Token is the other: the token
     in a guest's confirmation email, which is how someone who ordered without
     an account reaches their pickup PIN from a phone that is not the one they

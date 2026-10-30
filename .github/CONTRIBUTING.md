@@ -12,9 +12,10 @@ and `web/.env` from `web/.env.example`, then either everything in Docker
 emails). Use test keys only; production accounts are in the README's
 **Production setup guide**.
 
-A new setting goes in `backend/app/config.py` and in both templates:
-`.env.example` (development) and `.env.production.example` (production),
-with what it does and what is lost without it.
+A new setting goes in `backend/app/config.py`, with a comment saying what it
+does and what is lost without it. Add it to `.env.example` (development) and
+`.env.production.example` (production) only if someone has to fill it in; a
+setting with a working default stays out, so the templates stay short.
 
 Changing an email's wording is a template edit under
 `backend/app/templates/email/`; `python scripts/preview_emails.py` from
@@ -104,3 +105,15 @@ From `main` with CI green: move *Unreleased* in `CHANGELOG.md` under the new
 version, merge that, then tag it (`git tag v1.0.2 && git push origin
 v1.0.2`). CI publishes the images for the tag, and production deploys that
 tag only (`docs/operations/STEPS_BEFORE_PRODUCTION.md`, §11).
+
+## What CI runs
+
+Only what your change touches (`scripts/ci_changes.sh`): the backend job for
+`backend/`, the frontend job for `web/`, and just the secret scan, over the
+changed files, for docs. Dependency audits run when a dependency file changes,
+the migration rollback when a migration does, and an image builds only when its
+code changed. Changing `ci.yml` or that script runs everything, as do version
+tags and the Monday morning run.
+
+If a test starts reading a file outside its own folder, add that file to
+`scripts/ci_changes.sh`, or a change to it will skip the test.

@@ -2,8 +2,8 @@
 
 A multi-restaurant ordering platform built on the v3.0 architecture
 baseline. Each restaurant gets its own subdomain storefront, with an Item →
-Modifier menu served by meal periods. Customers sign in with Clerk on our
-own pages, or check out as a guest, for pickup or delivery. Payment is a
+Modifier menu served by meal periods. Customers sign in with Google, Apple,
+Facebook or a password, or check out as a guest, for pickup or delivery. Payment is a
 Stripe Connect direct charge, confirmed by webhook, and the paid order lands
 on the restaurant's kitchen board. There it is handed over with a pickup
 PIN, or cancelled and refunded from the same screen.
@@ -24,15 +24,15 @@ What remains before real money is accounts, the domain, the server and a
 legal review, tracked in
 [`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md). See
 [Production](#production), and the
-[Production setup guide](#production-setup-guide) for Stripe, Clerk, Google
-Maps and every other account step by step.
+[Production setup guide](#production-setup-guide) for Stripe, social sign-in,
+Google Maps and every other account step by step.
 
 ## What is in this build
 
 | Area | Included |
 |---|---|
 | Tenancy | Wildcard subdomain resolution, PostgreSQL RLS, three-role DB model |
-| Identity | Customers: Clerk (email and password, plus Google, Apple and Facebook when enabled in Clerk) behind our own `/account` pages, or **guest checkout** with just an email. Staff: platform-issued passwords. Admins: `ADMIN_USERS` |
+| Identity | Customers: email and password held by the API, plus Google, Apple and Facebook directly when configured, on our own `/account` pages, or **guest checkout** with just an email. Staff: platform-issued passwords. Admins: `ADMIN_USERS` |
 | Customer profile | `/profile`: name, phone and address, a change-email link beside the email, order history at this restaurant, favourite items saved from a heart on the menu, and **Close my account**, which removes the sign-in and personal details and keeps paid orders. Accounts only; a guest sees their orders |
 | Menu | Item types the restaurant names itself, items, meal periods that serve them, combos with their own photo, reusable modifier groups, and **calories** per item and per size or option, summed for combos. One card size for every item and combo |
 | Brand | Each restaurant uploads its logo and chooses how its name is shown — typed in one of six fonts, or its own lettering as an image — in Settings; shown in every customer header and on the sign-in pages, with or without storefront customization |
@@ -379,31 +379,26 @@ cp web/.env.example web/.env   # the frontend's own small file
 ```
 
 Then fill in `.env`. Only `FIELD_ENCRYPTION_KEY` and `SESSION_SECRET` are
-required; every other setting is optional, and the file says what you lose
-without it. What follows is the **development** setup, with test keys.
+required; every other setting is optional, and those not in the file have
+defaults explained in `backend/app/config.py`. What follows is the **development** setup, with test keys.
 
 `.env.example` is the development template only. Production has its own,
 [`.env.production.example`](.env.production.example), which
 `scripts/make_prod_env.py` fills in on the server (see [Production](#production)).
-Production accounts (Stripe live, a Clerk production instance, Google keys for
-the real domain) are in the [Production setup guide](#production-setup-guide).
+Production accounts (Stripe live, social sign-in, Google keys for the real
+domain) are in the [Production setup guide](#production-setup-guide).
 
 **Sessions.** Set `SESSION_SECRET` (`openssl rand -base64 32`). It signs the
-admin, staff and guest session cookies.
+admin, staff, customer and guest session cookies.
 
 **Email (optional).** Without a SendGrid key nothing is emailed and the app
 works otherwise. To see emails arrive, follow [Email](#email): a key, one
 verified sender address in `EMAIL_FROM`, and `make worker` running.
 
-**Clerk (customers).** Create one application. Enable *Email address* +
-*Password*, and *Google* under social connections if you want the button
-(development instances use Clerk's shared Google credentials, so there is
-nothing to set up at Google). Copy the publishable key into
-`VITE_CLERK_PUBLISHABLE_KEY`, and the secret key, JWKS URL and issuer into the
-`CLERK_*` settings. For production, set the primary domain to the parent
-(`zenoeats.com`) so one sign-in covers every restaurant subdomain, and add a
-webhook endpoint at `https://yourdomain/api/v1/webhooks/clerk` for
-`user.created`, `user.updated` and `user.deleted`.
+**Customer sign-in.** Email and password and guest ordering need no setup. The
+seed creates `customer@example.com` / `dev-customer-password` to sign in with.
+Google, Apple and Facebook are optional: see
+[the setup guide](#3-social-sign-in-google-apple-facebook).
 
 **Google Maps (delivery only).** Attach a billing account to the Google Cloud
 project and enable **Maps JavaScript API**, **Places API (Legacy)**,
@@ -595,31 +590,34 @@ thing standing between you and a cross-tenant data leak.
 
 ## Customer sign-in
 
-The pages are ours; the identity is Clerk's. `/account/sign-in`,
-`/account/sign-up` and `/account/forgot-password` are plain HTML entries
-styled like the rest of the storefront, and they call Clerk's JavaScript SDK
-directly -- no Clerk component is rendered.
+`/account/sign-in`, `/account/sign-up` and `/account/forgot-password` are plain
+HTML entries styled like the rest of the storefront. No identity provider sits
+underneath: the API holds the accounts and every session is an httpOnly cookie
+it signs (`core/customer_auth.py`).
 
-* **Sign-up** sends a 6-digit code, entered on the same page.
-* **Forgot password** sends a 6-digit code, entered with the new password.
-* **Google, Apple and Facebook** each get a button when enabled in the Clerk
-  dashboard. They go through Clerk and return to `/account/sso-callback`,
-  which finishes the sign-in (or sign-up) and continues to checkout. A
-  provider that did not supply everything, such as a Facebook account with
-  no email, lands on a step that asks for exactly what is missing.
-* **Two-step verification** is handled on the sign-in page: authenticator
-  app, text, email or a backup code.
+* **Email and password.** Registering signs you in. **Forgot password** emails a
+  signed one-hour link, for any account, including one that has only ever used a
+  provider and so chooses its first password this way.
+* **Google, Apple and Facebook** each get a button once their settings are
+  filled in (`core/social_auth.py`). The button goes to
+  `/api/v1/customer/<provider>/start`, the provider comes back to one callback on
+  the root domain, and the API sets the session cookie and returns the customer
+  to the storefront they started on.
+* **One person, one account.** A provider sign-in matches on the provider's
+  subject, then on a verified email address. So registering and later pressing
+  Google is one account, as is Google then Apple on the same address. Facebook
+  does not promise its address is verified, so it can create an account but not
+  open an existing one, and the page says what to do instead. Registering
+  verifies nothing, so the first provider sign-in on a password account clears
+  the password and ends its sessions. Apple's Hide My Email gives a different
+  address, and therefore a separate account.
 * **Guests** skip all of it. **Continue as guest** on the sign-in page takes
   an email (and optionally a name) and signs the browser in to a guest
   session. The confirmation email carries a private link that reopens the
   order and its pickup PIN, and that browser keeps them for 30 days.
-* **The API** verifies Clerk's session token on every order request, checks it
-  was minted for one of our own hosts, and keeps one `users` row per Clerk
-  user. A new customer's email and name are read from Clerk's Backend API the
-  first time they appear, so receipts do not wait for the webhook.
-
-The SDK is loaded from the Clerk instance at runtime (about 80 KB), not
-bundled, and only on customer pages.
+* **Account beats guest.** A browser can hold both cookies, and the account's
+  wins on every request. Signing out clears both, so a customer never falls back
+  to being last month's guest.
 
 ## Policies and consent
 
@@ -638,9 +636,8 @@ questions a lawyer has to answer for that page. `docs/operations/STEPS_BEFORE_PR
 Agreement is asked for in three places and recorded in one:
 
 * **Sign-up** will not submit without the checkbox, and the provider buttons
-  are held behind it too. Clerk finishes a social sign-up by itself whenever
-  the provider supplied everything, and returns nobody to a consent step — so
-  the checkbox has to be passed before the browser leaves for Google.
+  are held behind it too, because the account is created at the far end of that
+  redirect. Either way the agreement is recorded with the new account.
 * **The customer guard** shows a consent form in place of checkout for an
   account that still has nothing on record, which covers anyone who reached
   an account another way. Guests are not gated.
@@ -653,15 +650,8 @@ materially; every customer re-agrees on their next order.
 
 ## Email
 
-Two senders, for two different kinds of email:
-
-| Email | Sent by | Set up in |
-|---|---|---|
-| Customer verification and password-reset codes | Clerk, or Zenoeats through SendGrid once switched over (below) | Clerk's dashboard |
-| Everything else, listed below | Zenoeats, through SendGrid | `.env`; the words are templates in the repository |
-
-Clerk cannot send Zenoeats' own: staff are not Clerk users (they sign in with
-passwords the platform issues), and Clerk sends no business email.
+Every email goes through SendGrid, from `.env` and the templates in the
+repository.
 
 Zenoeats sends 15 emails:
 
@@ -720,55 +710,11 @@ people a link that goes nowhere.
 docker compose --profile app logs worker | Select-String "sent|rejected|SENDGRID"
 ```
 
-**Clerk's emails through SendGrid (optional).** Clerk can hand its own
-customer emails (sign-up verification codes, password-reset codes and the
-rest) to Zenoeats instead of sending them itself, so every email a customer
-gets comes from the same sender. The verification and reset codes then use
-Zenoeats' own template (`customer_code/`); any other kind is sent in Clerk's
-words. The code is never stored or logged.
-
-**Do this only where Clerk's webhook reaches the app**, which means
-production, or a laptop behind a public tunnel. Once Clerk stops sending an
-email itself, the webhook is the only way it arrives. If Clerk can't reach
-the app, nobody can sign up or reset a password until you switch it back.
-
-1. Clerk › **Webhooks** › your endpoint (`https://<domain>/api/v1/webhooks/clerk`)
-   › subscribe it to **`email.created`** as well as the `user.*` events.
-2. SendGrid set up as above, and the worker running.
-3. Clerk › **Customization › Emails**. For **Verification code** and
-   **Reset password code**, turn off **Delivered by Clerk**. Do one, test it,
-   then the other.
-4. Sign up with a new address and check the code arrives from `EMAIL_FROM`.
-
-To undo it, turn **Delivered by Clerk** back on; nothing else changes.
-
 **Editing an email.** The words and layout of every email are templates in
 [`backend/app/templates/email/`](backend/app/templates/email/), one folder per
 email, with a README saying how to edit them. To see a change without sending
 anything, run `python scripts/preview_emails.py` from `backend/` and open the
 `index.html` it prints.
-
-## Development without Clerk
-
-For backend work you can skip Clerk entirely:
-
-```
-AUTH_DEV_BYPASS=true
-```
-
-The `Authorization: Bearer` header is then read as a bare Clerk user id. The
-seed creates `user_dev_customer`.
-
-```bash
-curl -H "Authorization: Bearer user_dev_customer" \
-     -H "X-Zenoeats-Restaurant: spicehouse" \
-     -H "Idempotency-Key: $(uuidgen)" \
-     -H "Content-Type: application/json" \
-     -d '{"items":[{"menu_item_id":"...","quantity":1,"modifiers":[]}]}' \
-     http://localhost:8000/api/v1/orders
-```
-
-The app refuses to boot with `AUTH_DEV_BYPASS=true` and `ENV=production`.
 
 ## Menu model
 
@@ -990,7 +936,7 @@ docker compose --profile app pull && docker compose --profile app up -d
 What the production shape guarantees:
 
 - **Configuration.** The API refuses to start with an unsafe configuration:
-  a short session secret, missing Clerk or Stripe keys, **test keys**, a dev
+  a short session secret, missing Stripe keys, **test keys**, a dev
   domain, or the owner's database URL. `docker-compose.prod.yml` refuses to
   start without real database and Redis passwords.
 - **Network.** Only nginx listens, on 80/443 with HTTPS and HSTS. Postgres,
@@ -1028,7 +974,7 @@ development ones; never reuse development keys.
 |---|---|---|---|
 | 1 | Cloudflare (domain, DNS, TLS) | Everything else | `ROOT_DOMAIN`, `infra/certs/` |
 | 2 | Stripe (live, Connect) | Taking payments | `STRIPE_*`, `PLATFORM_FEE_*` |
-| 3 | Clerk (production instance) | Customer sign-in | `CLERK_*`, `VITE_CLERK_PUBLISHABLE_KEY` |
+| 3 | Google, Apple, Facebook (optional) | Social sign-in | `GOOGLE_OAUTH_*`, `APPLE_OAUTH_*`, `FACEBOOK_OAUTH_*` |
 | 4 | Google Maps Platform | Delivery: addresses, fees, tracking map | `GOOGLE_MAPS_API_KEY`, `GOOGLE_MAPS_BROWSER_KEY` |
 | 5 | SendGrid | Order and staff emails | `SENDGRID_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO` |
 | 6 | Sentry | Error tracking | `SENTRY_DSN` |
@@ -1058,7 +1004,7 @@ still missing.
    | A | `*` | server IP |
    | A | `admin` | server IP |
 
-   Records that Clerk (§3) and SendGrid (§5) ask for later must be **DNS only**
+   Records that SendGrid (§5) asks for later must be **DNS only**
    (grey cloud).
 4. **SSL/TLS → Overview:** mode **Full (strict)**. **Edge Certificates:**
    *Always Use HTTPS* on, *Minimum TLS Version* 1.2.
@@ -1158,82 +1104,44 @@ calculation.
   touches the servers).
 - Place one real low-value order end to end, then refund it.
 
-### 3. Clerk (customer sign-in)
+### 3. Social sign-in (Google, Apple, Facebook)
 
-Customers sign in on the app's own `/account` pages; Clerk provides
-identity underneath. Staff and platform admins never use Clerk.
-
-**3.1 Production instance.** In the Clerk dashboard, create the application
-(or open the existing one) and **create a production instance**. Keep the
-development instance for development.
-
-**3.2 Domain.** Set the production instance's **primary domain** to the root
-domain `<domain>`, not a restaurant subdomain. One sign-in then covers every
-restaurant.
-
-**3.3 DNS.** Clerk lists the records it needs, typically CNAMEs for `clerk`,
-`accounts` and `clkmail`, plus two DKIM records. Add each in Cloudflare as
-**DNS only** (grey cloud), then wait for Clerk to verify them.
-`clerk`, `accounts` and `clkmail` are reserved slugs, so no restaurant can
-take them.
-
-**3.4 Sign-in methods** (**User & authentication**):
-- **Email address**, with verification by **email code**. The pages expect
-  6-digit codes, not links.
-- **Password.**
-- Optionally **multi-factor**: the sign-in page already handles
-  authenticator-app, SMS, email and backup codes.
-- Keep **bot protection** on. The sign-up page includes Clerk's captcha
-  element.
-
-**3.5 Social sign-in.** A production instance needs your own credentials for
-each provider. Each provider's page in Clerk shows the **redirect URI** to
-paste into that provider. A button appears in the app for every provider
-you enable.
-
-- **Google:**
-  1. Google Cloud console → **OAuth consent screen**: publish it, with
-     `https://<domain>/legal/privacy` and `https://<domain>/legal/terms`.
-  2. **Credentials → OAuth client ID → Web application**, with Clerk's
-     redirect URI.
-  3. Put the client ID and secret in Clerk.
-- **Facebook:**
-  1. developers.facebook.com → **create an app** with Facebook Login.
-  2. Set *Valid OAuth Redirect URIs* to Clerk's redirect URI.
-  3. Add the **Privacy Policy URL** and the **data deletion instructions
-     URL** (`https://<domain>/legal/data-deletion`).
-  4. Put the App ID and secret in Clerk, then switch the app to **Live**.
-- **Apple** (needs the Apple Developer Program, $99/year):
-  1. Create an **App ID** with *Sign in with Apple*.
-  2. Create a **Services ID** with the web domain and Clerk's return URL.
-  3. Create a **Key** with *Sign in with Apple* and download the `.p8` (only
-     possible once).
-  4. Enter the Services ID, Team ID, Key ID and the key's contents in Clerk.
+Optional, provider by provider: email and password and guest ordering need
+nothing here, and a button appears only once its settings are filled in. Each
+provider gets exactly one redirect URI, on the root domain, whichever restaurant
+the customer started from.
 
 Google, Facebook and Apple review the legal pages. They must be the final,
 lawyer-reviewed versions on the root domain (see
 [`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) §9).
 
-**3.6 Keys.** Production instance → **API keys**:
+**3.1 Google.**
+1. Google Cloud console → **OAuth consent screen**: publish it, with
+   `https://<domain>/legal/privacy` and `https://<domain>/legal/terms`.
+2. **Credentials → OAuth client ID → Web application**, with the redirect URI
+   `https://<domain>/api/v1/customer/google/callback`.
+3. Set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
 
-| Clerk shows | Setting |
-|---|---|
-| Publishable key `pk_live_…` | `VITE_CLERK_PUBLISHABLE_KEY` (read by the web container at start) |
-| Secret key `sk_live_…` | `CLERK_SECRET_KEY` |
-| Frontend API URL (`https://clerk.<domain>`) | `CLERK_ISSUER` |
-| JWKS URL (`https://clerk.<domain>/.well-known/jwks.json`) | `CLERK_JWKS_URL` |
+**3.2 Facebook.**
+1. developers.facebook.com → **create an app** with Facebook Login.
+2. Set *Valid OAuth Redirect URIs* to
+   `https://<domain>/api/v1/customer/facebook/callback`.
+3. Add the **Privacy Policy URL** and the **data deletion instructions URL**
+   (`https://<domain>/legal/data-deletion`).
+4. Set `FACEBOOK_OAUTH_APP_ID` and `FACEBOOK_OAUTH_APP_SECRET`, then switch the
+   app to **Live**.
 
-**3.7 Webhook.** **Webhooks → Add endpoint**:
-`https://<domain>/api/v1/webhooks/clerk`, events `user.created`,
-`user.updated` and `user.deleted`. Copy its signing secret into
-`CLERK_WEBHOOK_SECRET`. This keeps customer records in step with Clerk, and
-is how a deletion made in the Clerk dashboard reaches the app. Add
-`email.created` too if Clerk's own emails are to go through SendGrid (see
-[Email](#email)); it does nothing until an email's Clerk delivery is off.
-
-**3.8 Polish.** Brand the **email templates** (verification and reset codes)
-with the Zenoeats name and sender. Choose the **session lifetime** and
-inactivity timeout.
+**3.3 Apple** (needs the Apple Developer Program, $99/year, and HTTPS):
+1. Create an **App ID** with *Sign in with Apple*.
+2. Create a **Services ID**, with the web domain `<domain>` and the return URL
+   `https://<domain>/api/v1/customer/apple/callback`.
+3. Create a **Key** with *Sign in with Apple* and download the `.p8` (only
+   possible once).
+4. Set `APPLE_OAUTH_CLIENT_ID` (the Services ID), `APPLE_OAUTH_TEAM_ID`,
+   `APPLE_OAUTH_KEY_ID` and `APPLE_OAUTH_PRIVATE_KEY` (the `.p8`'s contents, on
+   one line with literal `\n` between its lines).
+5. Under *Sign in with Apple for Email Communication*, register the domain you
+   send email from, or mail to Hide My Email addresses will not arrive.
 
 ### 4. Google Maps Platform (delivery)
 
@@ -1285,7 +1193,7 @@ the map and drawn its delivery rings (portal → Settings → Delivery).
 ### 5. SendGrid (email)
 
 The app sends its own emails, such as order confirmations and staff
-invitations. Customer verification codes come from Clerk (§3).
+invitations, and customers' password-reset links.
 
 1. sendgrid.com → **Settings → Sender Authentication → Authenticate Your
    Domain**: use `<domain>` or a subdomain such as `mail.<domain>`, with
@@ -1366,9 +1274,9 @@ deploy on the server as in
 [`docs/operations/STEPS_BEFORE_PRODUCTION.md`](docs/operations/STEPS_BEFORE_PRODUCTION.md) §11. Then:
 
 1. **Rehearse in test mode first.** Generate the `.env` with `--staging`,
-   which allows Stripe and Clerk test keys and nothing else, and run the
+   which allows Stripe test keys and nothing else, and run the
    §10 rehearsal on the real domain.
-2. **Switch to live:** the live Stripe and Clerk keys, `ALLOW_TEST_KEYS=false`.
+2. **Switch to live:** the live Stripe keys, `ALLOW_TEST_KEYS=false`.
 3. Create the first restaurant (§2.6), place one real low-value order end to
    end, and refund it.
 4. Complete the sign-off in

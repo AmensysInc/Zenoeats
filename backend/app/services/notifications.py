@@ -42,7 +42,7 @@ from app.core import guest_auth
 from app.models import (
     Order, OrderItem, Restaurant, RestaurantUser, SentEmail, StaffStatus, User, UserKind,
 )
-from app.services import clerk_customers, email, email_templates
+from app.services import customer_records, email, email_templates
 
 log = logging.getLogger(__name__)
 
@@ -99,14 +99,14 @@ def customer_contact(order: Order) -> Customer | None:
     """Where this order's emails go, or None for nowhere.
 
     The address given at checkout first, then the account's. None when
-    neither is a real address -- a Clerk customer still awaiting
+    neither is a real address -- an old account still awaiting
     verification has a placeholder, and a receipt sent there reaches nobody.
     """
     with system_session() as session:
         customer = session.get(User, order.customer_user_id)
         if customer is None:
             return None
-        to = order.contact_email or clerk_customers.receipt_address(customer)
+        to = order.contact_email or customer_records.receipt_address(customer)
         if not to:
             return None
         return Customer(

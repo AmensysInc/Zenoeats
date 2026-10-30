@@ -22,8 +22,8 @@ from sqlalchemy.exc import OperationalError
 from app.db.base import utcnow
 from app.db.session import system_session, tenant_session
 from app.models import (
-    ClerkEvent, Order, OrderStatus, Payment, PaymentStatus,
-    RestaurantPaymentAccount, StripeEvent, StripeEventStatus, User, UserKind,
+    Order, OrderStatus, Payment, PaymentStatus,
+    RestaurantPaymentAccount, StripeEvent, StripeEventStatus,
 )
 from app.services import ops_health, stripe_service, stripe_tax
 from app.services.orders import transition
@@ -371,64 +371,6 @@ def _handle_account_updated(payload: dict, event_account_id: str | None):
             log.error("restaurant %s lost charges_enabled", row.restaurant_id)
 
 
-@celery_app.task(bind=True, max_retries=3, name="app.workers.tasks.process_clerk_event")
-def process_clerk_event(self, event_row_id: str):
-    """Mirror Clerk users into the local users table.
-
-    The request path creates a customer's row on first sight; this keeps it
-    current afterwards -- a changed email or name, a deleted account. Both go
-    through clerk_customers, so they agree on what a customer row holds.
-    """
-    from app.services import clerk_customers
-
-    with system_session() as session:
-        event = session.get(ClerkEvent, UUID(event_row_id))
-        if event is None or event.status == "PROCESSED":
-            return
-        event.attempts += 1
-        etype = event.type
-        data = (event.payload or {}).get("data", {})
-
-    tell = None
-    try:
-        with system_session() as session:
-            clerk_id = str(data.get("id") or "")
-            if etype in ("user.created", "user.updated") and clerk_id:
-                existing = session.execute(
-                    select(User).where(User.clerk_user_id == clerk_id)
-                ).scalar_one_or_none()
-                # Never touch a row that is not a customer's, whatever the
-                # payload says.
-                if existing is None or existing.kind == UserKind.CUSTOMER.value:
-                    clerk_customers.upsert_customer(
-                        session, clerk_id, clerk_customers.profile_from_payload(data)
-                    )
-            elif etype == "user.deleted" and clerk_id:
-                # Told once the event is marked done, below: queued inside
-                # this transaction, a retry of the event could tell them twice.
-                tell = clerk_customers.deactivate(session, clerk_id)
-
-        with system_session() as session:
-            row = session.get(ClerkEvent, UUID(event_row_id))
-            if row:
-                row.status = "PROCESSED"
-                row.processed_at = utcnow()
-
-        if tell:
-            from app.services import account_emails
-
-            account_emails.queue_closed(tell[0], tell[1], None)
-
-    except Exception as exc:
-        log.exception("clerk event %s failed", event_row_id)
-        with system_session() as session:
-            row = session.get(ClerkEvent, UUID(event_row_id))
-            if row:
-                row.status = "FAILED"
-                row.error = str(exc)[:2000]
-        raise self.retry(exc=exc)
-
-
 @celery_app.task(
     bind=True, max_retries=6, default_retry_delay=60,
     name="app.workers.tasks.send_order_confirmation",
@@ -460,25 +402,6 @@ def send_order_email(self, kind: str, restaurant_id: str, order_id: str, extra: 
         return order_emails.send(kind, UUID(restaurant_id), UUID(order_id), extra)
     except (email.RetryableEmailError, OperationalError) as exc:
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
-
-
-@celery_app.task(
-    bind=True, max_retries=5, default_retry_delay=5,
-    name="app.workers.tasks.send_clerk_email",
-)
-def send_clerk_email(self, sealed: str, event_id: str):
-    """Send one of Clerk's customer emails -- a sign-up or password-reset
-    code -- through SendGrid (services/clerk_emails.py).
-
-    Retried quickly, not on the minutes-long schedule of the other emails: a
-    customer is on a page waiting for this code, and it expires.
-    """
-    from app.services import clerk_emails, email
-
-    try:
-        return clerk_emails.send(sealed, event_id)
-    except email.RetryableEmailError as exc:
-        raise self.retry(exc=exc, countdown=5 * (2 ** self.request.retries))
 
 
 @celery_app.task(

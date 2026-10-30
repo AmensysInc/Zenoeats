@@ -18,8 +18,7 @@ Every email ZenoEats sends is a folder here:
 | `staff_password_reset/` | An admin, or ZenoEats support, resets a team member's password |
 | `refund_failed/` | A cancellation went through but Stripe refused its refund (to every admin and manager) |
 | `customer_welcome/` | A new customer account (under a day old) first opens a restaurant's storefront |
-| `account_closed/` | A customer closes their account, or it is deleted in Clerk |
-| `customer_code/` | A customer needs a sign-up verification or password-reset code, once Clerk's own delivery of it is switched off (see the main README) |
+| `account_closed/` | A customer closes their account |
 
 Each email is sent at most once for what it's about. Order emails go to the
 address the customer gave at checkout, or their account's address. Order

@@ -28,7 +28,7 @@ Please test only against your own local copy (see the README). Do not:
 - disclose an issue publicly before a fix is available
 
 Payment card data is handled entirely by Stripe and never reaches these
-servers. Report issues in Stripe, Clerk or other providers to those
+servers. Report issues in Stripe or other providers to those
 providers.
 
 ## Supported versions

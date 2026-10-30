@@ -9,7 +9,7 @@ restaurant's record of a sale.
 import pytest
 from sqlalchemy import text
 
-from app.core import errors
+from app.core import customer_auth
 from tests.test_customer_profile import (  # noqa: F401  (fixtures)
     CONTACT,
     _order,
@@ -32,35 +32,13 @@ from tests.test_staff_removal import team  # noqa: F401  (fixture)
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture
-def clerk(monkeypatch):
-    """Clerk's side of it: who was deleted there, and whether it answered."""
-    from app.services import clerk_customers
-
-    deleted = []
-
-    def delete_clerk_user(clerk_user_id):
-        if clerk.unavailable:
-            raise errors.ApiError(503, "IDENTITY_UNAVAILABLE", "Try again later.")
-        deleted.append(clerk_user_id)
-
-    monkeypatch.setattr(clerk_customers, "delete_clerk_user", delete_clerk_user)
-
-    class Clerk:
-        unavailable = False
-        calls = deleted
-
-    clerk = Clerk()
-    return clerk
-
-
 def _user(user_id):
     from app.db.session import system_session
 
     with system_session() as session:
         return session.execute(
             text(
-                "SELECT email, full_name, phone, address, is_active, deleted_at, clerk_user_id "
+                "SELECT email, full_name, phone, address, is_active, deleted_at "
                 "FROM users WHERE id = :i"
             ),
             {"i": user_id},
@@ -82,7 +60,7 @@ def _close(shop, customer_id, signed_in):
     return client.delete("/api/v1/customer/account")
 
 
-def test_closing_takes_the_details_off_and_keeps_the_orders(shop, signed_in, clerk):
+def test_closing_takes_the_details_off_and_keeps_the_orders(shop, signed_in):
     customer_id = _customer()
     signed_in(customer_id)
     client = _staff_client(shop.slug)
@@ -101,7 +79,6 @@ def test_closing_takes_the_details_off_and_keeps_the_orders(shop, signed_in, cle
     assert after["email"] != before["email"]
     assert after["is_active"] is False and after["deleted_at"] is not None
     assert _favourites(shop.id, customer_id) == 0
-    assert clerk.calls == [before["clerk_user_id"]]
 
     # Kept: the sale.
     from app.db.session import tenant_session
@@ -112,47 +89,29 @@ def test_closing_takes_the_details_off_and_keeps_the_orders(shop, signed_in, cle
         ).scalar_one() == 1
 
 
-def test_a_closed_account_cannot_be_signed_in_to_again(shop, signed_in, clerk):
+def test_a_closed_account_cannot_be_signed_in_to_again(shop, signed_in):
     """The row survives for the orders that point at it; the account does not
     survive as something anyone can act through.
 
-    Asserted against the real sign-in path rather than through a request:
-    the fixture above replaces the dependency that refuses a closed account,
-    so a request made with it would prove nothing.
+    Asserted through a real cookie rather than the fixture above, which replaces
+    the dependency that refuses a closed account.
     """
-    from app.services import clerk_customers
-
     customer_id = _customer()
-    clerk_id = _user(customer_id)["clerk_user_id"]
     assert _close(shop, customer_id, signed_in).status_code == 204
 
-    with pytest.raises(errors.ApiError) as refused:
-        clerk_customers.customer_for_clerk_user(clerk_id)
-    assert refused.value.status_code == 403
+    from app.main import app
+    from app.api.deps import get_current_user
 
-
-def test_a_clerk_that_cannot_be_reached_changes_nothing(shop, signed_in, clerk):
-    """An account emptied here but still signed in to would be the worst of
-    both, so the sign-in goes first or nothing does."""
-    customer_id = _customer()
-    signed_in(customer_id)
+    app.dependency_overrides.pop(get_current_user, None)
     client = _staff_client(shop.slug)
-    client.put("/api/v1/customer/profile", json=CONTACT)
-    clerk.unavailable = True
-
-    res = _close(shop, customer_id, signed_in)
-    assert res.status_code == 503
-
-    still = _user(customer_id)
-    assert still["full_name"] == CONTACT["full_name"]
-    assert still["is_active"] is True and still["deleted_at"] is None
+    client.cookies.set(customer_auth.SESSION_COOKIE, customer_auth.issue_session(customer_id))
+    assert client.get("/api/v1/orders/session").status_code == 401
 
 
-def test_closing_twice_is_the_same_as_closing_once(shop, signed_in, clerk):
-    """A customer closes their account here and Clerk's user.deleted webhook
-    arrives afterwards: the same operation, and the second is harmless."""
+def test_closing_twice_is_the_same_as_closing_once(shop, signed_in):
+    """A double press is the same operation twice, and the second is harmless."""
     from app.db.session import system_session
-    from app.services import clerk_customers
+    from app.services import customer_records
 
     customer_id = _customer()
     signed_in(customer_id)
@@ -161,7 +120,9 @@ def test_closing_twice_is_the_same_as_closing_once(shop, signed_in, clerk):
     after_first = _user(customer_id)
 
     with system_session() as session:
-        clerk_customers.deactivate(session, after_first["clerk_user_id"])
+        from app.models import User
+
+        customer_records.close_account(session, session.get(User, customer_id))
 
     assert dict(_user(customer_id)) == dict(after_first)
 

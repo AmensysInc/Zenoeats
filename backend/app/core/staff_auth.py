@@ -2,7 +2,7 @@
 
 Three identity systems, deliberately separate and non-overlapping:
 
-  * Clerk               customers
+  * core/customer_auth  customers
   * ADMIN_USERS         platform administrators   (core/platform_auth.py)
   * this module         restaurant staff
 

@@ -35,13 +35,12 @@
 
 
 --------------------------------------------------------------------------------
- 1. CUSTOMER STOREFRONT   (Clerk sign-in required where marked *)
+ 1. CUSTOMER STOREFRONT   (sign-in or a guest session required where marked *)
 --------------------------------------------------------------------------------
  Menu / storefront      https://spicehouse.zenoeats.local:8443/   (sign-in offered in the header)
  Sign in                https://spicehouse.zenoeats.local:8443/account/sign-in
  Create account         https://spicehouse.zenoeats.local:8443/account/sign-up
  Forgot password        https://spicehouse.zenoeats.local:8443/account/forgot-password
- Google return          https://spicehouse.zenoeats.local:8443/account/sso-callback   (Clerk redirects here)
  Checkout *             https://spicehouse.zenoeats.local:8443/checkout
  Payment *              https://spicehouse.zenoeats.local:8443/checkout/pay/{orderId}
  Profile *              https://spicehouse.zenoeats.local:8443/profile   (?tab=orders, ?tab=favourites)
@@ -97,7 +96,7 @@
    GET     /api/v1/portal
    GET     /api/v1/menu
 
- Orders (customer; Authorization: Bearer <Clerk session token>, or the
+ Orders (customer; the account session cookie, or the
  zenoeats_guest_session cookie for a guest -- the browser sends it itself)
    GET     /api/v1/orders/session          who is ordering, 401 for nobody
    POST    /api/v1/orders/guest-session    order without an account
@@ -190,15 +189,11 @@
 
  Webhooks
    POST    /api/v1/webhooks/stripe/connect
-   POST    /api/v1/webhooks/clerk
 
 
 --------------------------------------------------------------------------------
  6. EXTERNAL / THIRD-PARTY
 --------------------------------------------------------------------------------
- Clerk JWKS             https://<your-instance>.clerk.accounts.dev/.well-known/jwks.json
- Clerk issuer           https://<your-instance>.clerk.accounts.dev
- Clerk webhook target   https://<yourdomain>/api/v1/webhooks/clerk
  Stripe webhook target  https://<yourdomain>/api/v1/webhooks/stripe/connect
                         (events from *Connected accounts*, not your own account)
  Stripe CLI forwarding  stripe listen --forward-connect-to localhost:8000/api/v1/webhooks/stripe/connect

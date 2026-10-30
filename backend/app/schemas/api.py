@@ -327,10 +327,6 @@ class PortalOut(BaseModel):
     # which is wrong for www, for a reserved label, and on any environment
     # whose root domain is not what the page assumed.
     platform_url: str
-    # Whether to offer "Continue with Google". False when no OAuth client is
-    # configured, which is also when pressing it would 503 -- a button that
-    # cannot work should not be drawn.
-    google_sign_in: bool = False
     currency: str
     is_orderable: bool
     accepting_orders: bool
@@ -548,7 +544,7 @@ class CustomerSessionOut(BaseModel):
 
     phone and address are what checkout saved last time, so a returning
     customer is not asked twice. email_pending is a signed-in customer whose
-    address Clerk has not told us yet: checkout cannot proceed without one.
+    address no customer typed: checkout cannot proceed without one.
     """
 
     email: str
@@ -559,9 +555,9 @@ class CustomerSessionOut(BaseModel):
     is_guest: bool
     # Whether this customer has agreed to the terms in force. False for an
     # account that reached us through a social provider without passing a
-    # consent step -- Clerk finishes those itself when it has everything it
-    # needs, and asks us for nothing. The app puts the consent form in front
-    # of them rather than assuming the sign-up page was where they came from.
+    # consent step -- someone new who pressed the button on the sign-in page,
+    # which has no checkbox. The app puts the consent form in front of them
+    # rather than assuming the sign-up page was where they came from.
     terms_accepted: bool = False
 
 

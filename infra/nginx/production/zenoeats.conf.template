@@ -115,8 +115,8 @@ server {
     # is a subdomain and all of them are HTTPS. Not "preload": joining the
     # browser preload list is hard to undo, and worth deciding separately.
     #
-    # The Content-Security-Policy is set by the web container, which knows
-    # this environment's Clerk host; see web/docker-entrypoint.d.
+    # The Content-Security-Policy is set by the web container; see
+    # web/docker-entrypoint.d.
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;

@@ -13,7 +13,7 @@ from cryptography.fernet import Fernet
 root = Path(__file__).resolve().parents[1]
 env = os.environ.copy()
 env.update(
-    ENV="development", ROOT_DOMAIN="zenoeats.local", AUTH_DEV_BYPASS="false",
+    ENV="development", ROOT_DOMAIN="zenoeats.local",
     SESSION_SECRET="redesign-isolated-tests-only-no-production-access",
     FIELD_ENCRYPTION_KEY=Fernet.generate_key().decode(),
     REDIS_RUNTIME_URL="redis://127.0.0.1:6391/0",
@@ -25,7 +25,6 @@ for role, password in [("app", "app_dev_pw"), ("system", "system_dev_pw"), ("mig
         "postgresql+psycopg2://zenoeats_" + role + ":" + password + "@127.0.0.1:5544/zenoeats"
     )
 for key in (
-    "CLERK_JWKS_URL", "CLERK_ISSUER", "CLERK_SECRET_KEY", "CLERK_WEBHOOK_SECRET",
     "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_CONNECT_WEBHOOK_SECRET",
     "GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_BROWSER_KEY", "RESEND_API_KEY", "SENTRY_DSN", "ADMIN_USERS",
 ):

@@ -142,7 +142,7 @@ def test_a_guest_row_is_reachable_by_its_own_token():
     assert guest.kind == "GUEST"
     assert guest.email == "guest@example.com"
     assert guest.full_name == "Pat Guest"
-    assert guest.clerk_user_id is None
+    assert guest.password_hash is None
 
     again = guest_customers.guest_for_session(guest.id)
     assert again.id == guest.id

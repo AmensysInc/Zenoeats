@@ -41,7 +41,7 @@ def pending(monkeypatch):
         restaurant = Restaurant(slug=slug, name="Reconcile Test",
                                 status=RestaurantStatus.ACTIVE.value,
                                 timezone="UTC", currency="USD")
-        customer = User(kind=UserKind.CUSTOMER.value, clerk_user_id=f"user_recon_{suffix}",
+        customer = User(kind=UserKind.CUSTOMER.value,
                         email=f"recon-{suffix}@zenoeats.invalid")
         session.add_all([restaurant, customer])
         session.flush()

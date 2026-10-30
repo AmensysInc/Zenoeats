@@ -43,11 +43,6 @@ def host_on_allowed_origin(host: str) -> bool:
 RESERVED_SLUGS = {
     "www", "api", "admin", "app", "media", "static", "assets",
     "mail", "staging", "dev", "internal", "status", "docs",
-    # Clerk's production instance lives on these subdomains of ROOT_DOMAIN:
-    # its Frontend API, its hosted account pages, and the domain its sign-in
-    # emails are sent from. A restaurant given one of these slugs would take
-    # the DNS name customer sign-in depends on.
-    "clerk", "accounts", "clkmail",
 }
 
 

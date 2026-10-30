@@ -27,7 +27,6 @@ const LOGIN_URLS: Record<string, string> = {
   "/account/sign-in": "/login/customer-sign-in.html",
   "/account/sign-up": "/login/customer-sign-up.html",
   "/account/forgot-password": "/login/customer-forgot-password.html",
-  "/account/sso-callback": "/login/customer-sso-callback.html",
   // The policy pages, for the same reason and by the same route. They also
   // have to answer on the root domain, where there is no restaurant at all:
   // an OAuth reviewer at Google or Apple is given one canonical URL, and it
@@ -87,9 +86,6 @@ export default defineConfig({
         customerSignUp: fileURLToPath(new URL("./login/customer-sign-up.html", import.meta.url)),
         customerForgotPassword: fileURLToPath(
           new URL("./login/customer-forgot-password.html", import.meta.url),
-        ),
-        customerSsoCallback: fileURLToPath(
-          new URL("./login/customer-sso-callback.html", import.meta.url),
         ),
         legalPrivacy: fileURLToPath(new URL("./legal/privacy.html", import.meta.url)),
         legalTerms: fileURLToPath(new URL("./legal/terms.html", import.meta.url)),
