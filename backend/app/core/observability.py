@@ -3,7 +3,7 @@
 Off unless SENTRY_DSN is set, so development and tests send nothing.
 
 What leaves the server is deliberately little. This app handles passwords,
-Clerk and staff session tokens, Stripe client secrets, pickup PINs and
+Customer and staff session tokens, Stripe client secrets, pickup PINs and
 customers' emails, and none of that belongs in a third-party error tracker:
 
   * request bodies are never attached (they carry sign-in passwords, order

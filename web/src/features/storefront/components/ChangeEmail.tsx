@@ -8,11 +8,8 @@ import type { CustomerSession } from "@/types";
 /**
  * Change the address on this account.
  *
- * This was a four-step dance through Clerk: create an address, send a code,
- * attempt verification, promote it to primary, then sync our mirror of it.
- * With the credential held here, it is one request -- the new address and the
- * current password, which is what proves the person asking owns the account
- * rather than merely found it signed in.
+ * One request: the new address and the current password, which is what proves
+ * the person asking owns the account rather than merely found it signed in.
  *
  * The API enforces the rest: one account per address, and the account must
  * still be active.

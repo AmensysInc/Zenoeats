@@ -42,7 +42,7 @@ mounted, it passed.
 | Role / endpoint authz | `test_role_coverage.py` (full map, IT-support forbidden list) | integration | pass | — |
 | Order ownership / IDOR | `test_guest_checkout.py` (token scope, forged token, other guest), `test_order_flow.py` | integration, negative | pass | — |
 | Session expiry and revocation | `test_session_revocation.py` | integration | pass | — |
-| Webhook signature, replay, dedupe | `test_stripe_webhook.py`, `test_clerk_customers.py`, `test_payment_reconciliation.py` | integration | pass | Live delivery through the real edge: staging |
+| Webhook signature, replay, dedupe | `test_stripe_webhook.py`, `test_payment_reconciliation.py` | integration | pass | Live delivery through the real edge: staging |
 | Server-side pricing, tax | `test_order_flow.py`, `test_combo_pricing.py`, `test_stripe_tax.py`, `test_platform_fee.py`, `test_order_delivery_fee.py` | integration | pass | — |
 | Refunds and state transitions | `test_order_refund.py`, `test_order_board_actions.py` | integration | pass; live cancel and refund of order #1047 | — |
 | Pickup PIN brute force | `test_pickup_pin.py`; live: wrong PIN → "4 attempts left" | integration, live | pass | — |

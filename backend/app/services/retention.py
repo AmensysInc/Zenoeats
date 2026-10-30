@@ -5,17 +5,17 @@
                      which almost never happens, so the table kept every key
                      ever sent.
 
-  stripe_events      Webhook inboxes. A row matters until it is processed;
-  clerk_events       after that it is a record of a delivery, kept for
+  stripe_events      Webhook inbox. A row matters until it is processed;
+                     after that it is a record of a delivery, kept for
                      WEBHOOK_EVENT_RETENTION_DAYS. Rows still RECEIVED or
                      FAILED are never removed -- they are work, or evidence
                      of a problem someone has to look at. The audit trail of
                      what operators did lives in platform_audit_logs, which
                      this never touches.
 
-  Webhook payloads   Stripe's and Clerk's deliveries carry people's names,
-                     emails, phones and addresses: Clerk's user objects,
-                     Stripe's billing details. Once a delivery is settled
+  Webhook payloads   Stripe's deliveries carry people's names, emails, phones
+                     and addresses in their billing details. Once a delivery
+                     is settled
                      that is dead weight -- and it outlived the account it
                      described, when the account was closed. So every settled
                      payload is redacted on the next run: personal fields are
@@ -166,21 +166,10 @@ def redact_stripe(payload: dict) -> dict:
     return {**_without_personal(payload), "redacted": True}
 
 
-def redact_clerk(payload: dict) -> dict:
-    """Which event it was and whose, by id; nothing about the person."""
-    data = payload.get("data") or {}
-    return {
-        "type": payload.get("type"),
-        "data": {key: data.get(key) for key in ("id", "object", "deleted") if key in data},
-        "redacted": True,
-    }
-
-
 def _redact_settled(table: str, redact) -> int:
     """Replace each settled, unredacted payload with its redacted form.
 
-    As zenoeats_system, which may update both inboxes and nothing else of
-    them. Read and written a batch at a time, in Python, because a Stripe
+    As zenoeats_system, which may update the inbox and nothing else of it. Read and written a batch at a time, in Python, because a Stripe
     object nests its personal fields at varying depths.
     """
     redacted = 0
@@ -215,15 +204,13 @@ def sweep() -> dict[str, int]:
     days = settings.WEBHOOK_EVENT_RETENTION_DAYS
     if days > 0:
         cutoff = utcnow() - timedelta(days=days)
-        for table in ("stripe_events", "clerk_events"):
-            removed[table] = _delete_in_batches(
-                table,
-                f"status IN {SETTLED_EVENT_STATUSES!r} AND received_at < :cutoff",
-                {"cutoff": cutoff},
-            )
+        removed["stripe_events"] = _delete_in_batches(
+            "stripe_events",
+            f"status IN {SETTLED_EVENT_STATUSES!r} AND received_at < :cutoff",
+            {"cutoff": cutoff},
+        )
 
     removed["stripe_payloads_redacted"] = _redact_settled("stripe_events", redact_stripe)
-    removed["clerk_payloads_redacted"] = _redact_settled("clerk_events", redact_clerk)
 
     if settings.GUEST_RETENTION_DAYS > 0:
         removed["guest_users"] = _sweep_abandoned_guests(settings.GUEST_RETENTION_DAYS)

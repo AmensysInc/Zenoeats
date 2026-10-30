@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Create an account</title>
     <link rel="stylesheet" href="/src/styles/globals.css" />
-    <!-- Runtime configuration (the Clerk publishable key), written by the web
-         container at startup. A classic script, so it runs before the module
-         entry below reads it. -->
-    <script src="/config.js"></script>
   </head>
   <body>
     <main class="auth">
@@ -41,7 +37,7 @@
             Your orders, your details and your favourites, kept for next time.
           </p>
 
-          <!-- One button per social sign-in switched on in Clerk (Google, Apple,
+          <!-- One button per provider with credentials behind it (Google, Apple,
                Facebook), rendered by customer-shared.ts. Hidden when there are none. -->
           <section id="social-section" class="mb-[17px]" hidden>
             <div id="social-buttons" class="flex flex-col gap-[9px]"></div>
@@ -49,7 +45,7 @@
           </section>
 
           <form id="sign-up-form" class="auth-stack" novalidate>
-            <label id="name-field" class="block" hidden>
+            <label id="name-field" class="block">
               <span class="label">Name <span class="font-normal text-muted">(optional)</span></span>
               <input id="full-name" class="field mt-[7px]" type="text" autocomplete="name" maxlength="160" />
             </label>
@@ -72,9 +68,7 @@
             </label>
 
             <!-- Agreement, asked for here rather than implied by the button.
-                 The continue step below asks the same thing of someone who
-                 arrived through Google, Apple or Facebook, so every route to
-                 an account passes through one of the two. -->
+                 It gates the provider buttons above as well as this form. -->
             <label id="legal-field" class="flex min-h-[40px] items-start gap-2.5 text-sm">
               <input id="legal" class="mt-0.5 h-5 w-5 shrink-0" type="checkbox" required />
               <span
@@ -85,10 +79,6 @@
               >
             </label>
 
-            <!-- Clerk's bot protection renders its challenge here when it decides
-                 one is needed. Custom sign-up flows must provide this element. -->
-            <div id="clerk-captcha"></div>
-
             <button id="submit" class="btn-primary w-full" type="submit" disabled>Create account</button>
           </form>
 
@@ -98,55 +88,6 @@
           </p>
         </section>
 
-        <!-- After Google, Apple or Facebook, when Clerk still needs something the
-             provider did not supply: an email (some Facebook accounts have none),
-             a name, or agreement to the terms. -->
-        <section id="continue-section" hidden>
-          <p class="auth-intro">
-            Almost done. We need a little more to finish your account.
-          </p>
-          <form id="continue-form" class="auth-stack" novalidate>
-            <label id="continue-email-field" class="block" hidden>
-              <span class="label">Email</span>
-              <input id="continue-email" class="field mt-[7px]" type="email" autocomplete="email" />
-              <span class="mt-2 block text-caption text-muted">Your order updates and receipts go here.</span>
-            </label>
-
-            <label id="continue-name-field" class="block" hidden>
-              <span class="label">Name</span>
-              <input id="continue-name" class="field mt-[7px]" type="text" autocomplete="name" maxlength="160" />
-            </label>
-
-            <label id="continue-legal-field" class="flex min-h-[40px] items-start gap-2.5 text-sm" hidden>
-              <input id="continue-legal" class="mt-0.5 h-5 w-5 shrink-0" type="checkbox" />
-              <span
-                >I agree to the
-                <a href="/legal/terms" target="_blank" rel="noopener" class="underline">Terms of Service</a>
-                and
-                <a href="/legal/privacy" target="_blank" rel="noopener" class="underline">Privacy Policy</a>.</span
-              >
-            </label>
-
-            <button id="continue-submit" class="btn-primary w-full" type="submit">Continue</button>
-          </form>
-        </section>
-
-        <section id="code-section" hidden>
-          <p class="auth-intro">
-            We sent a 6-digit code to <strong id="sent-to" class="font-semibold text-ink"></strong>.
-          </p>
-          <form id="code-form" class="auth-stack" novalidate>
-            <label class="block">
-              <span class="label">Verification code</span>
-              <input id="code" class="field code-input mt-[7px]" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />
-            </label>
-            <button id="code-submit" class="btn-primary w-full" type="submit">Create account</button>
-          </form>
-          <p class="auth-foot">
-            Nothing arrived? Check spam, or
-            <button id="resend" type="button" class="text-ink underline underline-offset-[3px] disabled:cursor-not-allowed disabled:text-muted">send a new code</button>.
-          </p>
-        </section>
       </section>
     </main>
 

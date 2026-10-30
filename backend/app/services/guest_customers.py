@@ -6,7 +6,7 @@ limit, the pickup PIN, the order emails -- already
 works in terms of a users row and should not learn a second case.
 
 What differs is only how the row is reached: by the cookie minted alongside
-it rather than by a verified Clerk session. See core/guest_auth.py for why
+it rather than by a signed-in account. See core/guest_auth.py for why
 that makes it a capability rather than an identity.
 """
 
@@ -30,7 +30,6 @@ def create_guest(email: str, full_name: str | None) -> User:
     with system_session() as session:
         user = User(
             kind=UserKind.GUEST.value,
-            clerk_user_id=None,
             email=email.strip().lower()[:320],
             full_name=(full_name or "").strip()[:160] or None,
         )
@@ -46,7 +45,7 @@ def guest_for_session(user_id) -> User:
     Refuses any row that is not a guest. The cookie carries a users id, and
     all four identity kinds live in that table, so a token whose subject
     somehow named a staff or admin row must not open it -- this is the same
-    refusal clerk_customers makes from the other direction.
+    refusal customer_records makes from the other direction.
     """
     with system_session() as session:
         user = session.get(User, user_id)

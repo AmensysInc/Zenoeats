@@ -80,23 +80,6 @@ async function setup(options = {}) {
   };
   if (options.emptyMenu) state.menu = { meals: [] };
   await context.addInitScript(({ session, cart, withCart, anonymous }) => {
-    window.__ZENOEATS_CONFIG__ = { clerkPublishableKey: "pk_test_Zml4dHVyZS5jbGVyay50ZXN0JA==" };
-    const current = { id: "email-current", emailAddress: session.email, verification: { status: "verified" } };
-    const user = {
-      emailAddresses: [current], primaryEmailAddress: current,
-      async createEmailAddress({ email }) {
-        const address = { id: "email-next", emailAddress: email, verification: { status: "unverified" },
-          async prepareVerification() { return this; },
-          async attemptVerification({ code }) {
-            if (code !== "654321") throw new Error("That code is incorrect. Try again.");
-            this.verification.status = "verified"; return this;
-          } };
-        this.emailAddresses.push(address); return address;
-      },
-      async update({ primaryEmailAddressId }) { this.primaryEmailAddress = this.emailAddresses.find(e => e.id === primaryEmailAddressId); return this; },
-    };
-    window.Clerk = { load: async () => {}, session: anonymous ? null : { getToken: async () => "qa-fixture-token" },
-      user: anonymous ? null : user, signOut: async () => {}, client: { signIn: {}, signUp: {} } };
     if (withCart) localStorage.setItem("zenoeats.cart.v2.qa-kitchen", JSON.stringify(cart));
   }, { session: state.session, cart, withCart: options.cart ?? false, anonymous: options.anonymous ?? false });
   if (options.mapsFixture || options.placesFixture) await context.addInitScript(({ failFirst }) => {
@@ -169,7 +152,6 @@ async function setup(options = {}) {
       if (state.profileFail) return fail("SAVE_FAILED", "Could not save your details. Try again.");
       Object.assign(state.session, body); data = state.session;
     }
-    else if (key === "/customer/profile/email-sync") { state.session.email = "new@example.com"; data = state.session; }
     else if (key === "/customer/orders") data = { orders: [], next_before: null };
     else if (key === "/customer/favourites") data = [];
     else if (key.startsWith("/customer/favourites/")) return route.fulfill({ status: 204 });

@@ -29,10 +29,3 @@ def test_foreign_domains_rejected():
 def test_nested_subdomains_rejected():
     # a.b.zenoeats.local would be ambiguous. Refuse rather than guess.
     assert extract_slug("a.b.zenoeats.local") is None
-
-
-def test_clerk_subdomains_never_resolve_to_a_restaurant():
-    """Customer sign-in in production depends on these DNS names belonging to
-    Clerk, so no restaurant can be created on them or resolved from them."""
-    for name in ("clerk", "accounts", "clkmail"):
-        assert extract_slug(f"{name}.zenoeats.local") is None

@@ -5,12 +5,9 @@ import { StatePage } from "@/components/common/Feedback";
 /**
  * The consent step for an account that never passed one.
  *
- * The sign-up form asks before it will submit, and so does the step Clerk
- * sends people to when it cannot finish a social sign-up by itself. Neither
- * covers the case this exists for: Clerk completes a social sign-up on its
- * own whenever the provider handed over everything it asked for, and tells us
- * nothing about it. Signing in with Google for the first time therefore
- * created an account that had agreed to nothing.
+ * The sign-up page asks before it will submit or leave for a provider. This
+ * covers the other way in: someone new pressing Google, Apple or Facebook on
+ * the sign-in page, which has no checkbox and creates the account all the same.
  *
  * Shown in place by the guard rather than as a route of its own, so there is
  * no URL to arrive at out of order and nothing to loop between. Browsing the

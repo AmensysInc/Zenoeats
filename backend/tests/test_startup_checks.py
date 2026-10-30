@@ -21,15 +21,11 @@ def _production(**overrides) -> Settings:
         DATABASE_URL_MIGRATE="",
         FIELD_ENCRYPTION_KEY=Fernet.generate_key().decode(),
         SESSION_SECRET="x" * 44,
-        CLERK_JWKS_URL="https://clerk.zenoeats.com/.well-known/jwks.json",
-        CLERK_ISSUER="https://clerk.zenoeats.com",
-        CLERK_SECRET_KEY="sk_live_abc",
         STRIPE_SECRET_KEY="sk_live_abc",
         STRIPE_PUBLISHABLE_KEY="pk_live_abc",
         ALLOW_TEST_KEYS=False,
         STRIPE_CONNECT_WEBHOOK_SECRET="whsec_abc",
         ADMIN_USERS="ops@zenoeats.com:aGFzaA==",
-        AUTH_DEV_BYPASS=False,
     )
     values.update(overrides)
     # _env_file=None: the developer's own .env must not leak into these cases.
@@ -47,10 +43,7 @@ def test_a_complete_production_configuration_starts():
         ({"SESSION_SECRET": ""}, "SESSION_SECRET"),
         ({"SESSION_SECRET": "changeme"}, "SESSION_SECRET"),
         ({"FIELD_ENCRYPTION_KEY": "replace_me_with_a_real_fernet_key"}, "FIELD_ENCRYPTION_KEY"),
-        ({"AUTH_DEV_BYPASS": True}, "AUTH_DEV_BYPASS"),
-        ({"CLERK_JWKS_URL": ""}, "CLERK_JWKS_URL"),
-        ({"CLERK_ISSUER": ""}, "CLERK_ISSUER"),
-        ({"CLERK_SECRET_KEY": ""}, "CLERK_SECRET_KEY"),
+        ({"APPLE_OAUTH_CLIENT_ID": "com.zenoeats.web"}, "APPLE_OAUTH_TEAM_ID"),
         ({"STRIPE_SECRET_KEY": "sk_test_replace_me"}, "STRIPE_SECRET_KEY"),
         ({"STRIPE_CONNECT_WEBHOOK_SECRET": ""}, "STRIPE_CONNECT_WEBHOOK_SECRET"),
         ({"ADMIN_USERS": ""}, "ADMIN_USERS"),
@@ -71,7 +64,6 @@ def test_production_refuses_to_start(overrides, fragment):
         ({"STRIPE_SECRET_KEY": "rk_test_abc"}, "STRIPE_SECRET_KEY is a test key"),
         ({"STRIPE_PUBLISHABLE_KEY": "pk_test_abc", "STRIPE_SECRET_KEY": "sk_test_abc"},
          "STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY are test keys"),
-        ({"CLERK_SECRET_KEY": "sk_test_abc"}, "CLERK_SECRET_KEY is a test key"),
     ],
 )
 def test_production_refuses_test_keys(overrides, fragment):
@@ -86,7 +78,6 @@ def test_staging_may_run_on_test_keys_when_it_says_so():
         ALLOW_TEST_KEYS=True,
         STRIPE_SECRET_KEY="sk_test_abc",
         STRIPE_PUBLISHABLE_KEY="pk_test_abc",
-        CLERK_SECRET_KEY="sk_test_abc",
     )
     assert startup_checks.configuration_problems(staging) == []
 
@@ -140,7 +131,7 @@ def test_a_development_database_password_is_refused(name):
 def test_every_problem_is_reported_at_once():
     """Fixing one variable per failed deploy is a slow way to find five."""
     problems = startup_checks.configuration_problems(
-        _production(SESSION_SECRET="", CLERK_SECRET_KEY="", ADMIN_USERS="")
+        _production(SESSION_SECRET="", STRIPE_SECRET_KEY="", ADMIN_USERS="")
     )
     assert len(problems) == 3
 

@@ -116,8 +116,8 @@ jobs:
       # consistent -- every upgrade has a downgrade that undoes it.
       #
       # It deliberately does not prove that a downgrade is safe over real
-      # data, and it cannot: 0002 is what lets a user exist without a Clerk
-      # id, so undoing it deletes every staff member and platform admin, and
+      # data, and it cannot: 0002 is what lets a user exist without an outside
+      # identity, so undoing it deletes every staff member and platform admin, and
       # seven foreign keys point at users. A rollback of a live database is a
       # decision made against that database, not something a pipeline can
       # sign off (see docs/operations/STEPS_BEFORE_PRODUCTION.md, "Backups and recovery").
@@ -175,8 +175,6 @@ jobs:
       # so nothing stopped a change from breaking them.
       - name: Web tests
         run: node --test tests/*.test.mjs
-      # No Clerk key: the bundle carries none. It is supplied to the web
-      # container at start and written to /config.js.
       - run: npm run build
 
       # Rollup once dead-code-eliminated the entire application, because an
@@ -192,7 +190,6 @@ jobs:
           test -f dist/login/customer-sign-in.html
           test -f dist/login/customer-sign-up.html
           test -f dist/login/customer-forgot-password.html
-          test -f dist/login/customer-sso-callback.html
           # Google, Apple and Facebook will not approve sign-in while any of
           # these 404s, and a missing Vite entry is silent -- the build still
           # succeeds, the page is simply not in dist.

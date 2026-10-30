@@ -52,21 +52,6 @@ class Settings(BaseSettings):
     # and a VPC use. Narrow it in production to exactly where nginx runs.
     TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
-    # --- Clerk (customers only) --------------------------------------------
-    # Verifies customer session tokens. Staff and platform admins never touch
-    # Clerk.
-    CLERK_JWKS_URL: str = ""
-    CLERK_ISSUER: str = ""
-    # Backend API key. Used to read a new customer's email and name the first
-    # time they reach the API, so receipts have a real address without waiting
-    # for a webhook -- which, in local development, never arrives at all.
-    CLERK_SECRET_KEY: str = ""
-    CLERK_WEBHOOK_SECRET: str = ""
-    # Set true only for local development without a Clerk instance: the
-    # Authorization: Bearer header is read as a bare Clerk user id. Startup
-    # refuses to boot with it on in production.
-    AUTH_DEV_BYPASS: bool = False
-
     # --- Platform administrators ------------------------------------------
     # "email:argon2hash" pairs separated by ";" -- not "," because an argon2
     # hash contains commas itself. Generate an entry with
@@ -94,21 +79,33 @@ class Settings(BaseSettings):
     # by signing in again, which a guest's cannot.
     CUSTOMER_SESSION_TTL_MINUTES: int = 43200  # 30 days
 
-    # Sign in with Google. Optional: email and password and guest ordering all
-    # work without it, and the button is simply not offered when it is unset.
+    # Sign in with Google, Apple and Facebook (core/social_auth.py). Each is
+    # optional: email and password and guest ordering all work without them,
+    # and a button is simply not offered until its provider is filled in.
     #
-    # From the Google Cloud console, under APIs & Services > Credentials, as an
-    # "OAuth client ID" of type "Web application". The authorised redirect URI
-    # must be exactly the platform root's callback:
+    # Register exactly one redirect URI with each, on the platform root, not
+    # one per restaurant -- providers match them exactly, and a platform with
+    # wildcard subdomains cannot register them all:
     #
     #   https://<ROOT_DOMAIN>/api/v1/customer/google/callback
+    #   https://<ROOT_DOMAIN>/api/v1/customer/apple/callback
+    #   https://<ROOT_DOMAIN>/api/v1/customer/facebook/callback
     #
-    # One URI, on the root domain, not one per restaurant. Google matches
-    # redirect URIs exactly and a platform with wildcard subdomains cannot
-    # register them all; core/google_oauth.py carries the storefront a
-    # customer came from through the `state` instead.
+    # Google Cloud console > APIs & Services > Credentials: an "OAuth client
+    # ID" of type "Web application".
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
+    # Apple Developer > Certificates, Identifiers & Profiles. CLIENT_ID is the
+    # Services ID (not the App ID); the private key is the .p8 of a key with
+    # Sign in with Apple enabled, on one line with literal \n is fine.
+    APPLE_OAUTH_CLIENT_ID: str = ""
+    APPLE_OAUTH_TEAM_ID: str = ""
+    APPLE_OAUTH_KEY_ID: str = ""
+    APPLE_OAUTH_PRIVATE_KEY: str = ""
+    # Meta for Developers > your app, with Facebook Login added and switched
+    # to Live.
+    FACEBOOK_OAUTH_APP_ID: str = ""
+    FACEBOOK_OAUTH_APP_SECRET: str = ""
     # How long an abandoned guest row is kept -- one that was created by
     # "continue as guest" and never reached an order. Comfortably longer than
     # the session above, so a guest who comes back to a live cookie still
@@ -119,7 +116,7 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
-    # Staging runs with ENV=production and test-mode Stripe and Clerk keys.
+    # Staging runs with ENV=production and test-mode Stripe keys.
     # Production must not: an API on test keys starts, takes orders, and
     # collects no money. So a production start refuses test keys unless this
     # says the environment is meant to run on them. Staging only.
@@ -140,7 +137,7 @@ class Settings(BaseSettings):
     # --- Order policy -----------------------------------------------------
     PENDING_PAYMENT_TTL_MINUTES: int = 30
     IDEMPOTENCY_TTL_HOURS: int = 24
-    # How long a processed or ignored Stripe/Clerk webhook delivery is kept
+    # How long a processed or ignored Stripe webhook delivery is kept
     # before the retention sweep removes it. Unprocessed and failed rows are
     # never removed. 0 keeps everything forever.
     WEBHOOK_EVENT_RETENTION_DAYS: int = 365

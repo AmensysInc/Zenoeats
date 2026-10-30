@@ -79,9 +79,9 @@ from app.core import staff_auth  # noqa: E402
 
 SLUG = "spicehouse"
 OWNER_EMAIL = "owner@spicehouse.local"
-# Customers sign in through Clerk, so this row is only reachable with
-# AUTH_DEV_BYPASS=true, where the bearer token is read as a Clerk user id.
-DEV_CUSTOMER_CLERK_ID = "user_dev_customer"
+# A customer to sign in as at /account/sign-in. Development only, like the
+# rest of this script.
+DEV_CUSTOMER_PASSWORD = "dev-customer-password"
 
 # The four on the front page. Only the first has a tenant behind it; the rest
 # are announcements, which is exactly why a location is not a restaurant row.
@@ -211,9 +211,9 @@ def main() -> None:
         )
         customer = User(
             kind=UserKind.CUSTOMER.value,
-            clerk_user_id=DEV_CUSTOMER_CLERK_ID,
             email="customer@example.com",
             full_name="Sam Customer",
+            password_hash=staff_auth.hash_password(DEV_CUSTOMER_PASSWORD),
         )
         session.add_all([owner, customer])
         session.flush()
@@ -578,12 +578,10 @@ def main() -> None:
     print(f"Seeded '{SLUG}' ({rid}) and {len(LOCATIONS)} locations")
     print("  Platform root (locations):  https://zenoeats.local:8443")
     print("  Jr's Corner storefront:     https://spicehouse.zenoeats.local:8443")
-    print("  Customer sign-in:  email and password, or guest -- both work now.")
-    print("                     No identity provider is configured or needed.")
+    print(f"  Customer sign-in:  customer@example.com / {DEV_CUSTOMER_PASSWORD}, or guest.")
     print(f"  Owner sign-in:     {OWNER_EMAIL} / {owner_password}  (temporary)")
     print("                     https://spicehouse.zenoeats.local:8443/manage/login")
     print("  Super admin:       from ADMIN_USERS in .env")
-    print(f"  curl with AUTH_DEV_BYPASS=true:  -H 'Authorization: Bearer {DEV_CUSTOMER_CLERK_ID}'")
     print()
     print("  Next: replace acct_REPLACE_WITH_TEST_ACCOUNT with a real Stripe")
     print("  test-mode connected account before attempting a payment.")

@@ -1,24 +1,20 @@
 """Customer accounts, with credentials we hold ourselves.
 
-The fifth identity, and the one this module exists to take back:
+The fifth identity:
 
-  * this module         signed-in customers       (was Clerk)
+  * this module         signed-in customers
   * core/guest_auth     guest customers
   * core/platform_auth  platform administrators
   * core/staff_auth     restaurant staff
 
-Clerk owned customer credentials, sessions, verification and social sign-in.
-Everything it did on the session side -- hash a password, mint a token, set a
-cookie, end it again -- this codebase already did three times over for staff,
-admins and guests, with the same Argon2id hasher and the same signed-JWT
-shape. So a customer account is that pattern a fourth time rather than a
-vendor, and the API now has no runtime dependency on an identity provider.
+Hash a password, mint a token, set a cookie, end it again: this codebase does
+all of that for staff, admins and guests, with the same Argon2id hasher and the
+same signed-JWT shape, so a customer account is that pattern a fourth time. The
+API has no runtime dependency on an identity provider.
 
-WHAT THIS DOES NOT REPLACE. Clerk also brokered Google and Apple sign-in.
-Those are OAuth against Google and Apple, not against Clerk, and they need
-credentials registered with each of them either way -- no library removes
-that. They layer on top of this module: the end of either flow is a verified
-email address, and from there it issues exactly the session below.
+Sign in with Google, Apple and Facebook layer on top (core/social_auth.py). The
+end of any of those flows is a verified identity, and from there it issues
+exactly the session below.
 
 The password rules are deliberately ordinary. The interesting security here is
 not length policy, it is that an unknown address and a wrong password are

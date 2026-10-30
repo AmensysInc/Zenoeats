@@ -257,7 +257,7 @@ def paid_path(monkeypatch):
             address_line1="920 5th Ave", address_city="Seattle", address_state="WA",
             address_postal_code="98104", address_country="US",
         )
-        customer = User(kind=UserKind.CUSTOMER.value, clerk_user_id=f"user_tax_{suffix}",
+        customer = User(kind=UserKind.CUSTOMER.value,
                         email=f"tax-{suffix}@zenoeats.invalid")
         session.add_all([restaurant, customer])
         session.flush()

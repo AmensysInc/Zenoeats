@@ -47,7 +47,6 @@ from app.models.identity import (
     PhoneVerification, RestaurantUser, StaffRole, StaffStatus, User, UserKind,
 )
 from app.models.payments import (
-    ClerkEvent,
     Payment,
     PaymentMethod,
     PaymentStatus,
@@ -91,5 +90,5 @@ __all__ = [
     "FulfillmentType",
     "RestaurantOrderCounter", "IdempotencyKey", "ALLOWED_TRANSITIONS", "SentEmail",
     "Payment", "PaymentStatus", "PaymentMethod",
-    "RestaurantPaymentAccount", "StripeEvent", "StripeEventStatus", "ClerkEvent",
+    "RestaurantPaymentAccount", "StripeEvent", "StripeEventStatus",
 ]

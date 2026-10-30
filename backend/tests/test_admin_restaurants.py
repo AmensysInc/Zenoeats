@@ -125,7 +125,7 @@ def test_a_reserved_slug_is_refused(admin_user):
     from app.schemas.api import CreateRestaurantIn
 
     with pytest.raises(errors.ApiError) as caught:
-        create_restaurant(CreateRestaurantIn(slug="clerk", name="X", tax_rate_bps=0), admin=admin_user)
+        create_restaurant(CreateRestaurantIn(slug="admin", name="X", tax_rate_bps=0), admin=admin_user)
     assert caught.value.status_code == 422
 
 

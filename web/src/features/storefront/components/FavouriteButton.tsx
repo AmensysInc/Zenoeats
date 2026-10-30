@@ -15,7 +15,7 @@ import {
  * sees the heart, and tapping it is the invitation to sign in.
  */
 export function useFavourites() {
-  const { data: session } = useCustomerSessionQuery({ soft: true });
+  const { data: session } = useCustomerSessionQuery();
   const canSave = !!session && !session.is_guest;
   const { data } = useFavouritesQuery(undefined, { skip: !canSave });
   return {

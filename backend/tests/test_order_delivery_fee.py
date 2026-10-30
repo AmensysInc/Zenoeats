@@ -69,12 +69,12 @@ def _customer():
     with system_session() as session:
         return session.execute(
             text(
-                "INSERT INTO users (id, kind, email, clerk_user_id, is_platform_admin, "
+                "INSERT INTO users (id, kind, email, is_platform_admin, "
                 "is_active, must_change_password, created_at, updated_at) "
-                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, :c, false, true, false, "
+                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, false, true, false, "
                 "now(), now()) RETURNING id"
             ),
-            {"e": _email(), "c": f"user_del_{_email()[:12]}"},
+            {"e": _email()},
         ).scalar_one()
 
 

@@ -234,7 +234,7 @@ def per_ip(name: str, limit: int, window_seconds: int = 60) -> Callable:
 def per_user(name: str, limit: int, window_seconds: int = 60) -> Callable:
     """Limit by authenticated user.
 
-    Keyed on the Clerk-verified user id, so it cannot be shaken off by
+    Keyed on the verified user id, so it cannot be shaken off by
     rotating IPs, and one abusive account cannot exhaust the budget of
     everyone behind the same NAT.
     """
@@ -249,7 +249,7 @@ def per_staff_user(name: str, limit: int, window_seconds: int = 60) -> Callable:
     """Limit by signed-in restaurant staff member.
 
     The same idea as per_user, for the portal. Staff authenticate with a
-    session cookie rather than a Clerk token, so the customer dependency
+    session cookie rather than a customer's, so the customer dependency
     would refuse every one of them before counting anything.
     """
 
