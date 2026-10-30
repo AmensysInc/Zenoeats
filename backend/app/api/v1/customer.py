@@ -66,6 +66,11 @@ def update_profile(
     Orders already placed keep the details they were placed with.
     """
     customer_profile.save_contact(user.id, body)
+    # Editing the number on the profile un-verifies it, for the same reason
+    # checkout does (services/customer_profile.py): a proof is about one
+    # number, not about the field it was typed into.
+    if body.phone != user.phone:
+        user.phone_verified_at = None
     user.full_name, user.phone, user.address = body.full_name, body.phone, body.address
     return _session_out(user)
 

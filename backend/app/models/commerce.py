@@ -326,6 +326,18 @@ class Coupon(Base, TimestampMixin):
             "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
             name="ck_coupon_window",
         ),
+        # A group's codes are numbered or personal, never both and never
+        # neither: a numbered code has a position in its group, a welcome
+        # code has an owner instead, and an ordinary coupon has neither.
+        CheckConstraint(
+            "(group_id IS NULL AND group_number IS NULL"
+            " AND customer_user_id IS NULL)"
+            " OR (group_id IS NOT NULL AND group_number IS NOT NULL"
+            " AND customer_user_id IS NULL)"
+            " OR (group_id IS NOT NULL AND group_number IS NULL"
+            " AND customer_user_id IS NOT NULL)",
+            name="ck_coupon_group_membership",
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -352,6 +364,157 @@ class Coupon(Base, TimestampMixin):
     # on Friday keeps its code, its limits and its history.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Minted from a group, and which number it got: MORE3 is group MORE,
+    # number 3. Both null for a coupon somebody created by hand, which is
+    # most of them. Nothing in the checkout path reads either -- a group's
+    # code is validated by exactly the same rules as any other, which is the
+    # point of making them real rows (see 0055).
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupon_groups.id"), nullable=True, index=True
+    )
+    group_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Whose code this is. Set only on a welcome code, which is minted for one
+    # person and refused to everybody else -- otherwise the first customer to
+    # be told it by a friend would spend it. Null on every code anybody may
+    # type, which is most of them.
+    customer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+
+
+class CouponGroup(Base, TimestampMixin):
+    """One offer, handed out as numbered codes.
+
+    "MORE", ten uses, means MORE1 through MORE10: ten codes carrying the same
+    discount, each given to one person. What this buys over a single code
+    with a redemption limit is knowing *which* ten people -- the orders name
+    the code they used, so MORE7 is traceable to whoever was handed MORE7,
+    where one shared code makes every redemption look alike.
+
+    THE CODES ARE ORDINARY COUPONS. Each is a row in `coupons` carrying this
+    group's id, so the discount is priced, limited, locked and counted by
+    services/coupons.py exactly as a hand-made code is. This table holds what
+    the operator typed once; the children are what customers type.
+
+    That is also why the fields here read as duplicates of Coupon's. They are
+    not a second source of truth about a live code -- a child is minted with
+    these values and then stands on its own -- they are the template the next
+    batch is minted from, and what the screen shows when it describes the
+    group rather than its members.
+
+    EACH CHILD IS GOOD ONCE (max_redemptions = 1 at minting). Codes that
+    could each be used freely would be the same code repeated, and the
+    numbering would mean nothing.
+
+    RETIRING IS A SOFT DELETE, as it is for a coupon, and it takes the
+    children with it: the offer is over, so none of its codes should still
+    work. The rows stay for the orders that point at them.
+    """
+
+    __tablename__ = "coupon_groups"
+    __table_args__ = (
+        Index(
+            "uq_coupon_group_prefix",
+            "restaurant_id", "code_prefix",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+        CheckConstraint(
+            "discount_kind IN ('PERCENT', 'AMOUNT')", name="ck_coupon_group_kind"
+        ),
+        CheckConstraint("discount_value > 0", name="ck_coupon_group_positive"),
+        CheckConstraint(
+            "discount_kind <> 'PERCENT' OR discount_value <= 10000",
+            name="ck_coupon_group_percent_range",
+        ),
+        CheckConstraint("min_subtotal_minor >= 0", name="ck_coupon_group_min"),
+        CheckConstraint(
+            "max_discount_minor IS NULL OR max_discount_minor > 0",
+            name="ck_coupon_group_ceiling",
+        ),
+        CheckConstraint(
+            "max_per_customer IS NULL OR max_per_customer > 0",
+            name="ck_coupon_group_per_customer",
+        ),
+            CheckConstraint(
+            "kind IN ('NUMBERED', 'SIGNUP')", name="ck_coupon_group_kind_value"
+        ),
+        CheckConstraint(
+            "(kind = 'NUMBERED' AND uses IS NOT NULL AND uses > 0 AND uses <= 500)"
+            " OR (kind = 'SIGNUP' AND uses IS NULL)",
+            name="ck_coupon_group_uses",
+        ),
+        CheckConstraint(
+            "valid_days IS NULL OR (valid_days > 0 AND valid_days <= 3650)",
+            name="ck_coupon_group_valid_days",
+        ),
+        CheckConstraint(
+            "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
+            name="ck_coupon_group_window",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    # What the codes are built from, stored as it will be compared.
+    code_prefix: Mapped[str] = mapped_column(String(24), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+    discount_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    discount_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_discount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    min_subtotal_minor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # NUMBERED mints every code at once; SIGNUP mints one per customer as
+    # they arrive. Everything after minting is the same, which is why this is
+    # a column rather than a second table.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="NUMBERED")
+    # How many codes this group minted, for a numbered group. Null on a
+    # sign-up offer, which has as many codes as it has customers and cannot
+    # know that in advance.
+    uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # How long a welcome code lasts from the day it is issued. A date would
+    # be wrong: every customer gets theirs on a different day, so the offer
+    # is "30 days to use it" rather than "until March".
+    valid_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_per_customer: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CouponGroupItemType(Base):
+    """One heading a group's offer applies to.
+
+    On the group rather than only on its codes, because a sign-up offer has
+    no codes until its first customer verifies a number -- and "burgers
+    only" has to be somewhere before then. Every minted code gets a copy, so
+    the checkout keeps reading scope off the coupon in front of it.
+    """
+
+    __tablename__ = "coupon_group_item_types"
+    __table_args__ = (
+        UniqueConstraint("group_id", "item_type_id", name="uq_coupon_group_item_type"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    restaurant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False, index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coupon_groups.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    item_type_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("item_types.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
 
 class CouponItemType(Base):

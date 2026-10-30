@@ -215,6 +215,27 @@ class Settings(BaseSettings):
     # holding a customer at a spinner.
     GEOCODE_TIMEOUT_SECONDS: float = 4.0
 
+    # --- Text messages -------------------------------------------------------
+    # Empty, and deliberately so: there is no SMS vendor on this deployment.
+    # Anything that needs one asks services/sms.configured() first and says
+    # it is unavailable rather than starting a flow that cannot finish.
+    #
+    # Setting these is not the whole job. Sending business SMS to US numbers
+    # needs A2P 10DLC registration -- a brand, a campaign and documented
+    # opt-in, reviewed before the first message -- and unregistered traffic
+    # is filtered by the carriers rather than refused at the API, which looks
+    # like a working integration whose messages never arrive.
+    SMS_PROVIDER: str = ""
+    SMS_FROM_NUMBER: str = ""
+    SMS_ACCOUNT_SID: str = ""
+    SMS_AUTH_TOKEN: str = ""
+
+    # How long a phone verification code is good for, and how many wrong
+    # guesses it survives. Six digits is a million possibilities; a script
+    # does not get tired, so the row stops answering long before that.
+    PHONE_CODE_TTL_SECONDS: int = 10 * 60
+    PHONE_CODE_MAX_ATTEMPTS: int = 5
+
     # --- Live delivery tracking ---------------------------------------------
     # The map on a customer's order page. Unlike GOOGLE_MAPS_API_KEY, which
     # stays on the server, this key ships to every browser: restrict it in the

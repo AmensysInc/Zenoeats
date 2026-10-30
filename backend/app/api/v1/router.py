@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import require_admin_host, require_same_origin
 from app.api.v1 import (
     admin, coupons, customer, customer_accounts, orders, portal, restaurant,
-    rewards_admin, webhooks,
+    rewards_admin, webhooks, welcome,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -26,6 +26,10 @@ api_router.include_router(customer.router, dependencies=[Depends(require_same_or
 api_router.include_router(
     customer_accounts.router, dependencies=[Depends(require_same_origin)]
 )
+
+# Proving a phone number, and the welcome code that earns. Same origin pin
+# as the customer pages above: it reads the session cookie and it writes.
+api_router.include_router(welcome.router, dependencies=[Depends(require_same_origin)])
 
 # The two operator portals authenticate with cookies, which a browser attaches
 # by itself. Both are pinned to the origin they are served from: the staff API

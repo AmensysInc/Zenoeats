@@ -356,3 +356,61 @@ def invite_restaurant_id(host: str) -> str:
     slug = host.split(".")[0]
     with system_session() as session:
         return str(session.execute(text("SELECT id FROM restaurants WHERE slug = :s"), {"s": slug}).scalar_one())
+
+
+# ------------------------------------------- turning a Clerk session into ours
+
+
+def test_a_clerk_session_becomes_a_cookie_of_our_own():
+    """The fix for a customer signing in with Google and being asked to sign
+    in again on the next page.
+
+    A Clerk sign-in sets no cookie of ours. The only way the API learned
+    about one was a bearer token the storefront attached when it believed
+    the browser was signed in -- a belief it formed by reading __client_uat,
+    which a Clerk development instance does not write on the app's own
+    origin. So the menu could not tell a signed-in customer from a stranger.
+
+    After this call the browser holds the same httpOnly cookie an
+    email-and-password sign-in leaves behind, and nothing downstream needs
+    Clerk, a bearer token, or a readable cookie.
+    """
+    from app.core import customer_auth
+
+    client = _client("spicehouse.zenoeats.local")
+    clerk_id = _clerk_id()
+
+    adopted = client.post(
+        "/api/v1/customer/clerk-session",
+        headers={"Authorization": f"Bearer {_token(clerk_id)}"},
+    )
+    assert adopted.status_code == 200, adopted.text
+    assert adopted.json()["is_guest"] is False
+    assert customer_auth.SESSION_COOKIE in adopted.cookies
+
+    # The cookie alone now answers "who is ordering?", with no Authorization
+    # header anywhere -- which is the whole point.
+    mine = client.get("/api/v1/orders/session")
+    assert mine.status_code == 200, mine.text
+    assert mine.json()["is_guest"] is False
+
+
+def test_adopting_twice_is_the_same_customer():
+    """Safe to call on every completed sign-in, which is how it is called."""
+    client = _client("spicehouse.zenoeats.local")
+    clerk_id = _clerk_id()
+    headers = {"Authorization": f"Bearer {_token(clerk_id)}"}
+
+    first = client.post("/api/v1/customer/clerk-session", headers=headers)
+    second = client.post("/api/v1/customer/clerk-session", headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["email"] == second.json()["email"]
+
+
+def test_adopting_needs_a_real_token():
+    client = _client("spicehouse.zenoeats.local")
+    assert client.post("/api/v1/customer/clerk-session").status_code == 401
+    assert client.post(
+        "/api/v1/customer/clerk-session",
+        headers={"Authorization": "Bearer not-a-token"},
+    ).status_code == 401

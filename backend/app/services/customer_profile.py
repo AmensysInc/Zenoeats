@@ -31,6 +31,12 @@ def save_contact(user_id, contact: ContactIn) -> None:
         if user is None or user.kind not in (UserKind.CUSTOMER.value, UserKind.GUEST.value):
             return
         user.full_name = contact.full_name
+        # A number that changes is a number nobody has proved. Checkout asks
+        # for a contact number and remembers it here; if that is not the one
+        # verified by code, "verified" would be claiming something untrue of
+        # the number now on the account (0056).
+        if contact.phone != user.phone:
+            user.phone_verified_at = None
         user.phone = contact.phone
         # A pickup form has no address field. Do not erase an address saved by
         # an earlier delivery or through the profile page.

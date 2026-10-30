@@ -15,6 +15,10 @@ import {
 } from "@/features/admin/adminApi";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
+import { cents, count } from "@/features/admin/offerFields";
+import { CouponGroups } from "@/features/admin/components/CouponGroups";
+import { SignupOffer } from "@/features/admin/components/SignupOffer";
+import { CouponRedemptions } from "@/features/admin/components/CouponRedemptions";
 
 /**
  * One restaurant's promotion codes: what exists, what it is worth, and what
@@ -182,6 +186,19 @@ export function AdminCouponsPage() {
           )}
         </>
       )}
+
+      {/* One offer handed out as numbered codes. Its own section rather than
+          more rows above: a group is one promotion however many codes it
+          minted, and listing five hundred of them beside the hand-made
+          coupons would bury both. */}
+      <CouponGroups restaurantId={id} />
+
+      {/* One code per new customer, earned rather than typed. A singleton
+          rather than a list: two would both fire on the same sign-up. */}
+      <SignupOffer restaurantId={id} />
+
+      {/* Every redemption of every code here, read from the orders. */}
+      <CouponRedemptions restaurantId={id} />
     </AdminShell>
   );
 }
@@ -645,18 +662,4 @@ function CouponForm({
       </div>
     </form>
   );
-}
-
-/** A typed amount as minor units, or null for an empty field. */
-function cents(typed: string): number | null {
-  const value = Number(typed.trim());
-  if (!typed.trim() || !Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value * 100);
-}
-
-/** A typed whole number, or null for an empty field. */
-function count(typed: string): number | null {
-  const value = Number(typed.trim());
-  if (!typed.trim() || !Number.isInteger(value) || value <= 0) return null;
-  return value;
 }

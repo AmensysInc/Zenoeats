@@ -34,6 +34,7 @@ import {
   useUpdateProfileMutation,
 } from "@/features/storefront/storefrontApi";
 import { errorMessage } from "@/services/apiClient";
+import { WelcomeOffer } from "@/features/storefront/components/WelcomeOffer";
 import { money } from "@/utils/format";
 import type { Contact, CustomerSession, Item, Meal, OrderSummary } from "@/types";
 import { READING_COLUMN, usePageColumn } from "@/components/layout/pageColumn";
@@ -586,6 +587,9 @@ function RewardsTab({ guest }: { guest: boolean }) {
   if (!data || data.programs.length === 0) {
     return (
       <section aria-label="Your rewards">
+        {/* A welcome offer can be running where a stamp card is not, so it
+            comes before the "nothing here yet" line rather than after it. */}
+        <WelcomeOffer />
         <Empty>This restaurant is not running a rewards program yet.</Empty>
       </section>
     );
@@ -593,6 +597,7 @@ function RewardsTab({ guest }: { guest: boolean }) {
 
   return (
     <section aria-label="Your rewards">
+      <WelcomeOffer />
       {!data.collecting && (
         <p className="mb-5 rounded-panel border border-hairline bg-surface p-5 text-sm text-muted">
           {guest

@@ -39,7 +39,12 @@ export { clerkErrorCode, clerkErrorMessage };
 export async function apiSessionLive(clerk: ClerkInstance): Promise<boolean> {
   try {
     const token = (await clerk.session?.getToken()) ?? null;
-    await request("/orders/session", { token });
+    if (!token) return false;
+    // Adopting is the same question asked in the form that leaves something
+    // behind: it verifies the token and mints our cookie. Asking without it
+    // would answer "yes" and leave the storefront in the state this whole
+    // change exists to fix.
+    await request("/customer/clerk-session", { method: "POST", token });
     return true;
   } catch {
     return false;
@@ -234,6 +239,25 @@ export async function continueWithProvider(
     redirectUrl: `${origin}/account/sso-callback?next=${encodeURIComponent(next)}`,
     redirectUrlComplete: `${origin}${next}`,
   };
+  // Clerk refuses to start a sign-in while it already holds a session, and
+  // answers "You're already signed in." -- which is what a customer saw
+  // after signing in with Google and then pressing Apple. Pressing another
+  // provider is a request to use that one instead, so the old session goes
+  // first.
+  //
+  // Only Clerk's. Our own cookie stays until the new sign-in replaces it, so
+  // abandoning this halfway leaves the customer signed in as they were
+  // rather than signed out of everything by a button they changed their
+  // mind about.
+  if (clerk.user) {
+    try {
+      await clerk.signOut();
+    } catch {
+      /* Nothing to sign out of, or Clerk refused. The attempt below is
+         still the thing worth trying. */
+    }
+  }
+
   const client = clerk.client;
   if (!client) throw new Error("Sign-in is still starting. Try again in a moment.");
   if (mode === "sign-up") await client.signUp.authenticateWithRedirect(target);
@@ -294,7 +318,37 @@ export function wireSocialButtons(
  *  navigation, so the app boots already signed in. */
 export async function activateAndContinue(clerk: ClerkInstance, sessionId: string | null) {
   await clerk.setActive({ session: sessionId });
+  await adoptClerkSession(clerk);
   window.location.replace(nextPath());
+}
+
+/**
+ * Hand the API the Clerk session so it can mint a cookie of its own.
+ *
+ * THE POINT OF THIS CALL. A Clerk sign-in sets no cookie of ours, so the
+ * only way the API learned about one was a bearer token the storefront
+ * attached when it believed the browser was signed in -- a belief it formed
+ * by reading __client_uat, which a Clerk development instance does not write
+ * on the app's own origin. The result was a customer signing in with Google,
+ * returning to the menu, and being asked to sign in again.
+ *
+ * After this, the browser holds the same httpOnly cookie an email-and-
+ * password sign-in leaves behind, and nothing downstream needs Clerk at all.
+ *
+ * Failure is not fatal and is deliberately quiet: the customer is signed in
+ * with Clerk either way, and the bearer-token path still works where it
+ * worked before. What they lose is the cookie, which is what the page is
+ * about to find out for itself.
+ */
+export async function adoptClerkSession(clerk: ClerkInstance): Promise<boolean> {
+  try {
+    const token = (await clerk.session?.getToken()) ?? null;
+    if (!token) return false;
+    await request("/customer/clerk-session", { method: "POST", token });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** "Sign in to order from Spice House", when the page is on a restaurant's

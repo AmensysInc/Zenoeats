@@ -169,6 +169,148 @@ export type CouponDraft = {
  *  new code is a new coupon and the old one gets retired. */
 export type CouponPatch = Partial<Omit<CouponDraft, "code">>;
 
+/** One code minted by a group, and whether anybody has spent it.
+ *
+ *  `redeemed_by` is the whole reason a group exists: an order names the code
+ *  it used, so MORE7 is traceable to whoever was handed MORE7 where one
+ *  shared code makes every redemption look alike. Null while the code is
+ *  unused, and also where a guest with no account spent it. */
+export type GroupCode = {
+  id: string;
+  code: string;
+  number: number;
+  redemptions: number;
+  discounted_minor: number;
+  redeemed_by: string | null;
+  redeemed_at: string | null;
+};
+
+/** One offer, handed out as numbered codes: "MORE" with ten uses is MORE1
+ *  through MORE10, each good once, each for one person. */
+export type CouponGroup = {
+  id: string;
+  code_prefix: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  /** How many codes were minted. Each is good once, so this is how many
+   *  people the offer is for rather than how many goes one code gets. */
+  uses: number;
+  max_per_customer: number | null;
+  is_active: boolean;
+  applies_to: MenuHeading[];
+  issued: number;
+  used: number;
+  discounted_minor: number;
+  codes: GroupCode[];
+  created_at: string;
+};
+
+export type CouponGroupList = {
+  restaurant_name: string;
+  currency: string;
+  item_types: MenuHeading[];
+  groups: CouponGroup[];
+};
+
+export type CouponGroupDraft = {
+  code_prefix: string;
+  uses: number;
+  description?: string | null;
+  percent_off_bps?: number | null;
+  amount_off_minor?: number | null;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  applies_to?: string[];
+  starts_at?: string | null;
+  ends_at?: string | null;
+  max_per_customer?: number | null;
+  is_active?: boolean;
+};
+
+/** Neither the prefix nor the count is editable: the codes have been handed
+ *  out, so renaming them would break every printed copy, and lowering the
+ *  count would have to decide which holders to cancel. */
+export type CouponGroupPatch = {
+  description?: string | null;
+  is_active?: boolean;
+};
+
+/** The welcome offer: one code per new customer, earned by proving a mobile
+ *  number. A singleton per restaurant -- two would both fire on the same
+ *  sign-up and hand one account two codes. */
+export type SignupOffer = {
+  id: string;
+  code_prefix: string;
+  description: string | null;
+  discount_kind: DiscountKind;
+  discount_value: number;
+  max_discount_minor: number | null;
+  min_subtotal_minor: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  /** How long one customer's code lasts from the day it is issued. A date
+   *  would be a meaner offer that gets worse the later you sign up. */
+  valid_days: number | null;
+  is_active: boolean;
+  applies_to: MenuHeading[];
+  issued: number;
+  used: number;
+  discounted_minor: number;
+  created_at: string;
+};
+
+export type SignupOfferState = {
+  restaurant_name: string;
+  currency: string;
+  item_types: MenuHeading[];
+  /** False where this deployment cannot send a text at all. The screen says
+   *  so rather than offering a switch whose verification step cannot run. */
+  sms_configured: boolean;
+  offer: SignupOffer | null;
+};
+
+export type SignupOfferDraft = {
+  code_prefix: string;
+  valid_days?: number | null;
+  description?: string | null;
+  percent_off_bps?: number | null;
+  amount_off_minor?: number | null;
+  max_discount_minor?: number | null;
+  min_subtotal_minor?: number;
+  applies_to?: string[];
+  starts_at?: string | null;
+  ends_at?: string | null;
+  is_active?: boolean;
+};
+
+/** One order that used a coupon: which code, who placed it, what it cost. */
+export type Redemption = {
+  order_id: string;
+  order_number: number;
+  code: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  is_guest: boolean;
+  discount_minor: number;
+  order_total_minor: number;
+  status: string;
+  created_at: string;
+};
+
+export type RedemptionList = {
+  restaurant_name: string;
+  currency: string;
+  total_redemptions: number;
+  total_discounted_minor: number;
+  redemptions: Redemption[];
+};
+
 export type Restaurant = {
   id: string;
   slug: string;
@@ -478,6 +620,74 @@ export const adminApi = api.injectEndpoints({
 
     // --- rewards and offers ------------------------------------------------
     //
+    // --- group coupons ----------------------------------------------------
+    // One offer, minted as numbered codes. The codes are ordinary coupons
+    // underneath, so they share the Coupon tag: minting one changes what
+    // the coupon list would show if it did not filter them out.
+    couponGroups: build.query<CouponGroupList, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/coupon-groups` }),
+      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    }),
+
+    createCouponGroup: build.mutation<CouponGroup, { id: string; draft: CouponGroupDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups`,
+        method: "POST",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    updateCouponGroup: build.mutation<
+      CouponGroup,
+      { id: string; groupId: string; patch: CouponGroupPatch }
+    >({
+      query: ({ id, groupId, patch }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+        method: "PATCH",
+        body: patch,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    retireCouponGroup: build.mutation<void, { id: string; groupId: string }>({
+      query: ({ id, groupId }) => ({
+        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    // --- the welcome offer, and who used what -----------------------------
+    signupOffer: build.query<SignupOfferState, string>({
+      query: (id) => ({ url: `/admin/restaurants/${id}/signup-offer` }),
+      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    }),
+
+    setSignupOffer: build.mutation<SignupOffer, { id: string; draft: SignupOfferDraft }>({
+      query: ({ id, draft }) => ({
+        url: `/admin/restaurants/${id}/signup-offer`,
+        method: "PUT",
+        body: draft,
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    retireSignupOffer: build.mutation<void, { id: string }>({
+      query: ({ id }) => ({
+        url: `/admin/restaurants/${id}/signup-offer`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
+    couponRedemptions: build.query<RedemptionList, { id: string; code?: string }>({
+      query: ({ id, code }) => ({
+        url: `/admin/restaurants/${id}/coupon-redemptions${code ? `?code=${encodeURIComponent(code)}` : ""}`,
+      }),
+      providesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+    }),
+
     // The platform's to create, for the reason coupons are: what a promotion
     // costs is ZenoEats' business as much as the kitchen's. No screen for
     // either in the restaurant portal, and no endpoint behind one.
@@ -592,6 +802,14 @@ export const {
   useCreateCouponMutation,
   useUpdateCouponMutation,
   useRetireCouponMutation,
+  useCouponGroupsQuery,
+  useCreateCouponGroupMutation,
+  useUpdateCouponGroupMutation,
+  useRetireCouponGroupMutation,
+  useSignupOfferQuery,
+  useSetSignupOfferMutation,
+  useRetireSignupOfferMutation,
+  useCouponRedemptionsQuery,
   useRewardsQuery,
   useCreateRewardMutation,
   useUpdateRewardMutation,
