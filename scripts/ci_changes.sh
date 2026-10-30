@@ -25,6 +25,8 @@ if [ "${1:-}" = "--all" ]; then
   all
 else
   while IFS= read -r path; do
+    # A stray carriage return would quietly stop an exact path from matching.
+    path="${path%$'\r'}"
     case "$path" in
       # The pipeline itself: changing it is only proved by running all of it.
       .github/workflows/ci.yml | scripts/ci_changes.sh) all ;;
