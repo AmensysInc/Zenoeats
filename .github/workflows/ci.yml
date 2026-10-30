@@ -7,6 +7,17 @@ on:
     # and there would be no image to deploy from it.
     tags: ["v*"]
   pull_request:
+  # Everything, once a week. A change only audits the dependencies it touches,
+  # so this is what notices a vulnerability published against a pin nobody moved.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+# A new push to a pull request replaces the run still going for the old one.
+# Never on main or a tag, where a run is what publishes the images.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only unless a job says otherwise. Only the docker job, which publishes
 # images, asks for more. Without this line every job ran with whatever the
@@ -20,20 +31,83 @@ permissions:
   contents: read
 
 jobs:
+  # What this change touched, which decides what runs below. Anything that
+  # cannot be worked out runs everything: a slow build is better than a skipped
+  # test. Mapping and the reasons for it: scripts/ci_changes.sh.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      base: ${{ steps.detect.outputs.base }}
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+      migrations: ${{ steps.detect.outputs.migrations }}
+      python_deps: ${{ steps.detect.outputs.python_deps }}
+      web_deps: ${{ steps.detect.outputs.web_deps }}
+      api_image: ${{ steps.detect.outputs.api_image }}
+      web_image: ${{ steps.detect.outputs.web_image }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=""
+          # A pull request is checked out as its merge commit, whose first
+          # parent is the target branch, so this is the whole pull request.
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$(git rev-parse HEAD^1)"
+          elif [ "$EVENT" = "push" ] && [[ "$REF" != refs/tags/* ]]; then
+            base="$BEFORE"
+          fi
+          # A new branch has no "before", and a force push may have lost it.
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "Changed since $base:"
+            git diff --name-only "$base" HEAD | tee changed.txt
+            bash scripts/ci_changes.sh < changed.txt | tee -a "$GITHUB_OUTPUT"
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+          else
+            echo "No base to compare with; running everything."
+            bash scripts/ci_changes.sh --all | tee -a "$GITHUB_OUTPUT"
+            echo "base=" >> "$GITHUB_OUTPUT"
+          fi
+
   # A key committed by mistake is published the moment it is pushed: this
   # repository is public. High and critical only -- publishable keys, which
   # are public by design, are low.
+  #
+  # Always runs, because any file can carry a key, but over the changed files
+  # alone. The weekly run and a release tag scan the whole repository.
   secrets:
     runs-on: ubuntu-latest
+    needs: changes
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
       - name: Secret scan
+        env:
+          BASE: ${{ needs.changes.outputs.base }}
         run: |
-          docker run --rm -v "$PWD:/src:ro" aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 fs \
+          set -euo pipefail
+          target="$PWD"
+          if [ -n "$BASE" ]; then
+            target="$(mktemp -d)"
+            # Not deleted files: there is nothing left to copy.
+            git diff --name-only --diff-filter=d -z "$BASE" HEAD \
+              | xargs -0 -r cp --parents -t "$target"
+          fi
+          docker run --rm -v "$target:/src:ro" aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 fs \
             --scanners secret --severity HIGH,CRITICAL --exit-code 1 --no-progress /src
 
   backend:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     services:
       postgres:
         image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
@@ -99,6 +173,7 @@ jobs:
       # requirements.txt were last cleared against this check; when it fails,
       # upgrade the named package and let the test suite below judge it.
       - name: Dependency vulnerability audit
+        if: needs.changes.outputs.python_deps == 'true'
         working-directory: backend
         run: |
           pip install pip-audit
@@ -125,6 +200,7 @@ jobs:
       # Run after the suite instead and it fails on the rows the suite left
       # behind, which says nothing about the migrations.
       - name: Migration is reversible
+        if: needs.changes.outputs.migrations == 'true'
         working-directory: backend
         run: |
           alembic downgrade base
@@ -142,6 +218,8 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     defaults:
       run:
         working-directory: web
@@ -167,6 +245,7 @@ jobs:
       # tooling advisories (a dev server, a linter) do not reach customers and
       # would otherwise fail builds over code that never runs in production.
       - name: Dependency vulnerability audit
+        if: needs.changes.outputs.web_deps == 'true'
         run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npx tsc --noEmit
@@ -229,9 +308,23 @@ jobs:
   # A pull request builds and throws the result away: that proves the
   # Dockerfiles still work without publishing an image from code nobody has
   # merged. A push to main, or a version tag, publishes to GHCR.
+  #
+  # Only the image whose code changed: a commit on main that touches the web
+  # alone publishes no api image under its sha. A version tag always builds both,
+  # so a release names a complete pair.
+  #
+  # A job whose `needs` was skipped is skipped too unless told otherwise, so this
+  # says what it means: nothing failed, and there is an image to build.
   docker:
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    needs: [changes, backend, frontend]
+    if: >-
+      !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && (needs.changes.outputs.api_image == 'true' || needs.changes.outputs.web_image == 'true')
+    env:
+      BUILD_API: ${{ needs.changes.outputs.api_image }}
+      BUILD_WEB: ${{ needs.changes.outputs.web_image }}
     permissions:
       contents: read
       # What lets GITHUB_TOKEN write to ghcr.io. No registry secret to store,
@@ -245,11 +338,19 @@ jobs:
       - name: Work out the image names
         run: |
           echo "IMAGE_BASE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+          images=""
+          if [ "$BUILD_API" = "true" ]; then images="api"; fi
+          if [ "$BUILD_WEB" = "true" ]; then images="$images web"; fi
+          echo "IMAGES=$images" >> "$GITHUB_ENV"
 
       - name: Build images
         run: |
-          docker build -t "$IMAGE_BASE/api:${{ github.sha }}" ./backend
-          docker build -t "$IMAGE_BASE/web:${{ github.sha }}" ./web
+          set -euo pipefail
+          for image in $IMAGES; do
+            context=web
+            if [ "$image" = "api" ]; then context=backend; fi
+            docker build -t "$IMAGE_BASE/$image:${{ github.sha }}" "./$context"
+          done
 
       # Asked of the built image, not read from the Dockerfile: a USER line can
       # be undone by a later stage or a base image, and only the result counts.
@@ -257,7 +358,7 @@ jobs:
       - name: Images do not run as root
         run: |
           set -euo pipefail
-          for image in api web; do
+          for image in $IMAGES; do
             uid=$(docker run --rm --entrypoint id "$IMAGE_BASE/$image:${{ github.sha }}" -u)
             echo "$image runs as uid $uid"
             test "$uid" != "0"
@@ -280,7 +381,7 @@ jobs:
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         run: |
           set -euo pipefail
-          for image in api web; do
+          for image in $IMAGES; do
             docker push "$IMAGE_BASE/$image:${{ github.sha }}"
             if [ '${{ github.ref }}' = 'refs/heads/main' ]; then
               docker tag  "$IMAGE_BASE/$image:${{ github.sha }}" "$IMAGE_BASE/$image:main"
@@ -301,9 +402,13 @@ jobs:
             echo "### Images published"
             echo
             echo '```'
-            echo "$IMAGE_BASE/api:${{ github.sha }}"
-            echo "$IMAGE_BASE/web:${{ github.sha }}"
+            for image in $IMAGES; do
+              echo "$IMAGE_BASE/$image:${{ github.sha }}"
+            done
             echo '```'
+            if [ "$BUILD_API" != "true" ]; then
+              exit 0
+            fi
             echo
             echo "Migrate with the same api image before rolling out:"
             echo

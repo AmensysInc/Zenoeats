@@ -38,6 +38,8 @@ which finds their account by verified address, or ask for a password by email.
 - A customer with a password account who tried Google could not check out at
   all until they cleared their browser data.
 
+- CI runs only what a change touches, instead of the whole pipeline every time.
+
 ### Removed
 - Clerk: the SDK, its webhook, `clerk_events`, two-step verification through it,
   `/account/sso-callback`, `/config.js`, and the bearer-token path into the API.

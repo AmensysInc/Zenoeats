@@ -105,3 +105,15 @@ From `main` with CI green: move *Unreleased* in `CHANGELOG.md` under the new
 version, merge that, then tag it (`git tag v1.0.2 && git push origin
 v1.0.2`). CI publishes the images for the tag, and production deploys that
 tag only (`docs/operations/STEPS_BEFORE_PRODUCTION.md`, §11).
+
+## What CI runs
+
+Only what your change touches (`scripts/ci_changes.sh`): the backend job for
+`backend/`, the frontend job for `web/`, and just the secret scan, over the
+changed files, for docs. Dependency audits run when a dependency file changes,
+the migration rollback when a migration does, and an image builds only when its
+code changed. Changing `ci.yml` or that script runs everything, as do version
+tags and the Monday morning run.
+
+If a test starts reading a file outside its own folder, add that file to
+`scripts/ci_changes.sh`, or a change to it will skip the test.
