@@ -23,3 +23,5 @@ Also:
 
 Keep documents here current in the same pull request as the change they
 describe. A stale document is worse than none, because it is believed.
+
+CI scope check.
