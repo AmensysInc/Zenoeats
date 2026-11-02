@@ -304,7 +304,7 @@ def paid_order():
     with system_session() as session:
         restaurant = Restaurant(slug=f"mail-{suffix}", name="Mail Test",
                                 status=RestaurantStatus.ACTIVE.value, timezone="UTC", currency="USD")
-        customer = User(kind=UserKind.CUSTOMER.value, clerk_user_id=f"user_mail_{suffix}",
+        customer = User(kind=UserKind.CUSTOMER.value,
                         email=f"mail-{suffix}@zenoeats.invalid", full_name="Sam Customer")
         session.add_all([restaurant, customer])
         session.flush()

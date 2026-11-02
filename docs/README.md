@@ -14,8 +14,8 @@ it, and the production setup guide.
 
 Also:
 - **Settings:** [`.env.example`](../.env.example) for development and
-  [`.env.production.example`](../.env.production.example) for a server, each
-  explaining every setting
+  [`.env.production.example`](../.env.production.example) for a server, holding
+  what you fill in; defaults are explained in `backend/app/config.py`
 - **Email wording:** [`backend/app/templates/email/`](../backend/app/templates/email/)
 - **How to contribute:** [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md)
 - **Reporting a vulnerability:** [`.github/SECURITY.md`](../.github/SECURITY.md)

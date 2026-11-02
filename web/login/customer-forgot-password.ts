@@ -12,10 +12,8 @@ import {
  *   no token    ask for the address, POST /customer/password/forgot
  *   ?token=…    choose a new password, POST /customer/password/reset
  *
- * The token in the link IS the credential, which is why there is no code to
- * type any more -- that belonged to Clerk, which emailed a six-digit code
- * and held the password itself. The link is signed, expires in an hour, and
- * stops working the moment any password change lands on the account
+ * The token in the link IS the credential. The link is signed, expires in an
+ * hour, and stops working the moment any password change lands on the account
  * (backend/app/core/customer_auth.py).
  *
  * Asking is deliberately uninformative. The API answers 204 whether or not

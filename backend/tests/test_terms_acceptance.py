@@ -117,9 +117,9 @@ def test_a_session_says_whether_the_customer_has_agreed(shop):
 
 
 def test_accepting_the_terms_records_them_without_an_order(shop):
-    """The path an account created through Google takes: Clerk finished the
-    sign-up itself, so nothing was agreed to, and the form posts here before
-    the customer ever reaches checkout."""
+    """The path an account created from the sign-in page takes: that page has no
+    checkbox, so nothing was agreed to, and the form posts here before the
+    customer ever reaches checkout."""
     client = _guest(shop)
     res = client.post("/api/v1/customer/accept-terms")
     assert res.status_code == 200, res.text

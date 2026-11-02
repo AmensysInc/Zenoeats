@@ -3,7 +3,7 @@
 A fourth identity, alongside the three in staff_auth's note, and the weakest
 of them on purpose:
 
-  * Clerk               signed-in customers
+  * core/customer_auth  signed-in customers
   * ADMIN_USERS         platform administrators   (core/platform_auth.py)
   * restaurant staff    credentials we issue      (core/staff_auth.py)
   * this module         guest customers

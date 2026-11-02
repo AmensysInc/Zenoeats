@@ -30,7 +30,7 @@ from app.models import (
     CustomerFavourite, Item, Order, OrderStatus, Restaurant, User, UserKind,
 )
 from app.schemas.api import CustomerSessionOut, ProfileContactIn
-from app.services import account_emails, clerk_customers, customer_profile, terms
+from app.services import account_emails, customer_records, customer_profile, terms
 # Shared with customer_accounts.py: one definition of who is signed in.
 from app.services.customer_view import session_out as _session_out
 
@@ -60,8 +60,8 @@ def update_profile(
 
     The same three checkout requires and the same rules, because these are
     what checkout offers back. Email is not editable here: a signed-in
-    customer's belongs to Clerk, which verified it, and a guest's is where
-    their receipts already went.
+    customer changes theirs by proving the password (PUT /customer/email), and
+    a guest's is where their receipts already went.
 
     Orders already placed keep the details they were placed with.
     """
@@ -86,10 +86,9 @@ def accept_terms(
 ):
     """Record that this customer has agreed to the terms in force.
 
-    For the account that reached us without passing a consent step: Clerk
-    finishes a social sign-up by itself whenever the provider gave it
-    everything it asked for, and asks us for nothing on the way through. The
-    consent form the app then shows posts here.
+    For the account that reached us without passing a consent step: someone
+    new who pressed a provider's button on the sign-in page, which has no
+    checkbox. The consent form the app then shows posts here.
 
     Idempotent, and deliberately takes no body. What was agreed to is the
     wording this deployment is serving, which the server knows and the browser
@@ -97,34 +96,6 @@ def accept_terms(
     what it had displayed.
     """
     terms.record(user)
-    return _session_out(user)
-
-
-@router.post(
-    "/profile/email-sync",
-    response_model=CustomerSessionOut,
-    dependencies=[Depends(per_user("customer_email_sync", limit=10))],
-)
-def sync_verified_email(
-    user: User = Depends(get_current_user),
-    _restaurant: Restaurant = Depends(current_restaurant),
-):
-    """Read the caller's verified primary email from Clerk; never accept one
-    from the browser. Contact details and placed orders are unaffected."""
-    if user.kind != UserKind.CUSTOMER.value or not user.clerk_user_id:
-        raise errors.ApiError(403, "ACCOUNT_REQUIRED", "Sign in to change your email.")
-    profile = clerk_customers.fetch_profile(user.clerk_user_id)
-    if profile is None:
-        raise errors.ApiError(503, "EMAIL_SYNC_UNAVAILABLE", "Your email could not be confirmed. Try again.")
-    if (profile.clerk_user_id != user.clerk_user_id or not profile.email or
-            not profile.email_verified):
-        raise errors.ApiError(409, "EMAIL_UNVERIFIED", "Verify your new email before saving it.")
-    with system_session() as db:
-        current = db.get(User, user.id)
-        if current is None or not current.is_active or current.deleted_at is not None:
-            raise errors.ApiError(403, "ACCOUNT_INACTIVE", "This account is not active.")
-        current.email = profile.email
-    user.email = profile.email
     return _session_out(user)
 
 
@@ -146,32 +117,19 @@ def close_account(
     because they are the restaurant's record of a sale -- the page a
     customer is sent to before pressing this says so in those words.
 
-    Clerk first. An account emptied here but still signed in to would be the
-    worst of both, so a Clerk that cannot be reached stops the whole thing
-    and nothing local changes. The user.deleted webhook then arrives and
-    finds the work already done, which is why closing is idempotent.
-
     Guests have no account to close: their session expires on its own, and
     the record behind it is cleared out with the rest after 45 days.
     """
     if user.kind != UserKind.CUSTOMER.value:
         raise errors.ApiError(403, "ACCOUNT_REQUIRED", "There is no account here to close.")
 
-    # Clerk first, where the sign-in is Clerk's: an account emptied here but
-    # still signed in to would be the worst of both. An account whose password
-    # we hold has nothing at Clerk to delete -- close_account below clears the
-    # digest, which is the same step for this kind of sign-in.
-    if user.clerk_user_id:
-        clerk_customers.delete_clerk_user(user.clerk_user_id)
-
     tell = None
     with system_session() as db:
         current = db.get(User, user.id)
         if current is not None:
-            # Read before closing erases it; None if the webhook for the
-            # Clerk deletion above got here first and has told them already.
-            tell = clerk_customers.contact_before_closing(current)
-            clerk_customers.close_account(db, current)
+            # Read before closing erases it; None if it was closed already.
+            tell = customer_records.contact_before_closing(current)
+            customer_records.close_account(db, current)
     if tell:
         background.add_task(account_emails.queue_closed, tell[0], tell[1], restaurant.id)
     return Response(status_code=204)

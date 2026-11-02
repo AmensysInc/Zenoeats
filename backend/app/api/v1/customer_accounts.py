@@ -17,18 +17,18 @@ directory of who our customers are.
 """
 
 import logging
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import get_current_user, get_principal
+from app.api.deps import get_current_user
 from app.config import settings
-from app.core import customer_auth, errors, google_oauth, ratelimit
+from app.core import customer_auth, errors, guest_auth, ratelimit, social_auth
 from app.core.logsafe import email_for_log
 from app.core.ratelimit import per_ip, per_user
 from app.core.tenant import host_of, host_on_allowed_origin
@@ -36,14 +36,14 @@ from app.db.base import utcnow
 from app.db.session import system_session
 from app.models import User, UserKind
 from app.schemas.api import CustomerSessionOut
-from app.services import account_emails, clerk_customers
+from app.services import account_emails, terms
 from app.services.customer_view import session_out as _session_out
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/customer", tags=["customer"])
 
 
-# ------------------------------------------------- accounts (no Clerk) ---
+# ----------------------------------------------------------- accounts ---
 #
 # Register, sign in, sign out. The session is an httpOnly cookie this API
 # signs and reads, exactly as the staff, admin and guest sessions are -- which
@@ -62,6 +62,9 @@ class RegisterIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=256)
     full_name: str | None = Field(default=None, max_length=160)
+    # The sign-up page's checkbox, which must be ticked before it will submit.
+    # Recorded here so a customer who ticked it is not asked again at checkout.
+    terms_accepted: bool = False
 
 
 class CustomerLoginIn(BaseModel):
@@ -77,7 +80,7 @@ def _cookie_domain() -> str | None:
     host-only cookie contradicted that: signing in at one storefront left you
     anonymous at the next, for no gain.
 
-    It is also what makes Google sign-in possible at all. Google matches
+    It is also what makes social sign-in possible at all. Providers match
     redirect URIs exactly, so there is one callback for the whole platform, on
     the root domain; a host-only cookie set there would not be sent to the
     restaurant subdomain the customer came from.
@@ -143,6 +146,8 @@ def register(body: RegisterIn, response: Response):
             full_name=(body.full_name or "").strip() or None,
             password_hash=digest,
         )
+        if body.terms_accepted:
+            terms.stamp(user)
         session.add(user)
         try:
             session.flush()
@@ -154,7 +159,8 @@ def register(body: RegisterIn, response: Response):
             raise errors.ApiError(
                 409,
                 "EMAIL_IN_USE",
-                "There is already an account with that email. Sign in instead.",
+                "There is already an account with that email. Sign in with your "
+                "password or the way you first signed up, or reset your password.",
             ) from exc
         out = _session_out(user)
         user_id = user.id
@@ -219,6 +225,11 @@ def customer_logout(response: Response):
     Only this browser. Ending every session an account holds is what
     sessions_valid_after is for, and it belongs on a deliberate "sign out
     everywhere" rather than on the button someone presses at a shared laptop.
+
+    Any guest cookie goes too. It sits underneath the account's from before
+    they signed in, and leaving it would turn "sign out" into "you are now the
+    guest you were last month" -- signed out, and still ordering as somebody.
+    Host-only, so it is cleared without the domain the account's carries.
     """
     response.delete_cookie(
         key=customer_auth.SESSION_COOKIE,
@@ -226,6 +237,13 @@ def customer_logout(response: Response):
         # Same domain it was set with: a delete that does not match the
         # original scope leaves the cookie exactly where it was.
         domain=_cookie_domain(),
+        httponly=True,
+        samesite="lax",
+        secure=settings.ENV == "production",
+    )
+    response.delete_cookie(
+        key=guest_auth.SESSION_COOKIE,
+        path="/",
         httponly=True,
         samesite="lax",
         secure=settings.ENV == "production",
@@ -261,6 +279,11 @@ def forgot_password(body: ForgotPasswordIn, background: BackgroundTasks):
     Nothing is written. The link carries a fingerprint of the password
     currently in force (core/customer_auth.py), so it is single-use without a
     table of spent tokens, and asking twice simply mints a second one.
+
+    An account with no password gets a link as well, and that is how it chooses
+    its first: someone who signed up with Google and later tries the password
+    form would otherwise be told a link is coming and never receive one. Opening
+    the mailbox is the same proof whichever kind of account it is.
     """
     email_address = body.email.strip().lower()
     with system_session() as session:
@@ -268,7 +291,6 @@ def forgot_password(body: ForgotPasswordIn, background: BackgroundTasks):
             select(User).where(
                 User.email == email_address,
                 User.kind == UserKind.CUSTOMER.value,
-                User.password_hash.isnot(None),
                 User.deleted_at.is_(None),
             )
         ).scalar_one_or_none()
@@ -383,9 +405,16 @@ def change_email(body: ChangeEmailIn, user: User = Depends(get_current_user)):
     arrive, and the owner still holds the password to change it back. A
     hijacked account is not.
     """
-    if user.kind != UserKind.CUSTOMER.value or not user.password_hash:
+    if user.kind != UserKind.CUSTOMER.value:
         raise errors.ApiError(
             403, "ACCOUNT_REQUIRED", "Only a signed-in account can change its email."
+        )
+    if not user.password_hash:
+        raise errors.ApiError(
+            403,
+            "PASSWORD_REQUIRED",
+            "Changing your email needs a password. Use \"Forgot password\" on the "
+            "sign-in page to choose one.",
         )
 
     address = body.email.strip().lower()
@@ -421,69 +450,62 @@ def change_email(body: ChangeEmailIn, user: User = Depends(get_current_user)):
     return out
 
 
-# ------------------------------------------------------- sign in with Google
+# ---------------------------------------- sign in with Google, Apple, Facebook
 #
-# Two endpoints and a redirect between them; core/google_oauth.py holds the
-# protocol and explains why the callback is on the root domain rather than on
-# each restaurant's subdomain.
+# Two endpoints per provider and a redirect between them; core/social_auth.py
+# holds the protocols and explains why every callback is on the root domain
+# rather than on each restaurant's subdomain.
 #
 # Neither is a JSON API: a browser arrives at them by navigation and leaves by
 # redirect, which is why they answer 302 and never a body. That also keeps the
-# client secret and the code exchange entirely server-side -- the browser
+# client secrets and the code exchange entirely server-side -- the browser
 # never holds anything it could replay.
 
+# Which column of a users row holds each provider's identity.
+_SUBJECT_COLUMN = {
+    social_auth.GOOGLE: "google_subject",
+    social_auth.APPLE: "apple_subject",
+    social_auth.FACEBOOK: "facebook_subject",
+}
 
-@router.post(
-    "/clerk-session",
-    response_model=CustomerSessionOut,
-    # Credential-bearing but not guessable: the bearer token is already
-    # proof. The limit is here because an endpoint that mints a cookie is
-    # worth a budget whatever proves it.
-    dependencies=[Depends(per_ip("clerk_session", limit=30, window_seconds=300))],
+
+def _known_provider(provider: str) -> str:
+    if provider not in social_auth.PROVIDERS:
+        raise errors.ApiError(404, "NOT_FOUND", "Not found.")
+    return provider
+
+
+class SignInOptionsOut(BaseModel):
+    providers: list[str]
+
+
+@router.get("/sign-in-options", response_model=SignInOptionsOut)
+def sign_in_options():
+    """Which provider buttons the sign-in pages should draw: those with
+    credentials behind them, on any address, restaurant or not."""
+    return SignInOptionsOut(providers=social_auth.available())
+
+
+@router.get(
+    "/{provider}/start",
+    include_in_schema=False,
+    dependencies=[Depends(per_ip("social_start", limit=30, window_seconds=300))],
 )
-def adopt_clerk_session(response: Response, principal=Depends(get_principal)):
-    """Turn a verified Clerk session into one of ours.
-
-    THE BUG THIS EXISTS TO FIX. A Clerk sign-in used to set no cookie of
-    ours at all: the only way the API learned about it was an Authorization
-    header the storefront attached when it thought the browser was signed
-    in. It decided that by reading __client_uat, a cookie Clerk writes on
-    the app's own origin -- which a Clerk *development* instance, whose
-    frontend API lives on clerk.accounts.dev, does not write there. So a
-    customer signed in with Google, came back to the menu, and was asked to
-    sign in again, because nothing on the page could tell that they had.
-
-    Now the social callback calls this once, at the end, and the storefront
-    is in exactly the position it is in after an email-and-password sign-in:
-    an httpOnly cookie the browser sends by itself. Nothing downstream --
-    the account panel, the checkout guard, favourites -- needs Clerk loaded,
-    needs a bearer token, or needs that cookie to be readable.
-
-    It also ends the third-party-cookie problem on phones, where Clerk's own
-    session is the thing mobile browsers block by default.
-
-    Idempotent: calling it twice reissues the cookie and changes nothing
-    else, which is what makes it safe to call on every completed sign-in.
-    """
-    user = clerk_customers.customer_for_clerk_user(
-        principal.clerk_user_id, token_email=principal.email
-    )
-    _set_session_cookie(response, user.id)
-    log.info("adopted clerk session for customer %s", user.id)
-    return _session_out(user)
-
-
-@router.get("/google/start", include_in_schema=False)
-def google_start(request: Request, next_path: str = Query("/", alias="next")):
-    """Send the browser to Google, remembering where it came from."""
-    if not google_oauth.configured():
+def social_start(
+    request: Request,
+    provider: str = Depends(_known_provider),
+    next_path: str = Query("/", alias="next"),
+    agreed: bool = Query(False),
+):
+    """Send the browser to the provider, remembering where it came from."""
+    if not social_auth.configured(provider):
         raise errors.ApiError(
-            503, "GOOGLE_UNAVAILABLE", "Google sign-in is not available here."
+            503, "SOCIAL_UNAVAILABLE", "That sign-in is not available here."
         )
 
     # Where to come back to. Taken from the Host this was called on rather
     # than from a parameter: a redirect target a caller can choose is an open
-    # redirect, and this one is handed to Google and back.
+    # redirect, and this one is handed to the provider and back.
     host = host_of(request.headers.get("host")) or settings.ROOT_DOMAIN
     if not host_on_allowed_origin(host):
         raise errors.ApiError(400, "BAD_ORIGIN", "Unknown storefront.")
@@ -491,70 +513,95 @@ def google_start(request: Request, next_path: str = Query("/", alias="next")):
     # Likewise the path: a path, never a URL, so it cannot leave this host.
     where = next_path if next_path.startswith("/") and not next_path.startswith("//") else "/"
 
-    state, nonce = google_oauth.issue_state(origin=host, next_path=where)
-    response = RedirectResponse(google_oauth.authorize_url(state), status_code=302)
+    state, nonce = social_auth.issue_state(
+        provider=provider, origin=host, next_path=where, agreed=agreed
+    )
+    response = RedirectResponse(social_auth.authorize_url(provider, state), status_code=302)
+    samesite = social_auth.state_cookie_samesite(provider)
     response.set_cookie(
-        key=google_oauth.STATE_COOKIE,
+        key=social_auth.STATE_COOKIE,
         value=nonce,
-        max_age=google_oauth.STATE_TTL_MINUTES * 60,
+        max_age=social_auth.STATE_TTL_MINUTES * 60,
+        # On the parent domain: this runs on the restaurant's address and the
+        # callback runs on the root, and a host-only cookie set here would not
+        # be sent there. Every sign-in would fail the nonce check.
+        domain=_cookie_domain(),
         httponly=True,
-        # Lax, and Lax is enough. The browser arrives back here from
-        # accounts.google.com by a top-level GET navigation, which is exactly
-        # the case Lax permits -- it withholds cookies from cross-site
-        # subrequests and form posts, not from following a redirect into the
-        # address bar. SameSite=None would be strictly weaker and would also
-        # force Secure, breaking the flow on any plain-HTTP development host.
-        samesite="lax",
-        secure=settings.ENV == "production",
+        samesite=samesite,
+        # SameSite=None is refused by browsers without Secure, wherever it runs.
+        secure=settings.ENV == "production" or samesite == "none",
         path="/",
     )
     return response
 
 
-@router.get("/google/callback", include_in_schema=False)
-def google_callback(
+async def _callback_params(request: Request) -> dict[str, str]:
+    """What the provider sent: the query string, or for Apple a posted form.
+
+    Parsed by hand rather than with FastAPI's Form, which would bring in a
+    multipart library for one urlencoded body.
+    """
+    params = dict(request.query_params)
+    if request.method == "POST":
+        body = (await request.body()).decode("utf-8", "replace")
+        params.update({key: values[0] for key, values in parse_qs(body).items()})
+    return params
+
+
+@router.api_route(
+    "/{provider}/callback",
+    methods=["GET", "POST"],
+    include_in_schema=False,
+)
+def social_callback(
     request: Request,
-    code: str | None = None,
-    state: str | None = None,
-    error: str | None = None,
+    provider: str = Depends(_known_provider),
+    params: dict[str, str] = Depends(_callback_params),
 ):
-    """Where Google sends the browser back.
+    """Where the provider sends the browser back.
 
     Always ends in a redirect, never an error page: somebody who cancelled at
-    Google, or whose sign-in expired, belongs back on the sign-in page with a
-    reason, not on a JSON document.
+    the provider, or whose sign-in expired, belongs back on the sign-in page
+    with a reason, not on a JSON document.
+
+    303, because Apple arrives by POST and must leave by GET.
     """
     def back(origin: str, path: str, problem: str | None = None) -> RedirectResponse:
         scheme_host = _origin_url(origin)
         target = f"{scheme_host}{path}"
         if problem:
-            target = f"{scheme_host}/account/sign-in?error={quote(problem)}"
-        out = RedirectResponse(target, status_code=302)
-        out.delete_cookie(google_oauth.STATE_COOKIE, path="/")
+            target = (
+                f"{scheme_host}/account/sign-in?error={quote(problem)}"
+                f"&next={quote(path, safe='')}"
+            )
+        out = RedirectResponse(target, status_code=303)
+        out.delete_cookie(social_auth.STATE_COOKIE, path="/", domain=_cookie_domain())
         return out
 
+    state = params.get("state")
     if not state:
         raise errors.ApiError(400, "BAD_STATE", "That sign-in didn't complete.")
 
     try:
-        origin, where = google_oauth.read_state(
-            state, request.cookies.get(google_oauth.STATE_COOKIE)
+        read = social_auth.read_state(
+            provider, state, request.cookies.get(social_auth.STATE_COOKIE)
         )
-    except google_oauth.GoogleError:
+    except social_auth.SocialError as exc:
         # No trustworthy origin to send them to, so the platform root it is.
-        return back(settings.ROOT_DOMAIN, "/", "social_failed")
+        return back(settings.ROOT_DOMAIN, "/", exc.code)
 
-    # The customer pressed cancel, or Google refused.
-    if error or not code:
-        return back(origin, where, "social_failed")
+    # The customer pressed cancel, or the provider refused.
+    code = params.get("code")
+    if params.get("error") or not code:
+        return back(read.origin, read.next_path, "social_failed")
 
     try:
-        identity = google_oauth.exchange(code)
-    except google_oauth.GoogleError:
-        return back(origin, where, "social_failed")
+        identity = social_auth.exchange(provider, code, params.get("user"))
+        user_id = _customer_for_identity(identity, agreed=read.agreed)
+    except social_auth.SocialError as exc:
+        return back(read.origin, read.next_path, exc.code)
 
-    user_id = _customer_for_google(identity)
-    response = back(origin, where)
+    response = back(read.origin, read.next_path)
     _set_session_cookie(response, user_id)
     return response
 
@@ -568,48 +615,76 @@ def _origin_url(host: str) -> str:
     return f"{scheme}://{host}{port}"
 
 
-def _customer_for_google(identity: google_oauth.GoogleIdentity) -> UUID:
-    """The account this Google identity signs into, creating one if needed.
+def _customer_for_identity(identity: social_auth.SocialIdentity, *, agreed: bool) -> UUID:
+    """The account this identity signs into, creating one if needed."""
+    try:
+        return _find_or_create_customer(identity, agreed=agreed)
+    except IntegrityError:
+        # Two first sign-ins raced, a double press or two tabs, and the unique
+        # indexes let exactly one win. The second finds what the first made.
+        return _find_or_create_customer(identity, agreed=agreed)
 
-    Matched on the Google subject first, because that is the identity and it
-    never changes. Falling back to the verified email is what links a Google
-    sign-in to an account someone already made with a password -- safe only
-    because Google has verified the address, which is checked before we get
-    here.
+
+def _find_or_create_customer(identity: social_auth.SocialIdentity, *, agreed: bool) -> UUID:
+    """One person, one account, whichever way they arrive.
+
+    Matched on the provider's subject first, because that is the identity and
+    it never changes. Falling back to the address is what stops somebody who
+    registered with a password, or signed in with Google, from getting a second
+    account or a dead end when they next press Apple -- safe only for a provider
+    that vouches for the address (SocialIdentity.can_link_by_email).
+
+    Registering verifies nothing, so an address on a password account proves
+    nothing: anybody could have typed someone else's and be sitting on the
+    account waiting for its real owner. So the first time a provider proves who
+    owns the address, the password is cleared and every session ended. The
+    worst case for an honest customer is asking for a new password by email.
     """
+    subject_column = getattr(User, _SUBJECT_COLUMN[identity.provider])
     with system_session() as session:
         user = session.execute(
-            select(User).where(User.google_subject == identity.subject)
+            select(User).where(
+                subject_column == identity.subject,
+                User.kind == UserKind.CUSTOMER.value,
+            )
         ).scalar_one_or_none()
 
         if user is None:
+            if not identity.email:
+                raise social_auth.SocialError(
+                    f"{identity.provider} shared no address", "social_no_email"
+                )
             user = session.execute(
                 select(User).where(
-                    User.email == identity.email,
+                    func.lower(User.email) == identity.email,
                     User.kind == UserKind.CUSTOMER.value,
                     User.deleted_at.is_(None),
                 )
             ).scalar_one_or_none()
-            if user is not None:
-                # Claim it for this Google account from now on.
-                user.google_subject = identity.subject
-                log.info("linked google sign-in to existing customer %s", user.id)
 
-        if user is None:
-            user = User(
-                kind=UserKind.CUSTOMER.value,
-                email=identity.email,
-                full_name=identity.full_name,
-                google_subject=identity.subject,
-            )
-            session.add(user)
-            session.flush()
-            log.info("created customer %s from a google sign-in", user.id)
-        elif user.deleted_at is not None:
-            raise errors.ApiError(403, "ACCOUNT_CLOSED", "This account has been closed.")
-        else:
-            # Keep the address in step with the one Google verifies.
-            user.email = identity.email
+            if user is None:
+                user = User(kind=UserKind.CUSTOMER.value, email=identity.email)
+                session.add(user)
+                log.info("creating a customer from a %s sign-in", identity.provider)
+            elif not identity.can_link_by_email:
+                raise social_auth.SocialError(
+                    f"{identity.provider} address is already an account", "social_email_in_use"
+                )
+            else:
+                if user.password_hash:
+                    user.password_hash = None
+                    user.sessions_valid_after = utcnow()
+                log.info("linked %s sign-in to customer %s", identity.provider, user.id)
+            setattr(user, _SUBJECT_COLUMN[identity.provider], identity.subject)
+
+        # `is False`: a row created above has no value here until it is flushed.
+        if user.deleted_at is not None or user.is_active is False:
+            raise social_auth.SocialError("that account is closed", "account_closed")
+
+        if identity.full_name and not user.full_name:
+            user.full_name = identity.full_name
+        if agreed and terms.needs_recording(user):
+            terms.stamp(user)
 
         session.flush()
         return user.id

@@ -52,7 +52,7 @@ def shop(team):
 
 @pytest.fixture
 def signed_in():
-    """Requests made as a real customer row, without a Clerk token to mint."""
+    """Requests made as a real customer row, without a session to mint."""
     from app.api.deps import get_current_user
     from app.db.session import system_session
     from app.main import app
@@ -217,38 +217,3 @@ def test_an_item_taken_off_the_menu_drops_out_of_the_list(shop, signed_in):
         )
     assert client.get("/api/v1/customer/favourites").json() == []
 
-
-# ------------------------------------------------------- verified email ---
-def test_email_sync_refuses_guests(shop):
-    client = _staff_client(shop.slug)
-    client.post("/api/v1/orders/guest-session", json={"email": "guest@example.com"})
-    assert client.post("/api/v1/customer/profile/email-sync").status_code == 403
-
-
-@pytest.mark.parametrize("case, status", [("unverified", 409), ("foreign", 409), ("unavailable", 503), ("verified", 200)])
-def test_email_sync_requires_own_verified_clerk_primary(shop, signed_in, monkeypatch, case, status):
-    from app.db.session import system_session
-    from app.models import User
-    from app.services import clerk_customers
-
-    me = _customer()
-    with system_session() as db:
-        user = db.get(User, me)
-        original_email, clerk_id = user.email, user.clerk_user_id
-        user.full_name, user.phone, user.address = CONTACT.values()
-    # Unique per run: one address per customer is a database constraint, so a
-    # literal here would collide with the row the previous run left behind.
-    next_email = f"verified-next-{clerk_id}@example.com"
-    signed_in(me)
-    profile = None if case == "unavailable" else clerk_customers.ClerkProfile(
-        clerk_user_id="someone_else" if case == "foreign" else clerk_id,
-        email=next_email, email_verified=case != "unverified",
-        full_name="Provider name must not overwrite saved contact",
-    )
-    monkeypatch.setattr(clerk_customers, "fetch_profile", lambda asked: profile if asked == clerk_id else None)
-    response = _staff_client(shop.slug).post("/api/v1/customer/profile/email-sync")
-    assert response.status_code == status, response.text
-    with system_session() as db:
-        user = db.get(User, me)
-        assert user.email == (next_email if case == "verified" else original_email)
-        assert (user.full_name, user.phone, user.address) == tuple(CONTACT.values())

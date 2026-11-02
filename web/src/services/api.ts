@@ -1,18 +1,10 @@
 import { createApi, type BaseQueryFn } from "@reduxjs/toolkit/query/react";
 import { ApiError, request, type RequestOptions } from "./apiClient";
-import { getCustomerToken, getCustomerTokenIfSignedIn } from "./clerk";
 
 export type QueryArgs = {
   url: string;
   method?: string;
   body?: unknown;
-  /** Send the signed-in customer's Clerk session token. Fetched per request,
-   *  because Clerk's tokens last about a minute and Clerk refreshes them.
-   *
-   *  "if-signed-in" is the same, except it will not load Clerk to find out:
-   *  for endpoints a guest may reach with nothing but their cookie, on pages
-   *  where most visitors are neither. */
-  customerAuth?: boolean | "if-signed-in";
   idempotencyKey?: string;
   /** A guest's order-view token, sent as the X-Order-Token header. */
   orderToken?: string | null;
@@ -76,16 +68,9 @@ async function attempt(
   signal: AbortSignal,
 ): Promise<{ data: unknown } | { error: ApiError }> {
   try {
-    const token =
-      opts.customerAuth === "if-signed-in"
-        ? await getCustomerTokenIfSignedIn()
-        : opts.customerAuth
-          ? await getCustomerToken()
-          : undefined;
     const data = await request<unknown>(opts.url, {
       method: opts.method,
       body: opts.body,
-      token,
       idempotencyKey: opts.idempotencyKey,
       orderToken: opts.orderToken,
       // RTK Query aborts on unmount and on refetch; passing its signal through

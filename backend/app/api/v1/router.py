@@ -10,7 +10,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 # The storefront's public reads carry no credential at all.
 api_router.include_router(portal.router)
-# Ordering takes a Clerk bearer token -- or a guest's cookie, which a browser
+# Ordering takes an account's session cookie -- or a guest's, which a browser
 # attaches by itself to a request from any page on a neighbouring storefront
 # (same site). JSON-only bodies and SameSite=Lax already stopped a forged
 # order; the pin makes the cookie useless from another origin outright.

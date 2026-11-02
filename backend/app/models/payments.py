@@ -119,23 +119,3 @@ class StripeEvent(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # NULL only for platform-level (non-Connect) events.
     stripe_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-
-
-class ClerkEvent(Base):
-    """Clerk webhook inbox. Same durability contract as stripe_events.
-
-    Clerk is the identity provider; this table is how its state reaches
-    PostgreSQL without a synchronous dependency on Clerk at request time.
-    """
-
-    __tablename__ = "clerk_events"
-
-    id: Mapped[uuid.UUID] = uuid_pk()
-    clerk_event_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="RECEIVED")
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

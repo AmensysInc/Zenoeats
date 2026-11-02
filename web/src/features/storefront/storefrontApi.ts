@@ -27,9 +27,8 @@ export type QuoteCombo = {
  * Branding, menu and ordering. Which restaurant is resolved from the Host
  * header, so nothing here carries a tenant id.
  *
- * The order endpoints need a signed-in customer. Customers authenticate
- * through Clerk, so those requests carry Clerk's session token -- fetched by
- * the base query (customerAuth), never by a page.
+ * The order endpoints need a signed-in customer or a guest. Both are httpOnly
+ * cookies the browser sends by itself, so nothing here handles a credential.
  */
 /** What this customer can still earn here, and what stands between them
  *  and it. Written as "what to do next" rather than as a set of flags,
@@ -69,19 +68,19 @@ export const storefrontApi = api.injectEndpoints({
 
     /** This restaurant's loyalty programs, and the caller's cards.
      *
-     *  `customerAuth` because the balance is the point: without the token the
+     *  The balance is the point: for a caller who is not signed in the
      *  server answers with the ladder and `collecting: false`, which is a
      *  different and less useful page. It does not refuse an anonymous
      *  caller, so the ladder still renders for somebody deciding whether to
      *  make an account. */
     rewards: build.query<Loyalty, void>({
-      query: () => ({ url: "/rewards", customerAuth: true }),
+      query: () => ({ url: "/rewards" }),
       providesTags: ["Rewards"],
     }),
 
     /** The customer's referral link and how their invitations have gone. */
     referrals: build.query<Referrals, void>({
-      query: () => ({ url: "/referrals", customerAuth: true }),
+      query: () => ({ url: "/referrals" }),
       providesTags: ["Referrals"],
     }),
 
@@ -92,7 +91,6 @@ export const storefrontApi = api.injectEndpoints({
         url: "/referrals/invite",
         method: "POST",
         body,
-        customerAuth: true,
       }),
       invalidatesTags: ["Referrals"],
     }),
@@ -103,7 +101,6 @@ export const storefrontApi = api.injectEndpoints({
       query: (code) => ({
         url: `/referrals/claim?code=${encodeURIComponent(code)}`,
         method: "POST",
-        customerAuth: true,
       }),
       invalidatesTags: ["Referrals"],
     }),
@@ -191,7 +188,6 @@ export const storefrontApi = api.injectEndpoints({
         url: "/orders",
         method: "POST",
         body,
-        customerAuth: true,
         idempotencyKey,
       }),
     }),
@@ -210,7 +206,6 @@ export const storefrontApi = api.injectEndpoints({
         url: `/orders/${orderId}/payment-intent`,
         method: "POST",
         body: {},
-        customerAuth: true,
         idempotencyKey,
       }),
     }),
@@ -219,7 +214,7 @@ export const storefrontApi = api.injectEndpoints({
      *
      *  `token` is the view token from a guest's confirmation email, present
      *  only when the page was opened from that link. It is what lets an order
-     *  be tracked from a device that holds neither a Clerk session nor the
+     *  be tracked from a device that holds neither an account session nor the
      *  guest cookie -- the API checks it against this order and no other. */
     order: build.query<Order, { orderId: string; token?: string | null }>({
       query: ({ orderId, token }) => ({
@@ -227,10 +222,6 @@ export const storefrontApi = api.injectEndpoints({
         // A header rather than ?t=, which would put the token in the access
         // logs of every hop on each poll.
         orderToken: token ?? undefined,
-        // With a token, nothing else is needed and Clerk is not worth
-        // loading -- this is the path opened from an email, often on a device
-        // that has never signed in to anything here.
-        customerAuth: token ? "if-signed-in" : true,
       }),
       providesTags: (_r, _e, { orderId }) => [{ type: "Order", id: orderId }],
     }),
@@ -240,24 +231,17 @@ export const storefrontApi = api.injectEndpoints({
      *  The only way to learn that this browser holds a guest session. That
      *  cookie is httpOnly, so nothing on this side can read it -- asking the
      *  server is not a round trip we could have saved.
-     *
-     *  `soft` decides what a wrong answer costs. The storefront header passes
-     *  it, so reading a menu never pulls down the Clerk SDK; the worst case
-     *  there is a header that says "Sign in" to someone who already is, and
-     *  fixes itself on the next page. A guard must not pass it: a 401 there
-     *  redirects to sign-in, which would send a signed-in customer straight
-     *  back, and around. */
-    customerSession: build.query<CustomerSession, { soft?: boolean } | void>({
-      query: (args) => ({
+     */
+    customerSession: build.query<CustomerSession, void>({
+      query: () => ({
         url: "/orders/session",
-        customerAuth: args?.soft ? "if-signed-in" : true,
       }),
       providesTags: ["CustomerSession"],
     }),
 
     /** What this customer can still earn by proving a mobile number. */
     welcomeOffer: build.query<WelcomeOffer, void>({
-      query: () => ({ url: "/welcome/offer", customerAuth: "if-signed-in" }),
+      query: () => ({ url: "/welcome/offer" }),
       providesTags: ["WelcomeOffer"],
     }),
 
@@ -267,7 +251,6 @@ export const storefrontApi = api.injectEndpoints({
         url: "/welcome/phone",
         method: "POST",
         body,
-        customerAuth: true,
       }),
     }),
 
@@ -277,14 +260,13 @@ export const storefrontApi = api.injectEndpoints({
         url: "/welcome/verify",
         method: "POST",
         body,
-        customerAuth: true,
       }),
       invalidatesTags: ["WelcomeOffer", "CustomerSession"],
     }),
 
     /** Every personal code this customer holds here. */
     welcomeCodes: build.query<WelcomeCode[], void>({
-      query: () => ({ url: "/welcome/codes", customerAuth: true }),
+      query: () => ({ url: "/welcome/codes" }),
       providesTags: ["WelcomeOffer"],
     }),
 
@@ -301,26 +283,21 @@ export const storefrontApi = api.injectEndpoints({
     /** Save name, phone and address from the profile page. The same rules
      *  checkout holds them to; the email is not editable. */
     updateProfile: build.mutation<CustomerSession, Contact>({
-      query: (body) => ({ url: "/customer/profile", method: "PUT", body, customerAuth: true }),
-      invalidatesTags: ["CustomerSession"],
-    }),
-
-    syncProfileEmail: build.mutation<CustomerSession, void>({
-      query: () => ({ url: "/customer/profile/email-sync", method: "POST", customerAuth: true }),
+      query: (body) => ({ url: "/customer/profile", method: "PUT", body }),
       invalidatesTags: ["CustomerSession"],
     }),
 
     /** Close the account and take the customer's details off it. Orders
      *  stay: see legal/data-deletion.html, which this promises exactly. */
     closeAccount: build.mutation<void, void>({
-      query: () => ({ url: "/customer/account", method: "DELETE", customerAuth: true }),
+      query: () => ({ url: "/customer/account", method: "DELETE" }),
       invalidatesTags: ["CustomerSession"],
     }),
 
     /** Agree to the terms in force. No body: what was agreed to is the
      *  wording this deployment serves, which the server knows. */
     acceptTerms: build.mutation<CustomerSession, void>({
-      query: () => ({ url: "/customer/accept-terms", method: "POST", customerAuth: true }),
+      query: () => ({ url: "/customer/accept-terms", method: "POST" }),
       invalidatesTags: ["CustomerSession"],
     }),
 
@@ -334,7 +311,6 @@ export const storefrontApi = api.injectEndpoints({
         url: args?.before
           ? `/customer/orders?before=${encodeURIComponent(args.before)}`
           : "/customer/orders",
-        customerAuth: true,
       }),
       providesTags: ["CustomerOrders"],
     }),
@@ -342,7 +318,7 @@ export const storefrontApi = api.injectEndpoints({
     /** Signed-in customers only; a guest is answered ACCOUNT_REQUIRED, so
      *  callers skip it for them. */
     favourites: build.query<Favourite[], void>({
-      query: () => ({ url: "/customer/favourites", customerAuth: true }),
+      query: () => ({ url: "/customer/favourites" }),
       providesTags: ["Favourites"],
     }),
 
@@ -352,7 +328,6 @@ export const storefrontApi = api.injectEndpoints({
       query: ({ itemId, saved }) => ({
         url: `/customer/favourites/${itemId}`,
         method: saved ? "PUT" : "DELETE",
-        customerAuth: true,
       }),
       async onQueryStarted({ itemId, name, saved }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
@@ -373,7 +348,7 @@ export const storefrontApi = api.injectEndpoints({
       },
     }),
 
-    /** Guests only. A signed-in customer signs out through Clerk. */
+    /** Guests only. A signed-in customer signs out at /customer/logout. */
     endGuestSession: build.mutation<void, void>({
       query: () => ({ url: "/orders/session", method: "DELETE" }),
       invalidatesTags: ["CustomerSession"],
@@ -395,7 +370,6 @@ export const {
   useCustomerLogoutMutation,
   useChangeEmailMutation,
   useUpdateProfileMutation,
-  useSyncProfileEmailMutation,
   useCloseAccountMutation,
   useAcceptTermsMutation,
   useCustomerOrdersQuery,

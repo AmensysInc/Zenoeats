@@ -36,6 +36,13 @@ def needs_recording(user: User) -> bool:
     return user.terms_version != CURRENT_VERSION
 
 
+def stamp(user: User) -> None:
+    """Mark a row in the caller's own transaction as having agreed, for a row
+    being created or already loaded at the moment the agreement was given."""
+    user.terms_accepted_at = utcnow()
+    user.terms_version = CURRENT_VERSION
+
+
 def record(user: User) -> None:
     """Note that this customer has agreed to the terms in force.
 

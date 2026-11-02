@@ -1,9 +1,8 @@
 """A customer's account emails: the welcome, and the account closed.
 
 The welcome comes from the storefront a brand-new account first opens, and
-only for a brand-new account. Closing is told once, by whichever path closed
-the account -- the customer's own button, or a deletion in Clerk -- with the
-address read before closing erased it.
+only for a brand-new account. Closing is told once, with the address read
+before closing erased it.
 """
 
 import uuid
@@ -13,7 +12,7 @@ import pytest
 from sqlalchemy import text
 
 from app.core import crypto
-from app.services import account_emails, clerk_customers
+from app.services import account_emails
 from tests.test_admin_restaurants import (  # noqa: F401  (fixtures)
     _create,
     _email,
@@ -23,7 +22,6 @@ from tests.test_admin_restaurants import (  # noqa: F401  (fixtures)
     admin_user,
     cleanup,
 )
-from tests.test_close_account import clerk  # noqa: F401  (fixture)
 from tests.test_customer_profile import no_rate_limits, shop, signed_in  # noqa: F401
 from tests.test_notifications import sendgrid  # noqa: F401
 from tests.test_order_delivery_fee import _customer
@@ -107,7 +105,7 @@ def test_a_guest_is_not_welcomed(shop, queued_emails):
 # ----------------------------------------------------------------- closed ---
 
 def test_closing_tells_them_once_with_the_address_sealed(
-    shop, signed_in, clerk, queued_emails, sendgrid
+    shop, signed_in, queued_emails, sendgrid
 ):
     customer_id = _customer()
     address = _user(customer_id).email
@@ -129,40 +127,6 @@ def test_closing_tells_them_once_with_the_address_sealed(
     assert f"which you used at {_restaurant_name(shop.id)}" in body
     assert "We've removed your name, phone number, address, email and saved favourites" in body
 
-    # Clerk's user.deleted webhook for the same deletion finds it closed.
-    from app.db.session import system_session
-
-    with system_session() as session:
-        assert clerk_customers.deactivate(session, _user(customer_id).clerk_user_id) is None
-
-
-def test_an_account_deleted_in_clerk_is_told_by_the_webhook(queued_emails):
-    """No storefront was involved, so the email is ZenoEats', not a
-    restaurant's."""
-    from app.db.base import utcnow
-    from app.db.session import system_session
-    from app.models import ClerkEvent
-    from app.workers import tasks
-
-    customer_id = _customer()
-    user = _user(customer_id)
-    with system_session() as session:
-        event = ClerkEvent(
-            clerk_event_id=f"msg_{uuid.uuid4().hex}", type="user.deleted",
-            payload={"data": {"id": user.clerk_user_id}}, status="RECEIVED",
-            received_at=utcnow(),
-        )
-        session.add(event)
-        session.flush()
-        event_id = str(event.id)
-
-    tasks.process_clerk_event.run(event_id)
-    tasks.process_clerk_event.run(event_id)  # redelivered
-
-    [(kind, args)] = _account_queued(queued_emails)
-    assert kind == "account_closed"
-    assert crypto.decrypt_field(args["sealed_to"]) == user.email
-    assert args["restaurant_id"] is None
 
 
 def test_the_closed_email_without_a_restaurant_reads_on_its_own():
@@ -178,8 +142,7 @@ def test_is_new_is_only_a_real_recent_account():
     from app.db.base import utcnow
 
     def user(**kw):
-        values = dict(kind="CUSTOMER", created_at=utcnow(), email="sam@example.com",
-                      clerk_user_id="user_x")
+        values = dict(kind="CUSTOMER", created_at=utcnow(), email="sam@example.com")
         values.update(kw)
         return SimpleNamespace(**values)
 

@@ -79,11 +79,11 @@ def shop(admin_user, cleanup):
     with system_session() as session:
         customer = session.execute(
             text(
-                "INSERT INTO users (id, kind, email, clerk_user_id, is_platform_admin, is_active, "
+                "INSERT INTO users (id, kind, email, is_platform_admin, is_active, "
                 "must_change_password, created_at, updated_at) VALUES (gen_random_uuid(), "
-                "'CUSTOMER', :e, :c, false, true, false, now(), now()) RETURNING id"
+                "'CUSTOMER', :e, false, true, false, now(), now()) RETURNING id"
             ),
-            {"e": f"cust-{uuid.uuid4().hex[:8]}@zenoeats.invalid", "c": f"user_d_{uuid.uuid4().hex}"},
+            {"e": f"cust-{uuid.uuid4().hex[:8]}@zenoeats.invalid"},
         ).scalar_one()
 
     class Shop:

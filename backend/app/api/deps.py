@@ -11,12 +11,11 @@ import time
 from dataclasses import dataclass
 from typing import Iterator
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core import errors
-from app.core.auth import AuthError, ClerkPrincipal, verify_clerk_token
 from app.core import customer_auth, guest_auth, platform_auth, staff_auth
 from app.core.tenant import admin_host, extract_slug, host_of
 from app.db.session import AppSessionLocal, system_session
@@ -24,7 +23,7 @@ from app.models import (
     Restaurant, RestaurantStatus, RestaurantUser, StaffRole, StaffStatus, User,
     UserKind,
 )
-from app.services import clerk_customers, guest_customers
+from app.services import guest_customers
 from sqlalchemy import text
 
 
@@ -34,42 +33,23 @@ class TenantContext:
     slug: str
 
 
-def get_principal(authorization: str | None = Header(default=None)) -> ClerkPrincipal:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise errors.ApiError(401, "UNAUTHENTICATED", "Sign in to continue.")
-    token = authorization.split(" ", 1)[1].strip()
-    try:
-        return verify_clerk_token(token)
-    except AuthError as exc:
-        raise errors.ApiError(401, "UNAUTHENTICATED", str(exc)) from exc
-
-
-def get_current_user(
-    request: Request,
-    authorization: str | None = Header(default=None),
-) -> User:
+def get_current_user(request: Request) -> User:
     """Whoever is checking out: a signed-in customer, or a guest.
 
-    A Clerk bearer token is tried first and wins outright. Someone who signed
-    in after starting as a guest is the account they signed in as, whatever
-    stale guest cookie the browser still holds -- the alternative, letting a
-    cookie nobody authenticated shadow a real session, is the wrong way round.
+    The account cookie is tried first and wins outright. Someone who signed in
+    after starting as a guest is the account they signed in as, whatever stale
+    guest cookie the browser still holds -- the alternative, letting a cookie
+    nobody authenticated shadow a real session, is the wrong way round.
 
     Either way the answer is a users row, so every caller -- ownership checks,
     idempotency, the rate limiter, receipts -- is written once and does not
     know which kind it got. What a guest cannot do is anything but ordering:
     the row is reachable only through the cookie that created it.
     """
-    if authorization and authorization.lower().startswith("bearer "):
-        principal = get_principal(authorization)
-        return clerk_customers.customer_for_clerk_user(
-            principal.clerk_user_id, token_email=principal.email
-        )
-
     # A customer account of our own (core/customer_auth.py). Above the guest
-    # cookie for the same reason the Clerk token is: a browser can hold both
-    # after someone starts as a guest and then signs in, and the one nobody
-    # authenticated must not shadow the one they did.
+    # cookie because a browser can hold both after someone starts as a guest
+    # and then signs in, and the one nobody authenticated must not shadow the
+    # one they did.
     account_cookie = request.cookies.get(customer_auth.SESSION_COOKIE)
     if account_cookie:
         principal = customer_auth.verify_session(account_cookie)
@@ -98,10 +78,7 @@ def get_current_user(
     raise errors.ApiError(401, "UNAUTHENTICATED", "Sign in or continue as a guest to order.")
 
 
-def optional_current_user(
-    request: Request,
-    authorization: str | None = Header(default=None),
-) -> User | None:
+def optional_current_user(request: Request) -> User | None:
     """get_current_user, but None instead of a 401.
 
     For the one endpoint that has a second way in -- the order-view token in a
@@ -109,7 +86,7 @@ def optional_current_user(
     before it has looked at that.
     """
     try:
-        return get_current_user(request, authorization)
+        return get_current_user(request)
     except errors.ApiError as exc:
         if exc.status_code == 401:
             return None
@@ -310,7 +287,7 @@ def current_restaurant(
 def current_staff_user(request: Request) -> User:
     """Authenticate restaurant staff from their session cookie.
 
-    Not Clerk: Clerk is the customer identity provider. Staff credentials are
+    Not a customer sign-in. Staff credentials are
     issued by the platform and live in users.password_hash.
 
     Deliberately does NOT enforce the password-change gate, because
@@ -424,10 +401,10 @@ def require_same_origin(request: Request) -> None:
 def require_platform_admin(request: Request) -> User:
     """Authorize a platform administrator from the environment-backed session.
 
-    Deliberately not Clerk. Clerk is the customer identity provider; platform
-    operators are a separate, tiny population declared in ADMIN_USERS. A Clerk
-    token cannot satisfy this dependency and an admin session cannot satisfy
-    the customer ones -- the two never overlap.
+    Deliberately not a customer sign-in; platform operators are a separate,
+    tiny population declared in ADMIN_USERS. A customer session cannot satisfy
+    this dependency and an admin session cannot satisfy the customer ones --
+    the two never overlap.
 
     A users row is resolved (and created on first sign-in) because
     platform_audit_logs.actor_user_id is a NOT NULL foreign key to users.id.

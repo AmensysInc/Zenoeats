@@ -6,16 +6,14 @@
     customer_password_reset
                        a signed, one-hour link to choose a new password
 
-A customer account is ZenoEats', not one restaurant's -- Clerk holds one
-sign-in for every storefront, and says nothing about which one a person
-signed up on. So the welcome is sent from the storefront itself: the first
+A customer account is ZenoEats', not one restaurant's -- one sign-in for
+every storefront, which says nothing about which one a person signed up on. So the welcome is sent from the storefront itself: the first
 time a brand-new account loads a restaurant's site, that restaurant welcomes
 it. Accounts older than a day are never welcomed, so nobody who already
 orders here is greeted as new the day this shipped.
 
-Closing is told once, by whichever path closes the account first: the
-customer's own "close account" on a storefront, or the user.deleted webhook
-when the account is deleted in Clerk. The address is read before closing
+Closing is told once, when the customer closes the account from a storefront.
+The address is read before closing
 erases it, and travels to the worker sealed with the field key -- the
 broker keeps what it holds on disk, and the address is exactly what closing
 promised to remove.
@@ -31,7 +29,7 @@ from app.core import crypto
 from app.db.base import utcnow
 from app.db.session import system_session
 from app.models import Restaurant, User, UserKind
-from app.services import clerk_customers, email, email_templates, notifications
+from app.services import customer_records, email, email_templates, notifications
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +43,7 @@ def is_new(user: User) -> bool:
         user.kind == UserKind.CUSTOMER.value
         and user.created_at is not None
         and utcnow() - user.created_at <= WELCOME_WITHIN
-        and not clerk_customers.has_placeholder_email(user)
+        and not customer_records.has_placeholder_email(user)
     )
 
 
@@ -75,7 +73,7 @@ def queue_welcome(slug: str, user_id: UUID) -> None:
 
 def queue_closed(to: str, first_name: str | None, restaurant_id: UUID | None) -> None:
     """Queue the account-closed email. `restaurant_id` is the storefront it
-    was closed from, or None when it was deleted in Clerk."""
+    was closed from."""
     from app.workers.tasks import send_account_email
 
     try:

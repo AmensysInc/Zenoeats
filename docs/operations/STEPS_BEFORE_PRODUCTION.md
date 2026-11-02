@@ -69,8 +69,8 @@ Two ways to get the third:
 | Setup | 2–3 hours | About 1 hour. The laptop's `.env` must name the real domain as `ROOT_DOMAIN`, with a wildcard route to the tunnel |
 
 Either way, **start in test mode.** Generate the server's `.env` with
-`make_prod_env.py --staging --domain <domain>`, which allows Stripe and
-Clerk test keys and nothing else. The result is a real public HTTPS website
+`make_prod_env.py --staging --domain <domain>`, which allows Stripe
+test keys and nothing else. The result is a real public HTTPS website
 on your domain that any phone can open, taking only Stripe test cards: the
 §10 rehearsal. Switch to live keys (`make_prod_env.py` without `--staging`,
 or `ALLOW_TEST_KEYS=false` with the live keys) once Stripe has approved the
@@ -107,9 +107,7 @@ account and the rest of this list is ticked.
 - [ ] **DNS records** `@`, `*` and `admin` → the VM's IP, proxied; SSL/TLS
       **Full (strict)**; a **Cloudflare Origin Certificate** for `<domain>`
       and `*.<domain>`. 30 minutes. → §4.0, §4.1
-- [ ] **Clerk production instance**: primary domain, Clerk's DNS records (DNS
-      only, grey cloud), live keys, webhook. 1 hour. → §3.1
-- [ ] **Google, Apple and Facebook sign-in** credentials in Clerk. Apple needs
+- [ ] **Google, Apple and Facebook sign-in** credentials on the API. Apple needs
       the $99/year developer programme; all three need the legal pages live
       on the root domain. Hours to days. → §3.2
 - [ ] **Stripe**: live keys, and the **Connect webhook** at
@@ -227,15 +225,13 @@ Stripe Dashboard).
       *Fixed:* `app/core/startup_checks.py`. With `ENV=production` the API
       refuses to start, listing every problem at once, if `SESSION_SECRET` is
       under 32 characters, `FIELD_ENCRYPTION_KEY` is not a valid key, any of
-      `CLERK_JWKS_URL` / `CLERK_ISSUER` / `CLERK_SECRET_KEY` or the Stripe
-      secrets are missing, `ADMIN_USERS` is empty, `ROOT_DOMAIN` is `.local`,
-      `AUTH_DEV_BYPASS` is on, or `DATABASE_URL_MIGRATE` is present.
+      the Stripe secrets are missing, `ADMIN_USERS` is empty, `ROOT_DOMAIN` is
+      `.local`, or `DATABASE_URL_MIGRATE` is present.
       Development only logs. Tests: `tests/test_startup_checks.py`.
 - [x] **[LAUNCH] Security headers.** *(code)* *Fixed:* HSTS (one year,
       subdomains) at the production edge. A Content-Security-Policy is written
       by the web container at start (`web/docker-entrypoint.d/40-zenoeats-config.sh`)
-      from Clerk's and Stripe's published requirements, with this environment's
-      Clerk host read from the publishable key. `CSP_EXTRA_IMG_SRC` adds image
+      from Stripe's and Google's published requirements. `CSP_EXTRA_IMG_SRC` adds image
       origins; `CSP_REPORT_ONLY=true` reports without blocking.
       **Still to do:** see §10 — run staging with `CSP_REPORT_ONLY=true` first
       and check the browser console before enforcing.
@@ -256,11 +252,7 @@ Stripe Dashboard).
 ### 2.2 Deployment shape
 
 - [x] **[BLOCKER] The web image could not be promoted between environments.** *(code)*
-      *Fixed:* the bundle carries no key. The web container writes `/config.js`
-      at start from `CLERK_PUBLISHABLE_KEY` (validated, so nothing injected can
-      become script), and the app reads it before `VITE_CLERK_PUBLISHABLE_KEY`,
-      which remains the development fallback. CI builds without a key and
-      checks `config.js` is in the bundle.
+      *Fixed:* the bundle carries no environment-specific value.
 - [x] **[BLOCKER] Migrations ran on every API start with owner credentials.** *(code)*
       *Fixed:* a one-off `migrate` compose service runs `alembic upgrade head`
       and exits; `api` and `worker` wait for it. Runtime containers no longer
@@ -285,7 +277,7 @@ Stripe Dashboard).
 
 - [x] **[LAUNCH] Receipt email must be real.** *(code)* *Fixed:* a
       `…@pending.local` placeholder is never sent to Stripe as `receipt_email`;
-      payment still goes through. `clerk_customers.receipt_address`.
+      payment still goes through. `customer_records.receipt_address`.
 - [x] **[BLOCKER] Platform fee mechanism.** *(code)* *Fixed:* `PLATFORM_FEE_BPS`
       and `PLATFORM_FEE_FIXED_MINOR` become a Stripe `application_fee_amount`
       on each charge, capped at the order total. Default 0.
@@ -329,21 +321,17 @@ Stripe Dashboard).
       back is not announced again. `app/services/order_emails.py`,
       `tests/test_order_emails.py`.
 
-### 2.4 Customer sign-in (Clerk)
+### 2.4 Customer sign-in
 
-- [x] **[LAUNCH] Apple and Facebook buttons.** *(code)* *Fixed:* the sign-in and
-      sign-up pages render a button for each provider enabled in Clerk
-      (Google, Apple, Facebook), in each brand's style. Enabling a provider in
-      the Clerk dashboard is all it takes.
-- [x] **[LAUNCH] "We still need your email" step.** *(code)* *Fixed:* after a
-      social sign-up Clerk cannot finish, the sign-up page collects exactly
-      what is missing (email, name, terms consent) and verifies an unverified
-      email by code.
-- [x] **[LAUNCH] Two-step verification.** *(code)* *Fixed:* sign-in handles
-      authenticator-app, text, email and backup codes, with a switch between
-      them, including after a social sign-in.
-      **Still to do:** click through each on staging; these were typechecked
-      and built, not browser-tested.
+- [x] **[LAUNCH] Google, Apple and Facebook.** *(code)* *Fixed:* each talks to the
+      provider directly (`core/social_auth.py`) and ends in the same session
+      cookie as a password sign-in. A button appears once its settings are
+      filled in. `tests/test_social_sign_in.py`.
+      **Still to do:** click through each with real credentials; the provider's
+      end of the flow is stubbed in the tests.
+- [x] **[LAUNCH] One account per person.** *(code)* *Fixed:* a provider sign-in
+      finds an existing account by verified address. Facebook, whose address is
+      not promised to be verified, can create an account but not open one.
 - [ ] **[SOON] Apple "Hide My Email".** Customers may sign in with
       `@privaterelay.appleid.com` addresses. Mail only reaches them if the
       sending domain is registered with Apple (see §3.3).
@@ -447,7 +435,7 @@ found no bug in the ordering path. What it did find:
 
 - [x] **[BLOCKER] Production would start on test keys.** *(code)* An API on
       `sk_test_` keys boots, takes orders and collects nothing. *Fixed:* with
-      `ENV=production` the startup check refuses Stripe or Clerk test keys
+      `ENV=production` the startup check refuses Stripe test keys
       unless `ALLOW_TEST_KEYS=true` (staging only). A test publishable key
       beside a live secret key is refused everywhere.
       `tests/test_startup_checks.py`.
@@ -509,52 +497,29 @@ that must be filled in before go-live.
 
 ## 3. Third-party accounts (new production accounts)
 
-### 3.1 Clerk (production instance)
+### 3.1 Customer accounts
 
-- [ ] **[BLOCKER]** Create a **production** instance in a new Clerk account (or
-      promote a new application to production).
-- [ ] **[BLOCKER]** Set the **primary domain** to the parent domain
-      (e.g. `zenoeats.com`), so one sign-in covers every restaurant subdomain.
-- [ ] **[BLOCKER]** Add the **DNS records** Clerk lists (typically CNAMEs for
-      `clerk.`, `accounts.`, `clkmail.` and the two DKIM records) and wait for
-      verification. Clerk's emails and its Frontend API depend on them.
-- [ ] **[BLOCKER]** Enable **Email address** + **Password**, with email
-      verification by **code** (the pages expect 6-digit codes, not links).
-- [ ] **[BLOCKER]** Copy keys into production config: `pk_live_…` →
-      `CLERK_PUBLISHABLE_KEY` on the web container (`VITE_CLERK_PUBLISHABLE_KEY`
-      in `.env` when using compose); `sk_live_…` → `CLERK_SECRET_KEY`; JWKS URL
-      → `CLERK_JWKS_URL`; Frontend API URL → `CLERK_ISSUER`.
-- [ ] **[LAUNCH]** **Webhook**: endpoint `https://<yourdomain>/api/v1/webhooks/clerk`,
-      events `user.created`, `user.updated`, `user.deleted`; signing secret →
-      `CLERK_WEBHOOK_SECRET`. Requires the Celery worker to be running.
-- [ ] **[LAUNCH]** Keep **bot protection** on (the sign-up page includes the
-      `clerk-captcha` element it needs).
-- [ ] **[SOON]** *Optional:* send Clerk's customer emails through SendGrid
-      (*code done*). Subscribe the webhook to `email.created`, then turn off
-      **Delivered by Clerk** for the verification and reset codes, one at a
-      time, testing each. Only once the webhook reaches production: after
-      that, it is the only way those codes arrive. README, "Email".
-- [ ] **[LAUNCH]** Brand Clerk's **email templates** (verification and reset
-      codes) with the Zenoeats name and sender.
-- [ ] **[LAUNCH]** Decide **session lifetime** and inactivity timeout in Clerk.
+No account to create. Email and password and guest ordering are the API's own,
+and need only `SESSION_SECRET` and a working email sender for reset links.
 
 ### 3.2 Google, Facebook and Apple sign-in (production credentials)
 
-Production Clerk instances need your own credentials for each provider. Every
-provider page in Clerk shows the **redirect URI** to paste into the provider.
+Each provider gets one redirect URI, on the root domain. README, "Social
+sign-in", has the steps in full.
 
 - [ ] **[LAUNCH] Google**: Google Cloud console → OAuth consent screen
       (publish it, add privacy policy and terms URLs) → Credentials → OAuth
-      client *Web application* → Clerk's redirect URI → client ID and secret into
-      Clerk.
+      client *Web application* → redirect URI
+      `https://<domain>/api/v1/customer/google/callback` → `GOOGLE_OAUTH_*`.
 - [ ] **[LAUNCH] Facebook**: developers.facebook.com → create app (Facebook
-      Login) → *Valid OAuth Redirect URIs* = Clerk's redirect URI → add
-      **Privacy Policy URL** and **Data deletion instructions URL** → App ID and
-      Secret into Clerk → switch the app to **Live**.
+      Login) → *Valid OAuth Redirect URIs* =
+      `https://<domain>/api/v1/customer/facebook/callback` → add **Privacy
+      Policy URL** and **Data deletion instructions URL** → `FACEBOOK_OAUTH_*` →
+      switch the app to **Live**.
 - [ ] **[LAUNCH] Apple** (Apple Developer Program, $99/year): App ID with
-      *Sign in with Apple* → **Services ID** (web domain + return URL = Clerk's
-      redirect URI) → **Key** with Sign in with Apple, download the `.p8` once →
-      enter Services ID, Team ID, Key ID and the key contents in Clerk.
+      *Sign in with Apple* → **Services ID** (web domain + return URL
+      `https://<domain>/api/v1/customer/apple/callback`) → **Key** with Sign in
+      with Apple, download the `.p8` once → `APPLE_OAUTH_*`.
 
 ### 3.3 Apple private email relay
 
@@ -647,7 +612,7 @@ provider page in Clerk shows the **redirect URI** to paste into the provider.
       | A | `*` (every restaurant subdomain) | VM IP | Proxied |
       | A | `admin` | VM IP | Proxied |
 
-      Clerk's records (§3.1) and Resend's (§3.6) are added later and must be
+      Resend's records (§3.6) are added later and must be
       **DNS only (grey)**, never proxied. The `admin` record is required: the
       platform portal and its API answer on `admin.<domain>` and nowhere else
       (see 2.6). A restaurant is only ever one level deep (`spicehouse.<domain>`),
@@ -663,10 +628,6 @@ provider page in Clerk shows the **redirect URI** to paste into the provider.
 
 - [x] **[BLOCKER] Domain and DNS shape** is described in 4.0: the root domain,
       `admin.<domain>`, and a wildcard `*.<domain>`.
-- [x] **[BLOCKER] Reserve Clerk's subdomains.** *(code)* *Fixed:* `clerk`,
-      `accounts` and `clkmail` added to `RESERVED_SLUGS` in
-      `app/core/tenant.py`, so no restaurant can take the DNS names Clerk
-      production needs. Add any other hostname you plan to use there too.
 - [ ] **[BLOCKER] TLS: a Cloudflare Origin Certificate.** Cloudflare →
       SSL/TLS → Origin Server → **Create Certificate**. Choose RSA, hostnames
       `<domain>` and `*.<domain>`, validity 15 years. Save the certificate as
@@ -868,7 +829,7 @@ any of these is wrong, and 200 `{"status":"ok"}` otherwise:
 | Name | Means |
 |---|---|
 | `worker_heartbeat` | beat or the worker has stopped (no heartbeat task for 5 minutes) |
-| `webhooks_stuck` | a Stripe or Clerk delivery unprocessed for 10 minutes |
+| `webhooks_stuck` | a Stripe delivery unprocessed for 10 minutes |
 | `webhooks_failed` | a delivery failed in the last 24 hours |
 | `stale_checkouts` | unpaid orders 15 minutes past their expiry |
 | `redis_runtime` / `redis_broker` | a Redis unreachable (the rate limiter fails open) |
@@ -885,7 +846,7 @@ root domain and every subdomain.
       `https://<domain>/health/operations`. Alert by email and phone push.
 - [x] **[LAUNCH]** Alert on **stale `PENDING_PAYMENT` orders**. *(code)*
       `stale_checkouts`, above.
-- [x] **[LAUNCH]** Alert on `stripe_events` and `clerk_events` rows with status
+- [x] **[LAUNCH]** Alert on `stripe_events` rows with status
       `FAILED`. *(code)* `webhooks_failed`, and `webhooks_stuck` for ones never
       processed.
 - [x] **[LAUNCH]** Alert on Redis being unreachable and on disk space. *(code)*
@@ -905,15 +866,14 @@ root domain and every subdomain.
 Every setting the backend reads, with what it must be in production.
 **`python3 scripts/make_prod_env.py --domain <domain> --release v1.3.1`
 writes the whole file** (§11) from
-[`.env.production.example`](../../.env.production.example), which explains
-each setting: it generates every secret, sets every value below that does not
+[`.env.production.example`](../../.env.production.example): it generates every secret, sets every value below that does not
 come from an account, and leaves those that do empty. `--check .env` lists
 what is still missing.
 
 | Variable | Production value | Notes |
 |---|---|---|
 | `ENV` | `production` | **[BLOCKER]** Secure cookies, no `/docs`, no error details, and the startup safety checks (§2.1). |
-| `ROOT_DOMAIN` | e.g. `zenoeats.com` | Tenant resolution, CORS, the Clerk token origin check, the nginx template. |
+| `ROOT_DOMAIN` | e.g. `zenoeats.com` | Tenant resolution, CORS, the customer cookie's domain, the nginx template. |
 | `ALLOW_TEST_KEYS` | `false` | `true` on staging only. Production refuses test keys without it (§2.7). |
 | `API_IMAGE`, `WEB_IMAGE` | `ghcr.io/haswanth13901/zenoeats/{api,web}:v1.3.1` | The release to run. Never built on the server. |
 | `POSTGRES_PASSWORD` | generated | The Postgres superuser. |
@@ -923,10 +883,8 @@ what is still missing.
 | `TRUSTED_PROXY_CIDRS`, `FORWARDED_ALLOW_IPS` | *not set* | Set by `docker-compose.prod.yml` to nginx's fixed address (`EDGE_IP`). |
 | `EDGE_SUBNET`, `EDGE_IP` | defaults `172.31.250.0/24`, `172.31.250.10` | Change together, only on a clash. |
 | `API_WORKERS` / `WEB_CONCURRENCY` | 2+ | Size with database pools. |
-| `CLERK_JWKS_URL`, `CLERK_ISSUER`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` | production Clerk instance | The first three are required at startup. |
-| `CLERK_PUBLISHABLE_KEY` (web container) | `pk_live_…` | Read at container start. Compose maps it from `VITE_CLERK_PUBLISHABLE_KEY`. |
+| `GOOGLE_OAUTH_*`, `APPLE_OAUTH_*`, `FACEBOOK_OAUTH_*` | from each provider | Optional; each button appears when its settings are filled in. |
 | `CSP_EXTRA_IMG_SRC`, `CSP_REPORT_ONLY` | bucket origin; `false` | Web container. `true` only for a first staging run. |
-| `AUTH_DEV_BYPASS` | `false` | Startup refuses `true`. |
 | `ADMIN_USERS` | `docker run --rm -it <API_IMAGE> python scripts/hash_password.py you@example.com` | Required at startup. One named entry per operator, `;`-separated. |
 | `SESSION_SECRET` | generated | Required at startup, 32+ characters. |
 | `ADMIN_SESSION_TTL_MINUTES`, `STAFF_SESSION_TTL_MINUTES` | 480 / 720, or your policy | |
@@ -995,12 +953,12 @@ until the review below happens.**
       restaurant subdomain. §3.2 needs these before any provider is approved.
 - [ ] **[BLOCKER]** **A process behind data deletion.** Customers close their
       own account from Manage profile → Personal details, which removes the
-      Clerk sign-in, their details and favourites and keeps paid orders (PR
+      sign-in, their details and favourites and keeps paid orders (PR
       #19). The page describes that first (§2.7). The email route, for
       anyone who cannot sign in, is manual: it needs the monitored mailbox and
-      the response windows the page commits to. Handle it by deleting the
-      user in the Clerk dashboard once the request is confirmed; the
-      `user.deleted` webhook runs the same removal.
+      the response windows the page commits to. Handle it by running
+      `customer_records.close_account` for that user once the request is
+      confirmed.
 - [ ] **[LAUNCH]** **Restaurant agreement**: fees, merchant-of-record duties,
       disputes, tax responsibility, data processing. It must agree with
       `/legal/refunds` about who bears a refund and a chargeback, and must
@@ -1029,8 +987,8 @@ until the review below happens.**
 ## 10. Go-live rehearsal on staging
 
 Run the whole flow on a staging environment that uses the **production shape**
-(same nginx, TLS, containers and migration process) with test-mode Stripe and
-a separate Clerk instance. Set it up exactly as §11, but generate the file
+(same nginx, TLS, containers and migration process) with test-mode Stripe.
+Set it up exactly as §11, but generate the file
 with `make_prod_env.py --staging --domain <staging domain>`, which allows
 test keys and nothing else.
 
@@ -1047,12 +1005,11 @@ Already proven on 2026-09-25, on a production-shaped stack on the laptop
 - backup and restore drill passed
 
 Staging repeats all of this where the laptop cannot: the real domain,
-Cloudflare, Clerk and webhooks from Stripe.
+Cloudflare, social sign-in and webhooks from Stripe.
 
-- [ ] Customer **sign-up** with email code, **sign-in**, **forgot password**.
+- [ ] Customer **sign-up**, **sign-in**, **forgot password**, and **sign out**.
 - [ ] **Google**, **Apple** and **Facebook** sign-in, including a first-time
-      account, and a Facebook account without an email (the "continue" step).
-- [ ] Two-step verification: authenticator app, then a backup code.
+      account, a Facebook account without an email, and Apple's Hide My Email.
 - [ ] With `CSP_REPORT_ONLY=true`, repeat sign-in, a card payment with
       3-D Secure, and Apple/Google Pay, and confirm the browser console shows
       no CSP violations. Then set it back to `false`.
@@ -1092,8 +1049,8 @@ Cloudflare, Clerk and webhooks from Stripe.
       and `restore_drill.sh` passes on it (§5).
 - [ ] Light load test on menu, quote and order creation.
 
-When every **[BLOCKER]** and **[LAUNCH]** box is ticked, switch Stripe and
-Clerk to live keys, deploy the tagged release, and place one real low-value
+When every **[BLOCKER]** and **[LAUNCH]** box is ticked, switch Stripe to
+live keys, deploy the tagged release, and place one real low-value
 order end to end before announcing.
 
 ---
@@ -1127,7 +1084,7 @@ that. Everything below runs on it, as a user with `sudo`.
    python3 scripts/make_prod_env.py --domain <domain> --release v1.3.1
    ```
 
-   Fill in each value marked `# FILL IN:` from §3 (Clerk, Stripe, SendGrid,
+   Fill in each value marked `# FILL IN:` from §3 (Stripe, SendGrid,
    Sentry). For `ADMIN_USERS`:
 
    ```bash

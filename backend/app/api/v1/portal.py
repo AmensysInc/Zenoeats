@@ -13,7 +13,6 @@ from app.api.deps import (
     optional_current_user, resolve_tenant,
 )
 from app.config import settings
-from app.core import google_oauth
 from app.core.tenant import platform_url_for, storefront_url_for
 from app.core.ratelimit import per_ip
 from app.db.session import system_session
@@ -61,7 +60,6 @@ def get_portal(
         phone=restaurant.phone,
         tagline=restaurant.tagline,
         platform_url=platform_url_for(request),
-        google_sign_in=google_oauth.configured(),
         currency=restaurant.currency,
         is_orderable=restaurant.is_orderable,
         accepting_orders=restaurant.accepting_orders,

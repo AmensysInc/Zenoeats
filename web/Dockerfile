@@ -13,8 +13,7 @@ RUN npm ci
 COPY . .
 
 # No build arguments, on purpose. Nothing environment-specific is baked into
-# the bundle: the Clerk publishable key is read at container start (see the
-# runtime stage), so the image CI builds is the image every environment runs.
+# the bundle, so the image CI builds is the image every environment runs.
 
 # `npm run build` type-checks first. A build that compiles but fails tsc is a
 # build that ships the wrong thing, so the failure belongs here.
@@ -25,18 +24,17 @@ FROM nginx:1.30-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed430715
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-# Runs before nginx starts and writes /config.js from CLERK_PUBLISHABLE_KEY.
+# Runs before nginx starts and writes the Content-Security-Policy.
 COPY docker-entrypoint.d/40-zenoeats-config.sh /docker-entrypoint.d/40-zenoeats-config.sh
 RUN chmod +x /docker-entrypoint.d/40-zenoeats-config.sh
 
 # Run as nginx, not root. A foothold in this container -- a bug in nginx, a
-# crafted request -- then owns nothing but the two files the entrypoint
-# rewrites at start (config.js and the CSP), rather than the whole image.
+# crafted request -- then owns nothing but the file the entrypoint rewrites
+# at start (the CSP), rather than the whole image.
 # The port is 3000, so no privilege is needed to bind it; the pid file moves
 # to /tmp because /var/run is root's.
 RUN mkdir -p /etc/nginx/zenoeats \
- && touch /usr/share/nginx/html/config.js \
- && chown nginx:nginx /usr/share/nginx/html/config.js /etc/nginx/zenoeats \
+ && chown nginx:nginx /etc/nginx/zenoeats \
  && chown -R nginx:nginx /var/cache/nginx \
  && sed -i -e 's#^pid .*#pid /tmp/nginx.pid;#' -e '/^user /d' /etc/nginx/nginx.conf
 USER nginx

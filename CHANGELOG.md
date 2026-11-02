@@ -7,6 +7,43 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Clerk is gone. Customers sign in with Google, Apple or Facebook directly, with
+an email and password we hold, or continue as a guest.
+
+**Upgrading.** Migration `0057` adds `apple_subject` and `facebook_subject` and
+drops `users.clerk_user_id` and `clerk_events`; back up first. The `CLERK_*`,
+`VITE_CLERK_PUBLISHABLE_KEY` and `AUTH_DEV_BYPASS` settings are no longer read.
+Fill in `GOOGLE_OAUTH_*`, `APPLE_OAUTH_*` and `FACEBOOK_OAUTH_*` to offer each
+button. Customers who signed up through Clerk sign back in with Google or Apple,
+which finds their account by verified address, or ask for a password by email.
+
+### Changed
+- Google, Apple and Facebook sign-in talk to the provider directly, and each
+  ends in the same session cookie as a password sign-in.
+- One account per person: signing in with a provider finds an existing account
+  by verified address instead of failing. Facebook, which does not promise the
+  address is verified, can create an account but cannot open an existing one.
+- The first provider sign-in on a password account clears the password and ends
+  its sessions, because registering verifies nothing and the password may not be
+  the owner's.
+- "Forgot password" now works for an account that has no password yet.
+- The terms box ticked on the sign-up page is recorded there, so checkout does
+  not ask again.
+
+### Fixed
+- Signed-in customers showing as guests, when a stale guest cookie answered
+  because the storefront could not see the Clerk session.
+- Signing out leaving the customer as an old guest, or signing them straight
+  back in on the next visit to checkout.
+- A customer with a password account who tried Google could not check out at
+  all until they cleared their browser data.
+
+- CI runs only what a change touches, instead of the whole pipeline every time.
+
+### Removed
+- Clerk: the SDK, its webhook, `clerk_events`, two-step verification through it,
+  `/account/sso-callback`, `/config.js`, and the bearer-token path into the API.
+
 ## [1.3.1] - 2026-09-29
 
 The release to deploy. The same application as 1.3.0, with a customer no

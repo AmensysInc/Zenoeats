@@ -232,10 +232,7 @@ services:
     profiles: ["app"]
     build:
       context: ./web
-    # Read at container start, not at build: the entrypoint writes it into
-    # /config.js, so the same image runs against any Clerk instance.
     environment:
-      CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
       # Content-Security-Policy tuning; see web/docker-entrypoint.d.
       CSP_EXTRA_IMG_SRC: ${CSP_EXTRA_IMG_SRC:-}
       CSP_REPORT_ONLY: ${CSP_REPORT_ONLY:-false}

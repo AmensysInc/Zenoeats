@@ -36,7 +36,7 @@ import { endSession, signInHref } from "../session";
 export function AccountPanel({ leading }: { leading?: ReactNode }) {
   // 401 is the ordinary answer here -- most people reading a menu are nobody
   // yet -- so a failed query is a state, not an error worth showing.
-  const { data: session, isLoading } = useCustomerSessionQuery({ soft: true });
+  const { data: session, isLoading } = useCustomerSessionQuery();
   const [endGuest] = useEndGuestSessionMutation();
   const [logout] = useCustomerLogoutMutation();
   const [busy, setBusy] = useState(false);
