@@ -31,7 +31,8 @@ import {
 import type { PaymentHandoff } from "./PaymentPage";
 import type { Amounts, AppliedCoupon, Contact, FulfillmentType, SpendableReward } from "@/types";
 import { readCheckoutDraft, saveCheckoutDraft } from "@/features/storefront/checkoutDraft";
-import { loadGooglePlaces, type PlacesAutocomplete } from "@/services/googleMaps";
+import { loadGooglePlaces } from "@/services/googleMaps";
+import { attachAddressSuggestions } from "@/features/storefront/addressSuggestions";
 import { BackLink } from "@/components/common/BackLink";
 import { READING_COLUMN, usePageColumn } from "@/components/layout/pageColumn";
 
@@ -222,17 +223,11 @@ export function CheckoutPage() {
     const key = portal.data?.maps_browser_key;
     if (!delivering || !key || !addressInput.current) return;
     let alive = true;
-    let autocomplete: PlacesAutocomplete | null = null;
-    let listener: { remove(): void } | null = null;
+    let detach: (() => void) | null = null;
     loadGooglePlaces(key)
       .then((places) => {
         if (!alive || !addressInput.current) return;
-        autocomplete = new places.Autocomplete(addressInput.current, {
-          fields: ["formatted_address"],
-          types: ["address"],
-        });
-        listener = autocomplete.addListener("place_changed", () => {
-          const selected = autocomplete?.getPlace().formatted_address?.trim();
+        detach = attachAddressSuggestions(addressInput.current, places, (selected) => {
           if (!selected) return;
           setAddressProblem(null);
           setProblemCode(null);
@@ -242,7 +237,7 @@ export function CheckoutPage() {
       .catch(() => undefined);
     return () => {
       alive = false;
-      listener?.remove();
+      detach?.();
     };
   }, [delivering, portal.data?.maps_browser_key]);
 
