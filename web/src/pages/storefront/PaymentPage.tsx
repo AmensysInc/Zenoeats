@@ -258,7 +258,10 @@ export function PaymentPage() {
                 onPaid={() => {
                   dispatch(cartCleared());
                   clearCheckoutDrafts();
-                  navigate(`/orders/${orderId}`, { replace: true });
+                  // So the order page does not read an earlier failed attempt,
+                  // still on record until this one's webhook lands, as a
+                  // failure of the payment that has just gone through.
+                  navigate(`/orders/${orderId}`, { replace: true, state: { paid: true } });
                 }}
               />
             </Elements>
