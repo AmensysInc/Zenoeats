@@ -24,7 +24,7 @@ const TABS = [
   { id: "items", label: "Items" },
   { id: "periods", label: "Meal periods" },
   { id: "combos", label: "Combos" },
-  { id: "groups", label: "Modifier library" },
+  { id: "groups", label: "Categories" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];

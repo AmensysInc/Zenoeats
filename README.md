@@ -166,7 +166,7 @@ system read surface.
   with a type and the meal periods that serve it, plus the sold-out toggle.
   *Meal periods* adds a period and chooses what it serves, pulling from that
   item list. Item types are managed above the item list, on the Items tab. *Combos* bundles a period's items into meal deals with a
-  discount. *Modifier library* creates reusable groups, each shown on any
+  discount. *Categories* creates reusable modifier groups, each shown on any
   number of item types. Options are entered a row at a time, name beside
   price change; a blank price means no change and a negative one is allowed,
   like `-0.50` for no cheese.

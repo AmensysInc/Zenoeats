@@ -348,7 +348,7 @@ for (const [id,route,label] of [
 }
 await check("B7-all-builder-tabs",{},async({page})=>{
   await page.goto(origin+"/manage/menu"); await textIncludes(page,"Your menu");
-  for(const [id,label] of [["B7a","Preview"],["B7b","Items"],["B7c","Meal periods"],["B7d","Combos"],["B7e","Modifier library"]]) {
+  for(const [id,label] of [["B7a","Preview"],["B7b","Items"],["B7c","Meal periods"],["B7d","Combos"],["B7e","Categories"]]) {
     await page.getByRole("navigation",{name:"Menu builder"}).getByRole("button",{name:label,exact:true}).click();
     await capture(page,id+"-app-390");
   }
