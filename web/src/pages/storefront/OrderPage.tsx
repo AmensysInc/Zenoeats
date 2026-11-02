@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { useAppDispatch } from "@/app/hooks";
+import { cartCleared } from "@/features/cart/cartSlice";
+import { useOpenCart } from "@/features/cart/useOpenCart";
+import { clearCheckoutDrafts } from "@/features/storefront/checkoutDraft";
+import { takePaymentReturn } from "@/features/storefront/paymentReturn";
 import { StatePage } from "@/components/common/Feedback";
 import { BackLink } from "@/components/common/BackLink";
 import { Cloche } from "@/components/common/icons";
@@ -74,6 +79,25 @@ export function OrderPage() {
   // anyone to sign in: with a token the link is the credential, and a PIN it
   // opens must not be one tap from a group chat.
   const [token] = useState(takeOrderToken);
+  // What Stripe said, when a payment that left our page sends the customer
+  // back here (features/storefront/paymentReturn.ts). Read once, like the token.
+  const [returned] = useState(takePaymentReturn);
+  // The payment page says so when it hands over a payment it just confirmed.
+  const handedOver = (useLocation().state as { paid?: boolean } | null)?.paid === true;
+  const justPaid = returned === "succeeded" || returned === "processing" || handedOver;
+  const dispatch = useAppDispatch();
+  // Bound first, so clearing below empties the stored cart and not just the
+  // copy in memory (see useOpenCart).
+  useOpenCart();
+  const slug = usePortalQuery().data?.slug; // cached; the same query as `portal` below
+  useEffect(() => {
+    // The payment page empties the cart when a payment finishes there. One
+    // that finished on the bank's page, or Cash App's, comes back here instead.
+    if (slug && (returned === "succeeded" || returned === "processing")) {
+      dispatch(cartCleared());
+      clearCheckoutDrafts();
+    }
+  }, [slug, returned, dispatch]);
   // Poll fast while payment is unconfirmed, slower once the kitchen has it, and
   // stop entirely once nothing further can change. Held in state rather than
   // derived inline, because deriving it from the query's own result would make
@@ -134,7 +158,18 @@ export function OrderPage() {
   const paidAfterExpiry =
     order.status === "EXPIRED" &&
     ["PAID", "REFUND_PENDING", "PARTIALLY_REFUNDED", "REFUNDED"].includes(order.payment_status);
-  const copy = paidAfterExpiry
+  // Refused by the bank, or the customer gave up on its page. The order is
+  // still open until it expires, so the way forward is to pay again -- not to
+  // wait for a confirmation that is never coming. Not shown for a payment that
+  // was just confirmed: an earlier failed attempt stays FAILED until the
+  // webhook for the new one lands.
+  const paymentFailed =
+    order.status === "PENDING_PAYMENT" &&
+    !justPaid &&
+    (returned === "failed" || order.payment_status === "FAILED");
+  const copy = paymentFailed
+    ? { title: "Payment didn't go through", detail: "Nothing was charged. Try again, or use another card." }
+    : paidAfterExpiry
     ? {
         title: "Expired",
         detail:
@@ -152,7 +187,7 @@ export function OrderPage() {
         "payment method within 10 to 14 business days."
       : null;
   const awaitingPayment =
-    order.status === "PENDING_PAYMENT" && order.payment_status !== "PAID";
+    order.status === "PENDING_PAYMENT" && order.payment_status !== "PAID" && !paymentFailed;
   const steps = delivering ? DELIVERY_STEPS : PICKUP_STEPS;
   const step = steps.indexOf(order.status);
   const ready = order.status === "READY_FOR_PICKUP" || order.status === "READY_FOR_DELIVERY";
@@ -224,6 +259,15 @@ export function OrderPage() {
                 pins={pins}
                 style={style}
               />
+            </div>
+          )}
+
+          {paymentFailed && (
+            <div className="note-error mt-6" role="alert">
+              <p>Your order is kept for a short while, so you can still pay for it.</p>
+              <Link to={`/checkout/pay/${orderId}`} className="btn-primary mt-4 inline-flex">
+                Try paying again
+              </Link>
             </div>
           )}
 
