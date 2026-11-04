@@ -6,6 +6,7 @@ import { ManageShell } from "@/features/restaurant/components/ManageShell";
 import { OwnAccount } from "@/features/restaurant/components/OwnAccount";
 import { DeliveryArea } from "@/features/restaurant/components/DeliveryArea";
 import { CouponsArea } from "@/features/restaurant/components/CouponsArea";
+import { AssistantArea } from "@/features/restaurant/components/AssistantArea";
 import { BrandSettings } from "@/features/restaurant/components/BrandSettings";
 import { useUploadsInFlight } from "@/features/restaurant/components/ImagePicker";
 import {
@@ -25,6 +26,7 @@ const SECTIONS = [
   ["settings-delivery", "Delivery"],
   ["settings-tax", "Tax"],
   ["settings-coupons", "Coupons"],
+  ["settings-assistant", "Assistant"],
   ["settings-platform", "Set by ZenoEats"],
 ] as const;
 
@@ -374,6 +376,10 @@ export function SettingsPage() {
           {/* The restaurant's own promotions, beside the other things it
               sets once and leaves running. */}
           <CouponsArea />
+
+          {/* Say what you want doing. Nothing happens until the
+              button is pressed. */}
+          <AssistantArea />
 
           <SettingsCard
             id="settings-platform"

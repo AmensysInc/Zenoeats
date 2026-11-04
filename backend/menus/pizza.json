@@ -1,0 +1,414 @@
+{
+  "_note": [
+    "Pizza, added to Jr's existing menu rather than standing up a restaurant",
+    "of its own. Modelled on the Hunt Brothers menu in github.com/Tbhanu19/pizza,",
+    "which keeps four tables for this -- toppings, pizza_toppings, products,",
+    "categories. None is needed here: a topping is a modifier option, a topping",
+    "type is a modifier group, a category is an item type, and a specialty",
+    "pizza's default toppings are comes_with.",
+    "",
+    "THE SIZE GROUP IS CALLED 'Pizza size' ON PURPOSE. The importer matches",
+    "groups by name and rebuilds which headings offer them, so a group called",
+    "'Size' would take over the one the fries and drinks already use and offer",
+    "a 14-inch milkshake.",
+    "",
+    "THE MEAL LISTS EVERY ITEM, pizzas and burgers alike. The importer deletes",
+    "a meal's items and rebuilds them from the file, so anything left out here",
+    "comes off the menu.",
+    "",
+    "PRICES ARE INVENTED. That repo seeds every product at base_price 0.0 with",
+    "no topping costs, so there were none to copy."
+  ],
+  "restaurant": {
+    "slug": "spicehouse",
+    "name": "Spice House"
+  },
+  "item_types": [
+    {
+      "name": "Pizzas",
+      "parent": null,
+      "sort_order": 4
+    }
+  ],
+  "modifier_groups": [
+    {
+      "name": "Pizza size",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "12\" Medium",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "14\" Large",
+          "price_delta_minor": 300,
+          "calories_delta": 480,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Crust",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "Original Crust",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "Thin Crust",
+          "price_delta_minor": 0,
+          "calories_delta": -120,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Sauce",
+      "selection_type": "SINGLE",
+      "is_required": true,
+      "min_select": 1,
+      "max_select": 1,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "Tomato Sauce",
+          "price_delta_minor": 0,
+          "calories_delta": 0,
+          "sort_order": 0
+        },
+        {
+          "name": "No Sauce",
+          "price_delta_minor": 0,
+          "calories_delta": -40,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Cheese",
+      "selection_type": "MULTI",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 2,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "Mozzarella",
+          "price_delta_minor": 150,
+          "calories_delta": 210,
+          "sort_order": 0
+        },
+        {
+          "name": "Cheddar",
+          "price_delta_minor": 150,
+          "calories_delta": 220,
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "name": "Meats",
+      "selection_type": "MULTI",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 6,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "Pepperoni",
+          "price_delta_minor": 150,
+          "calories_delta": 140,
+          "sort_order": 0
+        },
+        {
+          "name": "Italian Sausage",
+          "price_delta_minor": 150,
+          "calories_delta": 170,
+          "sort_order": 1
+        },
+        {
+          "name": "Beef",
+          "price_delta_minor": 150,
+          "calories_delta": 160,
+          "sort_order": 2
+        },
+        {
+          "name": "Bacon",
+          "price_delta_minor": 150,
+          "calories_delta": 130,
+          "sort_order": 3
+        },
+        {
+          "name": "Breakfast Sausage",
+          "price_delta_minor": 150,
+          "calories_delta": 180,
+          "sort_order": 4
+        },
+        {
+          "name": "Scrambled Egg",
+          "price_delta_minor": 150,
+          "calories_delta": 90,
+          "sort_order": 5
+        }
+      ]
+    },
+    {
+      "name": "Veggies",
+      "selection_type": "MULTI",
+      "is_required": false,
+      "min_select": 0,
+      "max_select": 6,
+      "offered_on": [
+        "Pizzas"
+      ],
+      "options": [
+        {
+          "name": "Bell Peppers",
+          "price_delta_minor": 100,
+          "calories_delta": 10,
+          "sort_order": 0
+        },
+        {
+          "name": "Mushrooms",
+          "price_delta_minor": 100,
+          "calories_delta": 10,
+          "sort_order": 1
+        },
+        {
+          "name": "Onions",
+          "price_delta_minor": 100,
+          "calories_delta": 15,
+          "sort_order": 2
+        },
+        {
+          "name": "Black Olives",
+          "price_delta_minor": 100,
+          "calories_delta": 25,
+          "sort_order": 3
+        },
+        {
+          "name": "Banana Peppers",
+          "price_delta_minor": 100,
+          "calories_delta": 5,
+          "sort_order": 4
+        },
+        {
+          "name": "Jalapeño Peppers",
+          "price_delta_minor": 100,
+          "calories_delta": 5,
+          "sort_order": 5
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "name": "Build Your Own Pizza",
+      "item_type": "Pizzas",
+      "description": "Choose your crust, sauce, cheese and toppings to make your perfect pizza.",
+      "price_minor": 1099,
+      "calories": 820,
+      "currency": "USD",
+      "sort_order": 0,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Meats",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "Tomato Sauce"
+      ]
+    },
+    {
+      "name": "Lotsa Meat Pizza",
+      "item_type": "Pizzas",
+      "description": "A pizza that lives up to its name, topped with Italian sausage, savory beef, tender bacon and zesty pepperoni.",
+      "price_minor": 1599,
+      "calories": 1480,
+      "currency": "USD",
+      "sort_order": 1,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Meats",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "Tomato Sauce",
+        "Mozzarella",
+        "Italian Sausage",
+        "Beef",
+        "Bacon",
+        "Pepperoni"
+      ]
+    },
+    {
+      "name": "Loaded Pizza",
+      "item_type": "Pizzas",
+      "description": "Italian sausage, pepperoni, chunks of bacon, savory beef, bell peppers, mushrooms, onions, black olives, banana peppers and jalapenos for added kick.",
+      "price_minor": 1699,
+      "calories": 1620,
+      "currency": "USD",
+      "sort_order": 2,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Meats",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "Tomato Sauce",
+        "Mozzarella",
+        "Italian Sausage",
+        "Pepperoni",
+        "Bacon",
+        "Beef",
+        "Bell Peppers",
+        "Mushrooms",
+        "Onions",
+        "Black Olives",
+        "Banana Peppers",
+        "Jalapeño Peppers"
+      ]
+    },
+    {
+      "name": "Breakfast Pizza",
+      "item_type": "Pizzas",
+      "description": "Fluffy scrambled eggs, chopped bacon and breakfast sausage with mozzarella and cheddar, on buttered original crust. An excellent breakfast any time of day.",
+      "price_minor": 1499,
+      "calories": 1240,
+      "currency": "USD",
+      "sort_order": 3,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Meats",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "No Sauce",
+        "Mozzarella",
+        "Cheddar",
+        "Scrambled Egg",
+        "Bacon",
+        "Breakfast Sausage"
+      ]
+    },
+    {
+      "name": "Cheese Pizza",
+      "item_type": "Pizzas",
+      "description": "Meat-free. Choose your crust, add more cheese and extra vegetable toppings.",
+      "price_minor": 1199,
+      "calories": 980,
+      "currency": "USD",
+      "sort_order": 4,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "Tomato Sauce",
+        "Mozzarella"
+      ]
+    },
+    {
+      "name": "Veggie Pizza",
+      "item_type": "Pizzas",
+      "description": "Meat-free. Bell peppers, mushrooms, onions and black olives on tomato sauce and mozzarella.",
+      "price_minor": 1399,
+      "calories": 1050,
+      "currency": "USD",
+      "sort_order": 5,
+      "modifier_groups": [
+        "Pizza size",
+        "Crust",
+        "Sauce",
+        "Cheese",
+        "Veggies"
+      ],
+      "comes_with": [
+        "12\" Medium",
+        "Original Crust",
+        "Tomato Sauce",
+        "Mozzarella",
+        "Bell Peppers",
+        "Mushrooms",
+        "Onions",
+        "Black Olives"
+      ]
+    }
+  ],
+  "meals": [
+    {
+      "name": "All Day",
+      "sort_order": 1,
+      "items": [
+        "Jr's Double-Double",
+        "Jr's Cheeseburger",
+        "Jr's Hamburger",
+        "Jr's French Fries",
+        "Jr's Shake",
+        "Jr's Soft Drink",
+        "Jr's Coffee",
+        "Jr's Milk",
+        "Jr's Hot Cocoa",
+        "Jr's Grilled Cheese",
+        "Jr's Special Fries",
+        "Jr's Cheese Fries",
+        "Jr's Root Beer Float",
+        "Build Your Own Pizza",
+        "Lotsa Meat Pizza",
+        "Loaded Pizza",
+        "Breakfast Pizza",
+        "Cheese Pizza",
+        "Veggie Pizza"
+      ]
+    }
+  ],
+  "combos": []
+}

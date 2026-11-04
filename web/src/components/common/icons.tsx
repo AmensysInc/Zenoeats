@@ -36,6 +36,8 @@ const PATHS = {
   report: "M4 20h16M7 16v-4m5 4V5m5 11V8",
   search: "M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14m5-2 6 6",
   signout: "M9 3H3v18h6m6-14 5 5-5 5m5-5H8",
+  // A capsule on a stand: a microphone, for speaking to the assistant.
+  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3",
   stock: "m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7M12 11v10",
   store: "M3 9h18L19 3H5L3 9Zm1 0v12h16V9M9 21v-8h6v8",
   // A luggage-style tag with its hole: a coupon, in one stroke.

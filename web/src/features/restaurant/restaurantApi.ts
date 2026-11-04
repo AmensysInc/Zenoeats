@@ -504,8 +504,44 @@ export type RestaurantReport = {
  * endpoints carry no tenant id, and a session presented on another
  * restaurant's subdomain simply finds no membership.
  */
+/** What the assistant said back.
+ *
+ *  `proposal` set means it wants to change something and is waiting for a
+ *  person to agree. It is handed straight back to /do unchanged -- it
+ *  carries resolved ids rather than the words that were typed, so what is
+ *  confirmed is what is done. */
+export type AssistantReply = {
+  text: string;
+  proposal: Record<string, unknown> | null;
+  options: string[];
+  understood: boolean;
+  /** Cannot be taken back: the panel makes the button red and says so. */
+  destructive: boolean;
+};
+
 export const restaurantApi = api.injectEndpoints({
   endpoints: (build) => ({
+    /** Ask the assistant. Never writes: a change comes back as a proposal
+     *  and waits for the button. */
+    assistantAsk: build.mutation<AssistantReply, { text: string }>({
+      query: (body) => ({
+        url: "/restaurant/assistant/ask",
+        method: "POST",
+        body,
+      }),
+    }),
+
+    /** Carry out a proposal the admin agreed to. Invalidates the menu,
+     *  because that is what it changes. */
+    assistantDo: build.mutation<{ text: string }, { proposal: Record<string, unknown> }>({
+      query: (body) => ({
+        url: "/restaurant/assistant/do",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Menu", "Item", "ItemType"],
+    }),
+
     staffMe: build.query<StaffMe, void>({
       query: () => ({ url: "/restaurant/me" }),
       providesTags: ["Session"],
@@ -1066,6 +1102,8 @@ export const restaurantApi = api.injectEndpoints({
 });
 
 export const {
+  useAssistantAskMutation,
+  useAssistantDoMutation,
   useStaffMeQuery,
   useStaffLogoutMutation,
   useStaffLogoutEverywhereMutation,
