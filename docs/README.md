@@ -6,6 +6,7 @@ it, and the production setup guide.
 
 | Folder | What is in it | Start with |
 |---|---|---|
+| [`guide/`](guide/) | Running a restaurant day to day, how the promotions and assistant layer is built, and the short path to a local copy | [RUNNING_ZENOEATS.md](guide/RUNNING_ZENOEATS.md) |
 | [`operations/`](operations/) | Getting to production and running it: the go-live list, every account and setting, the first deploy, backups, monitoring | [STEPS_BEFORE_PRODUCTION.md](operations/STEPS_BEFORE_PRODUCTION.md) |
 | [`security/`](security/) | The security audit, which tests cover which risk, and the gates and sign-off before each deployment | [SECURITY_AUDIT_REPORT.md](security/SECURITY_AUDIT_REPORT.md) |
 | [`legal/`](legal/) | The pack for the lawyer reviewing the customer-facing policies: how the service works, the personal information it holds, the gaps found and the questions to answer, and the pages as sent | [LEGAL_REVIEW_BRIEF.md](legal/LEGAL_REVIEW_BRIEF.md) |
