@@ -212,6 +212,27 @@ class Settings(BaseSettings):
     # holding a customer at a spinner.
     GEOCODE_TIMEOUT_SECONDS: float = 4.0
 
+    # --- The admin assistant -------------------------------------------------
+    # Empty, and the assistant says so rather than failing mid-sentence: see
+    # services/assistant/provider.py, which is the one place a provider is
+    # spoken to.
+    #
+    # The wire format is OpenAI's chat completions with tool calling, which
+    # is also what Groq, OpenRouter, Together and a local Ollama serve. So
+    # OPENAI_BASE_URL is here as well as the key: moving to a cheaper or a
+    # self-hosted model later is a change to these two lines rather than to
+    # any code.
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    # Small and cheap on purpose. This reads a menu and fills in a form; it
+    # is not being asked to reason about anything hard, and every write it
+    # proposes is confirmed by a person before it happens.
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    # A runaway tool loop is a runaway bill. Six is enough for "look up the
+    # burger heading, then add the item"; nothing legitimate needs more.
+    ASSISTANT_MAX_STEPS: int = 6
+    ASSISTANT_TIMEOUT_SECONDS: float = 30.0
+
     # --- Text messages -------------------------------------------------------
     # Empty, and deliberately so: there is no SMS vendor on this deployment.
     # Anything that needs one asks services/sms.configured() first and says
