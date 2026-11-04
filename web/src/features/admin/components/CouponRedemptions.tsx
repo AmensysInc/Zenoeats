@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Empty, ErrorNote, Loading } from "@/components/common/Feedback";
-import { useCouponRedemptionsQuery } from "@/features/admin/adminApi";
+import {
+  useCouponRedemptionsQuery,
+  type CouponScope,
+} from "@/features/admin/adminApi";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -21,13 +24,13 @@ import { money } from "@/utils/format";
  * name cannot tell a guest from an account. The flag beside it can, and
  * "was this a regular or a passer-by" is the question being asked.
  */
-export function CouponRedemptions({ restaurantId }: { restaurantId: string }) {
+export function CouponRedemptions({ scope }: { scope: CouponScope }) {
   // Narrowing to one code is how a group's MORE7, or one customer's welcome
   // code, gets traced from here.
   const [filter, setFilter] = useState("");
   const [applied, setApplied] = useState("");
   const history = useCouponRedemptionsQuery({
-    id: restaurantId,
+    scope,
     code: applied || undefined,
   });
 

@@ -4,6 +4,7 @@ import {
   useRetireSignupOfferMutation,
   useSetSignupOfferMutation,
   useSignupOfferQuery,
+  type CouponScope,
   type MenuHeading,
   type SignupOffer as Offer,
   type SignupOfferDraft,
@@ -30,8 +31,8 @@ import { money } from "@/utils/format";
  * change what somebody was promised. An edit decides what the next customer
  * gets.
  */
-export function SignupOffer({ restaurantId }: { restaurantId: string }) {
-  const state = useSignupOfferQuery(restaurantId);
+export function SignupOffer({ scope }: { scope: CouponScope }) {
+  const state = useSignupOfferQuery(scope);
   const [retire] = useRetireSignupOfferMutation();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export function SignupOffer({ restaurantId }: { restaurantId: string }) {
         <Loading />
       ) : editing || !offer ? (
         <OfferForm
-          restaurantId={restaurantId}
+          scope={scope}
           currency={currency}
           headings={state.data?.item_types ?? []}
           offer={offer}
@@ -118,7 +119,7 @@ export function SignupOffer({ restaurantId }: { restaurantId: string }) {
               onClick={async () => {
                 setError(null);
                 try {
-                  await retire({ id: restaurantId }).unwrap();
+                  await retire({ scope }).unwrap();
                   setAnnouncement("Sign-on coupon ended.");
                 } catch (e) {
                   setError(errorMessage(e));
@@ -150,13 +151,13 @@ function worth(offer: Offer, currency: string): string {
 }
 
 function OfferForm({
-  restaurantId,
+  scope,
   currency,
   headings,
   offer,
   onDone,
 }: {
-  restaurantId: string;
+  scope: CouponScope;
   currency: string;
   headings: MenuHeading[];
   offer: Offer | null;
@@ -217,7 +218,7 @@ function OfferForm({
     };
 
     try {
-      await save({ id: restaurantId, draft }).unwrap();
+      await save({ scope, draft }).unwrap();
       onDone(true);
     } catch (e) {
       setError(errorMessage(e));

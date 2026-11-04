@@ -454,9 +454,10 @@ def test_coupons_cannot_be_reached_from_a_restaurant_hostname(operator, admin_us
         assert client.get(operator.at).status_code == 404, host
 
 
-def test_a_restaurant_login_cannot_create_a_coupon(team, operator):
-    """The restaurant's own portal has no coupon screen, and no endpoint
-    behind one either. A staff session on the admin host is not an admin."""
+def test_a_restaurant_login_is_not_a_platform_admin(team, operator):
+    """A restaurant runs its own coupons now (see test_restaurant_coupons.py),
+    on its own hostname and only for itself. What it still cannot do is reach
+    the platform surface, where the URL names any restaurant it likes."""
     from app.core import staff_auth
     from fastapi.testclient import TestClient
 
@@ -466,14 +467,6 @@ def test_a_restaurant_login_cannot_create_a_coupon(team, operator):
     client.cookies.set(staff_auth.SESSION_COOKIE, staff_auth.issue_session(team.owner_id))
     res = client.post(operator.at, json={"code": "SNEAKY", "percent_off_bps": 5000})
     assert res.status_code in (401, 403)
-
-
-def test_the_restaurant_portal_serves_no_coupon_endpoint(team):
-    """Belt and braces on the line above: whatever a staff session tries on
-    its own hostname, there is nothing there."""
-    for path in ("/api/v1/restaurant/coupons", "/api/v1/restaurant/coupons/x"):
-        assert team.owner.get(path).status_code == 404, path
-        assert team.owner.post(path, json={}).status_code in (404, 405), path
 
 
 def test_coupons_on_a_restaurant_that_does_not_exist(operator):
