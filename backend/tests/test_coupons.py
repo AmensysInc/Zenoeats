@@ -856,3 +856,84 @@ def test_a_heading_from_another_restaurant_is_refused(two_headings, admin_user, 
     assert res.status_code == 422
     assert "not on this restaurant's menu" in res.json()["detail"]["message"]
     del other
+
+
+# ------------------------------------------- nothing, and the whole order ----
+#
+# A flat rate runs from zero to more than the bill. Both ends surprise people
+# until they are written down, so they are written down here.
+
+
+def test_a_flat_rate_may_be_zero(operator):
+    """A code set up before its value is decided, or one that exists to be
+    counted rather than to discount. The restaurant meant it."""
+    made = operator.make(code="PLACEHOLD", percent_off_bps=None, amount_off_minor=0)
+    assert made.status_code == 201, made.text
+    assert made.json()["discount_kind"] == "AMOUNT"
+    assert made.json()["discount_value"] == 0
+
+
+def test_a_percentage_may_not_be_zero(operator):
+    """Nothing is expressible as 0% that is not better said as a flat zero,
+    so that row is a form bug rather than a decision."""
+    refused = operator.make(code="ZEROPCT", percent_off_bps=0)
+    assert refused.status_code == 422
+
+
+def test_a_zero_coupon_is_accepted_at_the_checkout_and_takes_nothing_off(shop):
+    """Telling a customer their own restaurant's code is broken would be the
+    wrong answer: it was accepted, and the total is correct at unchanged."""
+    _publish(shop, code="FREEBIE", percent_off_bps=None, amount_off_minor=0)
+    priced = _quote(_guest(shop), shop, coupon_code="FREEBIE").json()
+
+    assert priced["coupon_error"] is None
+    assert priced["coupon"]["code"] == "FREEBIE"
+    assert priced["amounts"]["coupon_discount_minor"] == 0
+
+
+def test_a_coupon_worth_something_that_lands_on_nothing_is_still_refused(shop):
+    """The other zero, and it has to keep reading differently: this one is
+    worth something and worth nothing *here*, which does look like a bug."""
+    # Scoped to a heading nothing in the cart is filed under.
+    from app.db.session import tenant_session
+    from sqlalchemy import text
+
+    with tenant_session(shop.id) as session:
+        empty_heading = session.execute(
+            text(
+                "INSERT INTO item_types (id, restaurant_id, name, sort_order, "
+                "created_at, updated_at) VALUES (gen_random_uuid(), :r, "
+                "'Nothing In Here', 99, now(), now()) RETURNING id"
+            ),
+            {"r": shop.id},
+        ).scalar_one()
+
+    _publish(shop, code="WRONGAISLE", percent_off_bps=2000,
+             applies_to=[str(empty_heading)])
+    refused = _quote(_guest(shop), shop, coupon_code="WRONGAISLE").json()
+    assert refused["coupon_error"]
+
+
+def test_a_flat_rate_larger_than_the_order_makes_it_free(shop):
+    """Capped at what is being charged, never a refund of the difference."""
+    plain = _quote(_guest(shop), shop).json()
+    subtotal = plain["amounts"]["subtotal_minor"]
+    assert subtotal > 0
+
+    _publish(shop, code="ONTHEHOUSE", percent_off_bps=None,
+             amount_off_minor=subtotal * 10)
+    free = _quote(_guest(shop), shop, coupon_code="ONTHEHOUSE").json()
+
+    assert free["coupon_error"] is None
+    # The food is covered exactly, not over-covered.
+    assert free["amounts"]["coupon_discount_minor"] == subtotal
+    assert free["amounts"]["subtotal_minor"] - free["amounts"]["discount_minor"] == 0
+
+
+def test_the_whole_order_can_also_be_given_as_a_hundred_percent(shop):
+    plain = _quote(_guest(shop), shop).json()
+    subtotal = plain["amounts"]["subtotal_minor"]
+
+    _publish(shop, code="ALLOFIT", percent_off_bps=10000)
+    free = _quote(_guest(shop), shop, coupon_code="ALLOFIT").json()
+    assert free["amounts"]["coupon_discount_minor"] == subtotal

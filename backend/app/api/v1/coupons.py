@@ -93,8 +93,12 @@ class OfferIn(BaseModel):
     # Basis points, so 1000 is 10%. The form converts; this is the unit the
     # database and every other discount in the system already use.
     percent_off_bps: int | None = Field(default=None, gt=0, le=10000)
-    # Minor units, so 500 is $5.00.
-    amount_off_minor: int | None = Field(default=None, gt=0)
+    # Minor units, so 500 is $5.00. Zero is allowed and means exactly that:
+    # a flat rate of nothing, for a code set up before its value is decided
+    # or one that exists to be counted. There is no upper bound -- a flat
+    # amount larger than the order simply makes the order free, because
+    # discount_for caps it at what is being charged.
+    amount_off_minor: int | None = Field(default=None, ge=0)
 
     # A ceiling, for a percentage only: 20% off is a different offer on a $10
     # order and on a $400 office lunch.
@@ -198,7 +202,7 @@ class CouponPatch(BaseModel):
 
     description: str | None = Field(default=None, max_length=160)
     percent_off_bps: int | None = Field(default=None, gt=0, le=10000)
-    amount_off_minor: int | None = Field(default=None, gt=0)
+    amount_off_minor: int | None = Field(default=None, ge=0)
     max_discount_minor: int | None = Field(default=None, ge=0)
     min_subtotal_minor: int | None = Field(default=None, ge=0)
     # Sent to replace the scope outright; an empty list means "the whole
