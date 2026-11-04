@@ -63,20 +63,26 @@ export type MapsLibraries = {
   Point: new (x: number, y: number) => unknown;
 };
 
-export interface PlaceResult {
-  formatted_address?: string;
-}
-
-export interface PlacesAutocomplete {
-  addListener(event: "place_changed", handler: () => void): { remove(): void };
-  getPlace(): PlaceResult;
-}
+/** The Places (New) calls checkout's address suggestions make. The legacy
+ *  Autocomplete widget is not here: a project created since October 2026
+ *  cannot switch on the API behind it. */
+export type PlacePrediction = {
+  text: { toString(): string };
+  toPlace(): {
+    fetchFields(options: { fields: string[] }): Promise<unknown>;
+    formattedAddress?: string | null;
+  };
+};
 
 export type PlacesLibrary = {
-  Autocomplete: new (
-    input: HTMLInputElement,
-    options: { fields: string[]; types: string[] },
-  ) => PlacesAutocomplete;
+  AutocompleteSessionToken: new () => unknown;
+  AutocompleteSuggestion: {
+    fetchAutocompleteSuggestions(request: {
+      input: string;
+      sessionToken: unknown;
+      includedPrimaryTypes?: string[];
+    }): Promise<{ suggestions: { placePrediction: PlacePrediction | null }[] }>;
+  };
 };
 
 type GoogleNamespace = {
@@ -158,7 +164,10 @@ export function loadGooglePlaces(key: string): Promise<PlacesLibrary> {
   if (placesLoading) return placesLoading;
   placesLoading = loadGoogleBootstrap(key).then(async (maps) => {
     const places = await maps.importLibrary("places");
-    return { Autocomplete: places.Autocomplete } as PlacesLibrary;
+    return {
+      AutocompleteSessionToken: places.AutocompleteSessionToken,
+      AutocompleteSuggestion: places.AutocompleteSuggestion,
+    } as PlacesLibrary;
   }).catch((error) => {
     placesLoading = null;
     throw error;

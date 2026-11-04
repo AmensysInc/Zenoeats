@@ -74,15 +74,9 @@ _DATABASE_CHECKS = text(
       EXISTS (
         SELECT 1 FROM stripe_events
         WHERE status = 'RECEIVED' AND received_at < now() - make_interval(mins => :stuck)
-      ) OR EXISTS (
-        SELECT 1 FROM clerk_events
-        WHERE status = 'RECEIVED' AND received_at < now() - make_interval(mins => :stuck)
       ) AS webhooks_stuck,
       EXISTS (
         SELECT 1 FROM stripe_events
-        WHERE status = 'FAILED' AND received_at > now() - make_interval(hours => :window)
-      ) OR EXISTS (
-        SELECT 1 FROM clerk_events
         WHERE status = 'FAILED' AND received_at > now() - make_interval(hours => :window)
       ) AS webhooks_failed
     """

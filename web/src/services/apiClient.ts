@@ -20,10 +20,6 @@ export class ApiError extends Error {
 export type RequestOptions = {
   method?: string;
   body?: unknown;
-  /** Bearer token. Only the customer surface uses one -- a Clerk session
-   *  token; the admin and staff portals authenticate with an httpOnly cookie
-   *  the browser sends itself. */
-  token?: string | null;
   idempotencyKey?: string;
   /** A guest's order-view token. Sent as a header, never in the URL: a query
    *  string is written to every access log the request passes through. */
@@ -46,7 +42,6 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   // write, so naming one here would leave the server unable to find the file.
   const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
   const headers: Record<string, string> = isForm ? {} : { "Content-Type": "application/json" };
-  if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
   if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
   if (opts.orderToken) headers["X-Order-Token"] = opts.orderToken;
 

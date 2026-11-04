@@ -9,7 +9,7 @@ Guests get the same treatment. Their row lives exactly as long as their
 session, which is long enough for a second order from the same browser not to
 ask twice.
 
-Email is deliberately not here. A signed-in customer's comes from Clerk, which
+Email is deliberately not here. A signed-in customer's is the one they signed in with, which
 verified it; a guest's is fixed when the session begins. A form field that
 could quietly re-address someone's receipts is not a detail worth saving.
 """

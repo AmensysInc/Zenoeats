@@ -75,10 +75,13 @@
 
         <dt>Your account, if you create one</dt>
         <dd>
-          Your sign-in details are held by Clerk, our identity provider, not by
-          Zenoeats. We keep your email, name, phone number, address and any
-          items you have saved as favourites, so you do not have to type them
-          again.
+          We keep your email, name, phone number, address and any items you have
+          saved as favourites, so you do not have to type them again. If you
+          choose a password we store only a salted one-way hash of it, never the
+          password itself. If you sign in with Google, Apple or Facebook we
+          receive your name, your email address and an account identifier from
+          them, and never see your password there. If you use Apple's Hide My
+          Email, the address we receive is the private one Apple gives us.
         </dd>
 
         <dt>Ordering without an account</dt>
@@ -116,8 +119,9 @@
           order to you afterwards.
         </li>
         <li>
-          <strong>Sign-in.</strong> Clerk sets cookies needed to sign you in and
-          keep you signed in.
+          <strong>Sign-in.</strong> We set a cookie that keeps you signed in, and a
+          short-lived one while you sign in with Google, Apple or Facebook. Those
+          providers set their own cookies on their own sites while you are there.
         </li>
         <li>
           <strong>Payment.</strong> Stripe sets cookies needed to process your
@@ -148,10 +152,11 @@
           payment is on the restaurant’s Stripe account.
         </dd>
 
-        <dt>Clerk — accounts and sign-in</dt>
+        <dt>Google, Apple and Facebook — sign-in, if you choose one</dt>
         <dd>
-          Holds your password and runs sign-in with Google, Apple or Facebook if
-          you choose one. Zenoeats never sees your password.
+          Confirm who you are when you press their button, and tell us your name,
+          your email address and an account identifier. We do not ask them for
+          anything else, and we do not post anything on your behalf.
         </dd>
 
         <dt>SendGrid (Twilio) — email</dt>

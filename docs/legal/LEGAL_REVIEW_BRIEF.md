@@ -128,7 +128,7 @@ with its menu, and customers order from it for pickup or delivery.
 | Person | Information | Why | Where it is held |
 |---|---|---|---|
 | **Customer with an account** | Email, name, phone, address, saved favourite items; the time and version of their agreement to the terms | Orders, and filling in details next time | Zenoeats database |
-| | Password, and any Google / Apple / Facebook sign-in | Signing in | **Clerk only**; Zenoeats never sees the password |
+| | Password (salted one-way hash only), and an account identifier, name and email from Google / Apple / Facebook | Signing in | Zenoeats |
 | **Guest customer** | Email address (plus the details on their orders) | Reaching their order and sending its emails | Zenoeats database. A cookie in their browser links them to their order |
 | **Any customer, per order** | Name, phone, email, address, the items ordered, any note, prices, delivery address and fee | The restaurant's record of the sale; tax | Zenoeats database, visible to that restaurant only |
 | | A pickup code | Proving who collects the food | Stored encrypted |
@@ -156,7 +156,7 @@ and its customers are outside the US, this is an **international transfer**
 | Provider | What it does | What it receives |
 |---|---|---|
 | **Stripe** | Payments, on each restaurant's own account | The amount, order reference, the customer's email address (used by Stripe for fraud screening) and the card details, which the customer types directly into Stripe. **Stripe is not asked to email receipts**: Zenoeats sends the emails itself |
-| **Clerk** | Customer accounts and sign-in, including Google / Apple / Facebook sign-in | Email, name, password, sign-in activity |
+| **Google, Apple, Facebook** | Sign-in, only for a customer who presses that button | They tell us: account identifier, name, email |
 | **Twilio SendGrid** | Sends every email Zenoeats sends (section 6) | The recipient's address and the content of each email |
 | **Google Maps Platform** | Turning a delivery address into a distance; driving-time estimates; address suggestions at checkout; the tracking map | The delivery address and driver position. Also the customer's IP address, and what they type into the address box, because the suggestions and the map load from Google in the browser |
 | **Sentry** (optional) | Error reports from the server | Error details with personal information removed first (pickup codes, payment identifiers, email addresses, order notes) |
@@ -185,7 +185,7 @@ No marketing email is sent, and no marketing consent is collected.
 | Customer | Refund on its way | A refund made later, including a partial one |
 | Customer | Welcome | A new account (under a day old) first opens a restaurant's page. The restaurant's name is on it |
 | Customer | Account closed | Once, when an account is closed, confirming what was removed |
-| Customer | Verification / password-reset code | Normally sent by Clerk. Can be switched to Zenoeats' own sender |
+| Customer | Password-reset link | Sent by Zenoeats |
 | Restaurant staff | Invitation | Includes a **temporary password**, which must be changed at first sign-in and stops working then |
 | Restaurant staff | Welcome, role changed, removed from the team, password reset | As they happen. The reset email includes the new temporary password |
 | Restaurant staff | "Has joined" | To the person who sent an invitation, when it is accepted |
@@ -202,11 +202,11 @@ created, not because of an order.
 | Information | Kept for | Notes |
 |---|---|---|
 | Orders, and the customer details on them | **Indefinitely** at present | The policies say "as long as the restaurant is required to keep them". No retention period is set, and nothing deletes old orders |
-| Customer account details | Until the account is closed | Closing removes name, phone, address, email and favourites at once, and deletes the Clerk sign-in |
+| Customer account details | Until the account is closed | Closing removes name, phone, address, email, favourites, the password and any Google / Apple / Facebook link at once |
 | Guest records that never became an order | About 45 days | Deleted automatically |
 | Delivery address coordinates (from Google) | Up to 30 days | Google's terms allow about 30 days |
 | Driver positions | Under 10 minutes each | |
-| Records of messages from Stripe and Clerk | 365 days, **with personal details removed within an hour** of each being dealt with | Names, emails, phones and addresses are stripped; ids, amounts and statuses stay for audit. A message not yet dealt with keeps its details until it is. See gap 2 |
+| Records of messages from Stripe | 365 days, **with personal details removed within an hour** of each being dealt with | Names, emails, phones and addresses are stripped; ids, amounts and statuses stay for audit. A message not yet dealt with keeps its details until it is. See gap 2 |
 | **Backups** | **Up to 90 days** | Encrypted and off-site. A 30-day lock means no backup can be deleted early, even on request. The Privacy Policy and the deletion page now say so. See gap 2 |
 | Server access logs | **Not yet limited** | Contain visitors' IP addresses. See gap 4 |
 | Error reports (Sentry) | Sentry's own retention | Personal information removed before sending |
@@ -232,7 +232,7 @@ changes and have been made; the rest need your advice or a decision.
    disclosed.**
    - Closing an account removes the account details immediately. Copies of
      the customer's email and name remained in two places:
-     - **Records of messages from Stripe and Clerk**, kept for 365 days.
+     - **Records of messages from Stripe**, kept for 365 days.
        **Fixed:** personal details are now stripped from every such record
        within an hour of it being dealt with. Only ids, amounts and statuses
        remain.
@@ -290,7 +290,7 @@ changes and have been made; the rest need your advice or a decision.
 11. **Cookies.**
     - Zenoeats sets only cookies needed to run the site: sign-in sessions
       for staff and operators, and the guest-order cookie.
-    - Clerk and Stripe set their own cookies for sign-in, payment and fraud
+    - Stripe sets its own cookies for payment and fraud
       prevention.
     - Google's scripts load for the address suggestions and the tracking
       map.
@@ -393,7 +393,7 @@ corrections only; nothing was changed that is a legal judgement.
 - **Driver positions:** said they are not kept after a delivery. It now says
   each is discarded within 10 minutes of being reported, which is what
   happens.
-- **Retention:** now lists the records of messages from Stripe and Clerk
+- **Retention:** now lists the records of messages from Stripe
   (details stripped within an hour) and backups (up to 90 days) (gap 2).
 
 **Deleting your data**

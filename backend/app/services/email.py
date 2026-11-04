@@ -86,7 +86,7 @@ class Email:
     html: str
     text: str
     idempotency_key: str
-    # A subject that may carry a secret -- a sign-in code in Clerk's own
+    # A subject that may carry a secret -- a sign-in code in a provider's own
     # wording -- is left out of every log line.
     sensitive: bool = False
 

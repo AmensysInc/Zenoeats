@@ -43,8 +43,8 @@ class UserKind(str, enum.Enum):
     """Which of the three identity systems a users row belongs to.
 
     The populations never overlap. A person who orders lunch and also works a
-    restaurant's counter has two rows: one reached through Clerk, one through
-    the credentials the restaurant issued. Keeping them apart is what stops a
+    restaurant's counter has two rows: one reached through a customer sign-in,
+    one through the credentials the restaurant issued. Keeping them apart is what stops a
     customer sign-in from ever opening a staff portal, and an email match from
     ever merging the two.
 
@@ -65,10 +65,10 @@ class UserKind(str, enum.Enum):
 class User(Base, TimestampMixin):
     """Global platform identity. No restaurant_id, no tenant RLS policy.
 
-    For customers, Clerk owns credentials, sessions, verification and Google
-    sign-in, and this row mirrors the parts we need: a real foreign key for
-    orders, and an email for receipts. Every permission is still resolved from
-    our own tables, never from a claim in a token.
+    For customers this row is the account: a password we hold, and/or the
+    provider identities below (core/customer_auth.py, core/social_auth.py).
+    Every permission is resolved from our own tables, never from a claim in a
+    token.
     """
 
     __tablename__ = "users"
@@ -83,16 +83,17 @@ class User(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    # Customers only. Platform administrators and restaurant staff have no
-    # Clerk identity, but still need a row here: platform_audit_logs and
-    # restaurant_users both carry NOT NULL foreign keys to users.id.
-    clerk_user_id: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, unique=True, index=True
-    )
     # The `sub` of a Google ID token, for an account that signs in with
     # Google. Never reissued and never changed, unlike the address on it --
     # see migration 0046 for why the address is not the identity.
     google_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
+    # The same for Apple and Facebook; see migration 0057.
+    apple_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
+    facebook_subject: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True, index=True
     )
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
@@ -109,8 +110,9 @@ class User(Base, TimestampMixin):
     address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Restaurant staff only. Customers authenticate through Clerk and platform
-    # administrators against ADMIN_USERS, so both are null for them.
+    # Restaurant staff, and customers who chose a password. Null for a customer
+    # who only signs in with a provider, and for platform administrators, who
+    # authenticate against ADMIN_USERS.
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False

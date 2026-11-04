@@ -203,11 +203,11 @@ def test_a_customer_with_the_same_address_is_not_in_the_way(team):
     with system_session() as session:
         session.execute(
             text(
-                "INSERT INTO users (id, kind, email, clerk_user_id, is_platform_admin, "
+                "INSERT INTO users (id, kind, email, is_platform_admin, "
                 "is_active, must_change_password, created_at, updated_at) "
-                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, :c, false, true, false, now(), now())"
+                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, false, true, false, now(), now())"
             ),
-            {"e": shared, "c": f"user_acct_{shared[:12]}"},
+            {"e": shared},
         )
 
     res = team.client(user_id).post(
@@ -311,12 +311,12 @@ def test_a_customer_may_still_hold_the_same_address(team):
     with system_session() as session:
         session.execute(
             text(
-                "INSERT INTO users (id, kind, email, clerk_user_id, is_platform_admin, "
+                "INSERT INTO users (id, kind, email, is_platform_admin, "
                 "is_active, must_change_password, created_at, updated_at) "
-                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, :c, false, true, false, "
+                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, false, true, false, "
                 "now(), now())"
             ),
-            {"e": shared, "c": f"user_dup_{shared[:10]}"},
+            {"e": shared},
         )
 
 

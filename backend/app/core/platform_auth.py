@@ -1,6 +1,6 @@
 """Platform administrator authentication.
 
-Clerk owns customer identity. Platform administrators are a different
+Customers have their own sign-in. Platform administrators are a different
 population entirely -- a handful of trusted operators -- and authenticate
 against credentials declared in the environment instead.
 
@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 
 
 # Distinguishes a platform-admin session from any other token that might
-# reach get_principal. A Clerk token can never satisfy this and vice versa.
+# reach a customer dependency. A customer session can never satisfy this and vice versa.
 TOKEN_TYPE = "platform_admin"
 SESSION_COOKIE = "zenoeats_admin_session"
 

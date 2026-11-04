@@ -184,14 +184,13 @@ export type CustomerSession = {
   /** What checkout saved last time, offered back so nobody types it twice. */
   phone: string | null;
   address: string | null;
-  /** A signed-in customer whose email Clerk has not supplied yet. Checkout
-   *  cannot place an order until it has. */
+  /** An old account that still carries a placeholder address. Checkout cannot
+   *  place an order until it has a real one. */
   email_pending: boolean;
   is_guest: boolean;
   /** Whether this customer has agreed to the terms in force. False for an
-   *  account created through Google, Apple or Facebook without passing a
-   *  consent step: Clerk finishes those itself whenever the provider gave it
-   *  everything, and never asks us. */
+   *  account created through Google, Apple or Facebook from the sign-in page,
+   *  which has no checkbox. */
   terms_accepted: boolean;
 };
 

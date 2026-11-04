@@ -30,7 +30,7 @@ setup:
 	@echo "Created .env. Fill in what it marks REQUIRED:"
 	@echo "  FIELD_ENCRYPTION_KEY  from 'make key'"
 	@echo "  SESSION_SECRET        from 'openssl rand -base64 32'"
-	@echo "Then add your Clerk and Stripe test keys, and copy web/.env.example to web/.env."
+	@echo "Then add your Stripe test keys, and copy web/.env.example to web/.env."
 
 # Infrastructure only. The app services sit behind the "app" profile, so this
 # starts postgres, redis and nginx and builds nothing. Image builds are what

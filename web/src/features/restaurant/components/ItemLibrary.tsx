@@ -1006,7 +1006,7 @@ function ItemForm({
           groupIds={draft.groupIds}
           includedIds={draft.includedIds}
           disabled={saving}
-          emptyNote={`No groups for ${chosenType} yet. Create one in the modifier library.`}
+          emptyNote={`No groups for ${chosenType} yet. Create one under Categories.`}
           onToggleGroup={(groupId) => {
             const group = relevant.find((g) => g.id === groupId);
             if (group) toggleGroup(group);

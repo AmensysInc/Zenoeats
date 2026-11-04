@@ -35,14 +35,14 @@ def own_heartbeat(monkeypatch):
 
 @pytest.fixture
 def webhook_rows():
-    """Insert stripe_events / clerk_events rows; every one removed after."""
+    """Insert stripe_events rows; every one removed after."""
     from app.services.retention import _platform_transaction
 
     made: list[tuple[str, uuid.UUID]] = []
 
     def add(table: str, status: str, received_at):
         row_id = uuid.uuid4()
-        id_column = "stripe_event_id" if table == "stripe_events" else "clerk_event_id"
+        id_column = "stripe_event_id"
         with _platform_transaction() as session:
             session.execute(
                 text(f"INSERT INTO {table} (id, {id_column}, type, payload, status, "
@@ -62,7 +62,7 @@ def webhook_rows():
 
 
 @integration
-@pytest.mark.parametrize("table", ["stripe_events", "clerk_events"])
+@pytest.mark.parametrize("table", ["stripe_events"])
 def test_a_webhook_left_unprocessed_is_reported(webhook_rows, table):
     before = ops_health.failing()
     webhook_rows(table, "RECEIVED", utcnow() - timedelta(seconds=30))
@@ -73,7 +73,7 @@ def test_a_webhook_left_unprocessed_is_reported(webhook_rows, table):
 
 
 @integration
-@pytest.mark.parametrize("table", ["stripe_events", "clerk_events"])
+@pytest.mark.parametrize("table", ["stripe_events"])
 def test_a_webhook_that_failed_today_is_reported(webhook_rows, table):
     before = ops_health.failing()
     webhook_rows(table, "FAILED", utcnow() - timedelta(days=2))
@@ -97,7 +97,7 @@ def pending_order():
         restaurant = Restaurant(slug=f"ops-{suffix}", name="Ops Test",
                                 status=RestaurantStatus.ACTIVE.value,
                                 timezone="UTC", currency="USD")
-        customer = User(kind=UserKind.CUSTOMER.value, clerk_user_id=f"user_ops_{suffix}",
+        customer = User(kind=UserKind.CUSTOMER.value,
                         email=f"ops-{suffix}@zenoeats.invalid")
         session.add_all([restaurant, customer])
         session.flush()

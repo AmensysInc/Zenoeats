@@ -16,7 +16,7 @@ explanation.
   - No database or Redis URLs: docker-compose.prod.yml builds every one from
     the passwords above. (Any found are commented out.)
   - Left EMPTY, marked "# FILL IN:": what only your accounts can supply
-    (Clerk, Stripe, SendGrid, Sentry, ADMIN_USERS). Empty on purpose: the API
+    (Stripe, SendGrid, Sentry, ADMIN_USERS). Empty on purpose: the API
     refuses to start without the required ones, where a placeholder word
     would count as set and get through.
 
@@ -61,11 +61,6 @@ DEV_ONLY = re.compile(
 
 # key -> where it comes from. Empty until filled; `--check` reports them.
 FROM_ACCOUNTS = {
-    "CLERK_SECRET_KEY": "Clerk production instance > API keys (sk_live_...)",
-    "CLERK_JWKS_URL": "Clerk > API keys > JWKS URL",
-    "CLERK_ISSUER": "Clerk > API keys > Frontend API URL",
-    "CLERK_WEBHOOK_SECRET": "Clerk > Webhooks > the endpoint's signing secret",
-    "VITE_CLERK_PUBLISHABLE_KEY": "Clerk > API keys (pk_live_...)",
     "STRIPE_SECRET_KEY": "Stripe live mode > Developers > API keys (sk_live_...)",
     "STRIPE_PUBLISHABLE_KEY": "Stripe live mode > Developers > API keys (pk_live_...)",
     "STRIPE_CONNECT_WEBHOOK_SECRET": "Stripe > Webhooks, CONNECT endpoint > signing secret",
@@ -77,12 +72,11 @@ FROM_ACCOUNTS = {
 REQUIRED = (
     "ROOT_DOMAIN", "SESSION_SECRET", "FIELD_ENCRYPTION_KEY", *PASSWORDS,
     "API_IMAGE", "WEB_IMAGE",
-    "CLERK_SECRET_KEY", "CLERK_JWKS_URL", "CLERK_ISSUER", "VITE_CLERK_PUBLISHABLE_KEY",
     "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_CONNECT_WEBHOOK_SECRET",
     "ADMIN_USERS",
 )
 # Wanted for a credible launch; reported, but not as blockers.
-RECOMMENDED = ("CLERK_WEBHOOK_SECRET", "SENDGRID_API_KEY", "SENTRY_DSN")
+RECOMMENDED = ("SENDGRID_API_KEY", "SENTRY_DSN")
 
 LINE = re.compile(r"^(#\s*)?([A-Z][A-Z0-9_]*)=(.*)$")
 # A setting, live or commented out with a single "# ". Examples inside
@@ -103,7 +97,6 @@ def production_values(domain: str, release: str, staging: bool) -> dict[str, str
     return {
         "ENV": "production",
         "ROOT_DOMAIN": domain,
-        "AUTH_DEV_BYPASS": "false",
         "ALLOW_TEST_KEYS": "true" if staging else "false",
         "STOREFRONT_URL_TEMPLATE": "https://{slug}.{root_domain}",
         "EMAIL_FROM": f"Zenoeats <orders@{domain}>" if domain else "",
@@ -188,16 +181,13 @@ def problems(values: dict[str, str]) -> tuple[list[str], list[str]]:
         blocking.append("ENV is not production")
     if values.get("ROOT_DOMAIN", "").endswith(".local"):
         blocking.append("ROOT_DOMAIN is a development domain")
-    if values.get("AUTH_DEV_BYPASS", "false").lower() != "false":
-        blocking.append("AUTH_DEV_BYPASS is on")
     if values.get("DATABASE_URL_MIGRATE"):
         blocking.append("DATABASE_URL_MIGRATE is set; only the migrate job may hold it")
     for key, value in values.items():
         if value.endswith("_dev_pw") or "_dev_pw@" in value:
             blocking.append(f"{key} carries a development password")
     if values.get("ALLOW_TEST_KEYS", "false").lower() != "true":
-        for key in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "CLERK_SECRET_KEY",
-                    "VITE_CLERK_PUBLISHABLE_KEY"):
+        for key in ("STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY"):
             if "_test_" in values.get(key, "")[:8]:
                 blocking.append(f"{key} is a test key")
     for key in PASSWORDS:

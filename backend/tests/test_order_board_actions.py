@@ -43,12 +43,12 @@ def shop(admin_user, cleanup):
     with system_session() as session:
         customer_id = session.execute(
             text(
-                "INSERT INTO users (id, kind, email, clerk_user_id, is_platform_admin, "
+                "INSERT INTO users (id, kind, email, is_platform_admin, "
                 "is_active, must_change_password, created_at, updated_at) "
-                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, :c, false, true, false, now(), now()) "
+                "VALUES (gen_random_uuid(), 'CUSTOMER', :e, false, true, false, now(), now()) "
                 "RETURNING id"
             ),
-            {"e": f"board-{uuid.uuid4().hex[:8]}@zenoeats.invalid", "c": f"user_b_{uuid.uuid4().hex}"},
+            {"e": f"board-{uuid.uuid4().hex[:8]}@zenoeats.invalid"},
         ).scalar_one()
         cook_id = session.execute(
             text(

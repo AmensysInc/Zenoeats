@@ -1,7 +1,7 @@
 """Checkout asks who is ordering, and whether it is coming to them.
 
 Name and phone are required on every order; delivery also requires an address.
-A registered email is verified by Clerk; a guest may correct the receipt
+A registered email is the account's own; a guest may correct the receipt
 destination for this order without changing identity or previous snapshots.
 
 The details land twice: on the order as a snapshot, which is what the
@@ -140,14 +140,14 @@ def test_delivery_requires_a_usable_address(shop, address):
     assert res.status_code == 422
 
 
-def test_a_customer_whose_email_clerk_has_not_given_us_cannot_order(shop):
+def test_an_old_account_with_a_placeholder_address_cannot_order(shop):
     """The email is mandatory too. A placeholder is not one."""
     from app.api.deps import get_current_user
     from app.main import app
     from app.models import User, UserKind
 
     placeholder = User(
-        id=uuid.uuid4(), kind=UserKind.CUSTOMER.value, clerk_user_id="user_pending",
+        id=uuid.uuid4(), kind=UserKind.CUSTOMER.value,
         email="user_pending@pending.local", is_active=True,
     )
     app.dependency_overrides[get_current_user] = lambda: placeholder

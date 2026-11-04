@@ -26,11 +26,11 @@ before real money.
 - [ ] `python3 scripts/make_prod_env.py --check .env` lists nothing under
       "Before this can run"
 - [ ] `ENV=production`, `ALLOW_TEST_KEYS=false`, live `sk_live_`/`pk_live_`
-      Stripe keys and a Clerk production instance. The API refuses test keys,
+      Stripe keys. The API refuses test keys,
       published CI secrets and `*_dev_pw` passwords at startup, so a
       successful start is evidence in itself.
 - [ ] `.env` is mode 600, owned by the deploy user, and never in an image or git
-- [ ] Staging has its own `.env`, database, Redis, Clerk instance and Stripe
+- [ ] Staging has its own `.env`, database, Redis and Stripe
       test keys (`--staging`), sharing nothing with production
 - [ ] `CSP_REPORT_ONLY=false` after the staging CSP check (STEPS §10)
 
@@ -43,7 +43,7 @@ before real money.
 | Postgres role passwords | `.env` | `ALTER ROLE` then update `.env`, restart |
 | Redis passwords | `.env` | Change and restart both Redis and the app together |
 | Stripe live secret, webhook secret | `.env` | Roll in the Stripe dashboard; update; restart |
-| Clerk secret, webhook secret | `.env` | Roll in Clerk; update; restart |
+| Google, Apple, Facebook sign-in secrets | `.env` | Roll at the provider; update; restart |
 | SendGrid key | `.env` | Roll in SendGrid (Settings › API Keys) |
 | Backup age private key | Password manager + offline copy | Never on the server |
 | Cloudflare origin certificate key | `infra/certs/privkey.pem`, mode 600 | 15-year validity; calendar reminder |

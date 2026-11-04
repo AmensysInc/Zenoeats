@@ -8,10 +8,6 @@
          head blocks first paint until the stylesheet lands, instead of
          painting unstyled while the script graph loads. -->
     <link rel="stylesheet" href="/src/styles/globals.css" />
-    <!-- Runtime configuration (the Clerk publishable key), written by the web
-         container at startup. A classic script, so it runs before the module
-         entry below reads it. -->
-    <script src="/config.js"></script>
   </head>
   <body>
     <main class="auth">
@@ -41,7 +37,7 @@
 
         <section id="password-section">
 
-          <!-- One button per social sign-in switched on in Clerk (Google, Apple,
+          <!-- One button per provider with credentials behind it (Google, Apple,
                Facebook), rendered by customer-shared.ts. Hidden when there are none. -->
           <section id="social-section" class="mb-[17px]" hidden>
             <div id="social-buttons" class="flex flex-col gap-[9px]"></div>
@@ -114,22 +110,6 @@
             </form>
           </section>
 
-        </section>
-
-        <!-- The second step of signing in, when Clerk asks for one: an
-             authenticator app, a text message, an emailed code (also what a
-             new device is asked for), or a backup code. customer-sign-in.ts
-             fills in the wording for whichever it is, and offers the others. -->
-        <section id="code-section" hidden>
-          <p id="code-intro" class="auth-intro"></p>
-          <form id="code-form" class="auth-stack" novalidate>
-            <label class="block">
-              <span id="code-label" class="label">Verification code</span>
-              <input id="code" class="field code-input mt-[7px]" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required />
-            </label>
-            <button id="code-submit" class="btn-primary w-full" type="submit">Continue</button>
-          </form>
-          <div id="code-alternatives" class="mt-4 flex flex-col items-start"></div>
         </section>
       </section>
     </main>

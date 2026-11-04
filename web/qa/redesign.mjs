@@ -80,23 +80,6 @@ async function setup(options = {}) {
   };
   if (options.emptyMenu) state.menu = { meals: [] };
   await context.addInitScript(({ session, cart, withCart, anonymous }) => {
-    window.__ZENOEATS_CONFIG__ = { clerkPublishableKey: "pk_test_Zml4dHVyZS5jbGVyay50ZXN0JA==" };
-    const current = { id: "email-current", emailAddress: session.email, verification: { status: "verified" } };
-    const user = {
-      emailAddresses: [current], primaryEmailAddress: current,
-      async createEmailAddress({ email }) {
-        const address = { id: "email-next", emailAddress: email, verification: { status: "unverified" },
-          async prepareVerification() { return this; },
-          async attemptVerification({ code }) {
-            if (code !== "654321") throw new Error("That code is incorrect. Try again.");
-            this.verification.status = "verified"; return this;
-          } };
-        this.emailAddresses.push(address); return address;
-      },
-      async update({ primaryEmailAddressId }) { this.primaryEmailAddress = this.emailAddresses.find(e => e.id === primaryEmailAddressId); return this; },
-    };
-    window.Clerk = { load: async () => {}, session: anonymous ? null : { getToken: async () => "qa-fixture-token" },
-      user: anonymous ? null : user, signOut: async () => {}, client: { signIn: {}, signUp: {} } };
     if (withCart) localStorage.setItem("zenoeats.cart.v2.qa-kitchen", JSON.stringify(cart));
   }, { session: state.session, cart, withCart: options.cart ?? false, anonymous: options.anonymous ?? false });
   if (options.mapsFixture || options.placesFixture) await context.addInitScript(({ failFirst }) => {
@@ -112,23 +95,23 @@ async function setup(options = {}) {
     }
     class Bounds { extend() { return this; } }
     class Marker { constructor(options) { Object.assign(this, options); } }
-    class Autocomplete {
-      constructor(input) { this.input = input; this.listeners = []; window.__qaAutocomplete = this; }
-      addListener(_name, handler) {
-        this.listeners.push(handler);
-        return { remove: () => { this.listeners = this.listeners.filter(item => item !== handler); } };
-      }
-      getPlace() { return this.place ?? {}; }
-      select(address) {
-        this.place = { formatted_address: address };
-        for (const handler of this.listeners) handler();
-      }
-    }
+    // Places (New): suggestions as text, and a full address once one is picked.
+    class AutocompleteSessionToken {}
+    const AutocompleteSuggestion = {
+      async fetchAutocompleteSuggestions({ input }) {
+        window.__qaSuggestionsAsked = input;
+        const text = "6542 N Maplewood Ave, Chicago, IL, USA";
+        return { suggestions: [{ placePrediction: {
+          text: { toString: () => text },
+          toPlace: () => ({ formattedAddress: null, async fetchFields() { this.formattedAddress = "6542 N Maplewood Ave, Chicago, IL 60645, USA"; } }),
+        } }] };
+      },
+    };
     window.google = { maps: { async importLibrary(name) {
       if (first) { first = false; throw new Error("Map provider fixture unavailable"); }
       return name === "maps" ? { Map: MapFixture } :
         name === "marker" ? { AdvancedMarkerElement: Marker } :
-          name === "places" ? { Autocomplete } : { LatLngBounds: Bounds };
+          name === "places" ? { AutocompleteSessionToken, AutocompleteSuggestion } : { LatLngBounds: Bounds };
     } } };
   }, { failFirst: options.mapsFixture === "fail-first" });
   const page = await context.newPage();
@@ -169,7 +152,6 @@ async function setup(options = {}) {
       if (state.profileFail) return fail("SAVE_FAILED", "Could not save your details. Try again.");
       Object.assign(state.session, body); data = state.session;
     }
-    else if (key === "/customer/profile/email-sync") { state.session.email = "new@example.com"; data = state.session; }
     else if (key === "/customer/orders") data = { orders: [], next_before: null };
     else if (key === "/customer/favourites") data = [];
     else if (key.startsWith("/customer/favourites/")) return route.fulfill({ status: 204 });
@@ -316,8 +298,7 @@ await check("A9-google-address-suggestion", {
   await page.getByRole("radio",{name:/Delivery/}).check();
   const address=page.locator("#contact-address");
   await address.fill("6542 N Maple");
-  await page.waitForFunction(()=>!!window.__qaAutocomplete);
-  await page.evaluate(()=>window.__qaAutocomplete.select("6542 N Maplewood Ave, Chicago, IL 60645, USA"));
+  await page.getByRole("option",{name:/6542 N Maplewood Ave/}).click();
   await page.waitForFunction(()=>document.querySelector("#contact-address")?.value.includes("60645"));
   await textIncludes(page,"$4.00");
   const quote=state.calls.filter(c=>c.path==="/orders/quote"&&c.body?.fulfillment_type==="DELIVERY").at(-1);
@@ -366,7 +347,7 @@ for (const [id,route,label] of [
 }
 await check("B7-all-builder-tabs",{},async({page})=>{
   await page.goto(origin+"/manage/menu"); await textIncludes(page,"Your menu");
-  for(const [id,label] of [["B7a","Preview"],["B7b","Items"],["B7c","Meal periods"],["B7d","Combos"],["B7e","Modifier library"]]) {
+  for(const [id,label] of [["B7a","Preview"],["B7b","Items"],["B7c","Meal periods"],["B7d","Combos"],["B7e","Categories"]]) {
     await page.getByRole("navigation",{name:"Menu builder"}).getByRole("button",{name:label,exact:true}).click();
     await capture(page,id+"-app-390");
   }
