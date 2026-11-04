@@ -311,6 +311,26 @@ export type RedemptionList = {
   redemptions: Redemption[];
 };
 
+/**
+ * Whose coupons these are.
+ *
+ * The same screens serve two callers: the platform, which names a restaurant
+ * in the URL, and a restaurant running its own promotions, which does not --
+ * its tenant comes from the host it is signed in to. One type rather than two
+ * copies of every component.
+ */
+export type CouponScope = { restaurantId: string } | "mine";
+
+/** Where a scope's coupon endpoints live. */
+export function couponBase(scope: CouponScope): string {
+  return scope === "mine" ? "/restaurant" : `/admin/restaurants/${scope.restaurantId}`;
+}
+
+/** A cache key for a scope, so the two never share an entry. */
+export function scopeKey(scope: CouponScope): string {
+  return scope === "mine" ? "mine" : scope.restaurantId;
+}
+
 export type Restaurant = {
   id: string;
   slug: string;
@@ -582,40 +602,40 @@ export const adminApi = api.injectEndpoints({
     // no coupon screen in the restaurant portal and no endpoint behind one.
     // These are on the admin surface, per restaurant.
 
-    coupons: build.query<CouponList, string>({
-      query: (id) => ({ url: `/admin/restaurants/${id}/coupons` }),
-      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    coupons: build.query<CouponList, CouponScope>({
+      query: (scope) => ({ url: `${couponBase(scope)}/coupons` }),
+      providesTags: (_r, _e, scope) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    createCoupon: build.mutation<Coupon, { id: string; draft: CouponDraft }>({
-      query: ({ id, draft }) => ({
-        url: `/admin/restaurants/${id}/coupons`,
+    createCoupon: build.mutation<Coupon, { scope: CouponScope; draft: CouponDraft }>({
+      query: ({ scope, draft }) => ({
+        url: `${couponBase(scope)}/coupons`,
         method: "POST",
         body: draft,
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     updateCoupon: build.mutation<
       Coupon,
-      { id: string; couponId: string; patch: CouponPatch }
+      { scope: CouponScope; couponId: string; patch: CouponPatch }
     >({
-      query: ({ id, couponId, patch }) => ({
-        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+      query: ({ scope, couponId, patch }) => ({
+        url: `${couponBase(scope)}/coupons/${couponId}`,
         method: "PATCH",
         body: patch,
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     // Soft, and the code becomes free again: orders that used it keep their
     // own snapshot, so a receipt from last month still reads the same.
-    retireCoupon: build.mutation<void, { id: string; couponId: string }>({
-      query: ({ id, couponId }) => ({
-        url: `/admin/restaurants/${id}/coupons/${couponId}`,
+    retireCoupon: build.mutation<void, { scope: CouponScope; couponId: string }>({
+      query: ({ scope, couponId }) => ({
+        url: `${couponBase(scope)}/coupons/${couponId}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     // --- rewards and offers ------------------------------------------------
@@ -624,68 +644,68 @@ export const adminApi = api.injectEndpoints({
     // One offer, minted as numbered codes. The codes are ordinary coupons
     // underneath, so they share the Coupon tag: minting one changes what
     // the coupon list would show if it did not filter them out.
-    couponGroups: build.query<CouponGroupList, string>({
-      query: (id) => ({ url: `/admin/restaurants/${id}/coupon-groups` }),
-      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    couponGroups: build.query<CouponGroupList, CouponScope>({
+      query: (scope) => ({ url: `${couponBase(scope)}/coupon-groups` }),
+      providesTags: (_r, _e, scope) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    createCouponGroup: build.mutation<CouponGroup, { id: string; draft: CouponGroupDraft }>({
-      query: ({ id, draft }) => ({
-        url: `/admin/restaurants/${id}/coupon-groups`,
+    createCouponGroup: build.mutation<CouponGroup, { scope: CouponScope; draft: CouponGroupDraft }>({
+      query: ({ scope, draft }) => ({
+        url: `${couponBase(scope)}/coupon-groups`,
         method: "POST",
         body: draft,
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     updateCouponGroup: build.mutation<
       CouponGroup,
-      { id: string; groupId: string; patch: CouponGroupPatch }
+      { scope: CouponScope; groupId: string; patch: CouponGroupPatch }
     >({
-      query: ({ id, groupId, patch }) => ({
-        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+      query: ({ scope, groupId, patch }) => ({
+        url: `${couponBase(scope)}/coupon-groups/${groupId}`,
         method: "PATCH",
         body: patch,
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    retireCouponGroup: build.mutation<void, { id: string; groupId: string }>({
-      query: ({ id, groupId }) => ({
-        url: `/admin/restaurants/${id}/coupon-groups/${groupId}`,
+    retireCouponGroup: build.mutation<void, { scope: CouponScope; groupId: string }>({
+      query: ({ scope, groupId }) => ({
+        url: `${couponBase(scope)}/coupon-groups/${groupId}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     // --- the welcome offer, and who used what -----------------------------
-    signupOffer: build.query<SignupOfferState, string>({
-      query: (id) => ({ url: `/admin/restaurants/${id}/signup-offer` }),
-      providesTags: (_r, _e, id) => [{ type: "Coupon", id }],
+    signupOffer: build.query<SignupOfferState, CouponScope>({
+      query: (scope) => ({ url: `${couponBase(scope)}/signup-offer` }),
+      providesTags: (_r, _e, scope) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    setSignupOffer: build.mutation<SignupOffer, { id: string; draft: SignupOfferDraft }>({
-      query: ({ id, draft }) => ({
-        url: `/admin/restaurants/${id}/signup-offer`,
+    setSignupOffer: build.mutation<SignupOffer, { scope: CouponScope; draft: SignupOfferDraft }>({
+      query: ({ scope, draft }) => ({
+        url: `${couponBase(scope)}/signup-offer`,
         method: "PUT",
         body: draft,
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    retireSignupOffer: build.mutation<void, { id: string }>({
-      query: ({ id }) => ({
-        url: `/admin/restaurants/${id}/signup-offer`,
+    retireSignupOffer: build.mutation<void, { scope: CouponScope }>({
+      query: ({ scope }) => ({
+        url: `${couponBase(scope)}/signup-offer`,
         method: "DELETE",
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      invalidatesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
-    couponRedemptions: build.query<RedemptionList, { id: string; code?: string }>({
-      query: ({ id, code }) => ({
-        url: `/admin/restaurants/${id}/coupon-redemptions${code ? `?code=${encodeURIComponent(code)}` : ""}`,
+    couponRedemptions: build.query<RedemptionList, { scope: CouponScope; code?: string }>({
+      query: ({ scope, code }) => ({
+        url: `${couponBase(scope)}/coupon-redemptions${code ? `?code=${encodeURIComponent(code)}` : ""}`,
       }),
-      providesTags: (_r, _e, { id }) => [{ type: "Coupon", id }],
+      providesTags: (_r, _e, { scope }) => [{ type: "Coupon", id: scopeKey(scope) }],
     }),
 
     // The platform's to create, for the reason coupons are: what a promotion

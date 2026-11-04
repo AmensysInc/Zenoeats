@@ -478,46 +478,8 @@ def create_coupon(
     with tenant_session(restaurant_id) as db:
         _restaurant(db, restaurant_id)
 
-        live = db.execute(
-            select(func.count())
-            .select_from(Coupon)
-            .where(Coupon.deleted_at.is_(None), Coupon.group_id.is_(None))
-        ).scalar_one()
-        if live >= MAX_COUPONS:
-            raise errors.validation_error(
-                f"That is {MAX_COUPONS} coupons. Retire one before adding another."
-            )
-
-        # Checked here for the message. The partial unique index is what
-        # actually guarantees it, and it covers the live rows only -- a
-        # retired code may be created again.
-        clash = db.execute(
-            select(Coupon.id).where(
-                Coupon.code == body.code, Coupon.deleted_at.is_(None)
-            )
-        ).scalar_one_or_none()
-        if clash is not None:
-            raise errors.validation_error(f"{body.code} already exists here.")
-
-        kind, value = body.stored()
-        coupon = Coupon(
-            restaurant_id=restaurant_id,
-            code=body.code,
-            description=body.description,
-            discount_kind=kind,
-            discount_value=value,
-            max_discount_minor=body.max_discount_minor,
-            min_subtotal_minor=body.min_subtotal_minor,
-            starts_at=body.starts_at,
-            ends_at=body.ends_at,
-            max_redemptions=body.max_redemptions,
-            max_per_customer=body.max_per_customer,
-            is_active=body.is_active,
-        )
-        db.add(coupon)
-        db.flush()
-        _set_scope(db, restaurant_id, coupon, body.applies_to)
-        db.flush()
+        coupon = new_coupon(db, restaurant_id, body)
+        kind, value = coupon.discount_kind, coupon.discount_value
 
         headings = _headings(db)
         scope = _scopes(db, [coupon.id], headings).get(coupon.id, [])
@@ -559,54 +521,7 @@ def update_coupon(
         _restaurant(db, restaurant_id)
         coupon = _find(db, coupon_id)
         sent = body.model_dump(exclude_unset=True)
-
-        if "description" in sent:
-            coupon.description = (sent["description"] or "").strip() or None
-
-        # Whichever of the two was sent replaces both columns. The validator
-        # has already refused both at once.
-        if sent.get("percent_off_bps") is not None:
-            coupon.discount_kind = DiscountKind.PERCENT.value
-            coupon.discount_value = sent["percent_off_bps"]
-        elif sent.get("amount_off_minor") is not None:
-            coupon.discount_kind = DiscountKind.AMOUNT.value
-            coupon.discount_value = sent["amount_off_minor"]
-            # A flat amount cannot carry a ceiling, so changing to one drops
-            # any ceiling the percentage had rather than leaving a setting
-            # behind that no longer means anything.
-            coupon.max_discount_minor = None
-
-        if "max_discount_minor" in sent:
-            # Zero is how a form clears a ceiling: an empty number input
-            # sends nothing useful, and "no ceiling" has to be expressible.
-            ceiling = sent["max_discount_minor"] or None
-            if ceiling is not None and coupon.discount_kind != DiscountKind.PERCENT.value:
-                raise errors.validation_error(
-                    "A ceiling only applies to a percentage discount."
-                )
-            coupon.max_discount_minor = ceiling
-
-        if "min_subtotal_minor" in sent:
-            coupon.min_subtotal_minor = sent["min_subtotal_minor"] or 0
-        if "starts_at" in sent:
-            coupon.starts_at = sent["starts_at"]
-        if "ends_at" in sent:
-            coupon.ends_at = sent["ends_at"]
-        if "max_redemptions" in sent:
-            coupon.max_redemptions = sent["max_redemptions"] or None
-        if "max_per_customer" in sent:
-            coupon.max_per_customer = sent["max_per_customer"] or None
-        if sent.get("is_active") is not None:
-            coupon.is_active = sent["is_active"]
-
-        if coupon.starts_at and coupon.ends_at and coupon.ends_at <= coupon.starts_at:
-            raise errors.validation_error("The end has to come after the start.")
-
-        if "applies_to" in sent:
-            _set_scope(db, restaurant_id, coupon, sent["applies_to"] or [])
-
-        coupon.updated_at = utcnow()
-        db.flush()
+        apply_patch(db, restaurant_id, coupon, sent)
 
         headings = _headings(db)
         scope = _scopes(db, [coupon.id], headings).get(coupon.id, [])
@@ -1383,3 +1298,115 @@ def list_redemptions(
                 for order, user in rows
             ],
         )
+
+
+# ---------------------------------------- shared with the restaurant router ---
+#
+# The restaurant runs its own promotions now (restaurant_coupons.py), under a
+# staff session rather than a platform one. These are the pieces both sides
+# need that are not already a service call: everything about *what a coupon
+# is* lives in services/coupons.py and services/coupon_groups.py and is
+# shared outright, and these are the two bits of bookkeeping around it.
+
+
+def new_coupon(db, restaurant_id: UUID, body: CouponIn) -> Coupon:
+    """The checks and the row, for whoever is creating a coupon.
+
+    Both routers call this rather than each building a Coupon of its own:
+    the cap, the duplicate-code message and the column mapping are exactly
+    the things that would drift apart if written twice.
+    """
+    live = db.execute(
+        select(func.count())
+        .select_from(Coupon)
+        .where(Coupon.deleted_at.is_(None), Coupon.group_id.is_(None))
+    ).scalar_one()
+    if live >= MAX_COUPONS:
+        raise errors.validation_error(
+            f"That is {MAX_COUPONS} coupons. Retire one before adding another."
+        )
+
+    # Checked here for the message. The partial unique index is what actually
+    # guarantees it, and it covers the live rows only -- a retired code may
+    # be created again.
+    clash = db.execute(
+        select(Coupon.id).where(Coupon.code == body.code, Coupon.deleted_at.is_(None))
+    ).scalar_one_or_none()
+    if clash is not None:
+        raise errors.validation_error(f"{body.code} already exists here.")
+
+    kind, value = body.stored()
+    coupon = Coupon(
+        restaurant_id=restaurant_id,
+        code=body.code,
+        description=body.description,
+        discount_kind=kind,
+        discount_value=value,
+        max_discount_minor=body.max_discount_minor,
+        min_subtotal_minor=body.min_subtotal_minor,
+        starts_at=body.starts_at,
+        ends_at=body.ends_at,
+        max_redemptions=body.max_redemptions,
+        max_per_customer=body.max_per_customer,
+        is_active=body.is_active,
+    )
+    db.add(coupon)
+    db.flush()
+    _set_scope(db, restaurant_id, coupon, body.applies_to)
+    db.flush()
+    return coupon
+
+
+def apply_patch(db, restaurant_id: UUID, coupon: Coupon, sent: dict) -> None:
+    """Apply an edit to a coupon row. The rules, in one place.
+
+    A limit may be lowered below what has already been redeemed, deliberately:
+    it is how a promotion that is running away is stopped without retiring a
+    code customers are holding.
+    """
+    if "description" in sent:
+        coupon.description = (sent["description"] or "").strip() or None
+
+    # Whichever of the two was sent replaces both columns. The validator has
+    # already refused both at once.
+    if sent.get("percent_off_bps") is not None:
+        coupon.discount_kind = DiscountKind.PERCENT.value
+        coupon.discount_value = sent["percent_off_bps"]
+    elif sent.get("amount_off_minor") is not None:
+        coupon.discount_kind = DiscountKind.AMOUNT.value
+        coupon.discount_value = sent["amount_off_minor"]
+        # A flat amount cannot carry a ceiling, so changing to one drops any
+        # ceiling the percentage had rather than leaving a dead setting.
+        coupon.max_discount_minor = None
+
+    if "max_discount_minor" in sent:
+        # Zero is how a form clears a ceiling: an empty number input sends
+        # nothing useful, and "no ceiling" has to be expressible.
+        ceiling = sent["max_discount_minor"] or None
+        if ceiling is not None and coupon.discount_kind != DiscountKind.PERCENT.value:
+            raise errors.validation_error(
+                "A ceiling only applies to a percentage discount."
+            )
+        coupon.max_discount_minor = ceiling
+
+    if "min_subtotal_minor" in sent:
+        coupon.min_subtotal_minor = sent["min_subtotal_minor"] or 0
+    if "starts_at" in sent:
+        coupon.starts_at = sent["starts_at"]
+    if "ends_at" in sent:
+        coupon.ends_at = sent["ends_at"]
+    if "max_redemptions" in sent:
+        coupon.max_redemptions = sent["max_redemptions"] or None
+    if "max_per_customer" in sent:
+        coupon.max_per_customer = sent["max_per_customer"] or None
+    if sent.get("is_active") is not None:
+        coupon.is_active = sent["is_active"]
+
+    if coupon.starts_at and coupon.ends_at and coupon.ends_at <= coupon.starts_at:
+        raise errors.validation_error("The end has to come after the start.")
+
+    if "applies_to" in sent:
+        _set_scope(db, restaurant_id, coupon, sent["applies_to"] or [])
+
+    coupon.updated_at = utcnow()
+    db.flush()

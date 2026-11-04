@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import require_admin_host, require_same_origin
 from app.api.v1 import (
     admin, coupons, customer, customer_accounts, orders, portal, restaurant,
-    rewards_admin, webhooks, welcome,
+    restaurant_coupons, rewards_admin, webhooks, welcome,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -35,6 +35,11 @@ api_router.include_router(welcome.router, dependencies=[Depends(require_same_ori
 # by itself. Both are pinned to the origin they are served from: the staff API
 # to its own restaurant's hostname, the platform API to admin.<root domain>.
 api_router.include_router(restaurant.router, dependencies=[Depends(require_same_origin)])
+# The restaurant's own promotions. Same cookie session and same origin pin as
+# the rest of the manage portal; the platform keeps its own coupon screens.
+api_router.include_router(
+    restaurant_coupons.router, dependencies=[Depends(require_same_origin)]
+)
 api_router.include_router(
     admin.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
 )

@@ -8,6 +8,7 @@ import {
   type CouponGroup,
   type CouponGroupDraft,
   type GroupCode,
+  type CouponScope,
   type MenuHeading,
 } from "@/features/admin/adminApi";
 import { cents, count } from "@/features/admin/offerFields";
@@ -32,8 +33,8 @@ import { money } from "@/utils/format";
  * which holders to cancel. Pausing and retiring work on the whole group,
  * codes included, because the codes are what customers actually hold.
  */
-export function CouponGroups({ restaurantId }: { restaurantId: string }) {
-  const groups = useCouponGroupsQuery(restaurantId);
+export function CouponGroups({ scope }: { scope: CouponScope }) {
+  const groups = useCouponGroupsQuery(scope);
   const currency = groups.data?.currency ?? "USD";
 
   const [update] = useUpdateCouponGroupMutation();
@@ -84,7 +85,7 @@ export function CouponGroups({ restaurantId }: { restaurantId: string }) {
       )}
       {adding && (
         <GroupForm
-          restaurantId={restaurantId}
+          scope={scope}
           currency={currency}
           headings={groups.data?.item_types ?? []}
           onDone={(prefix) => {
@@ -110,7 +111,7 @@ export function CouponGroups({ restaurantId }: { restaurantId: string }) {
                 group,
                 () =>
                   update({
-                    id: restaurantId,
+                    scope,
                     groupId: group.id,
                     patch: { is_active: !group.is_active },
                   }).unwrap(),
@@ -120,7 +121,7 @@ export function CouponGroups({ restaurantId }: { restaurantId: string }) {
             onRetire={() =>
               act(
                 group,
-                () => retire({ id: restaurantId, groupId: group.id }).unwrap(),
+                () => retire({ scope, groupId: group.id }).unwrap(),
                 "retired",
               )
             }
@@ -264,12 +265,12 @@ function worth(group: CouponGroup, currency: string): string {
 }
 
 function GroupForm({
-  restaurantId,
+  scope,
   currency,
   headings,
   onDone,
 }: {
-  restaurantId: string;
+  scope: CouponScope;
   currency: string;
   headings: MenuHeading[];
   onDone: (prefix: string | null) => void;
@@ -327,7 +328,7 @@ function GroupForm({
     };
 
     try {
-      const created = await create({ id: restaurantId, draft }).unwrap();
+      const created = await create({ scope, draft }).unwrap();
       onDone(created.code_prefix);
     } catch (e) {
       setError(errorMessage(e));
