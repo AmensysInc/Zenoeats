@@ -141,14 +141,34 @@ def test_an_unknown_sentence_is_not_forced_into_an_intent(typed):
 
 
 @pytest.mark.parametrize("typed", ["refund everyone", "delete the entire menu"])
-def test_a_destructive_sentence_is_recognised_but_never_performed(typed):
-    """Recognised so it can be answered usefully -- these used to return
-    None and read as "I did not understand", which told nobody where to go.
-    What matters is that the intent is not one of the writes."""
+def test_a_sentence_about_many_things_is_recognised_but_never_performed(typed):
+    """Recognised so it can be answered usefully -- these used to read as
+    "I did not understand", which told nobody where to go. What matters is
+    that the intent is not one of the writes."""
     found = read(typed)
     assert found is not None
     assert found.intent is Intent.OUT_OF_SCOPE
     assert found.intent not in WRITES
+
+
+@pytest.mark.parametrize(
+    "typed,intent",
+    [
+        ("cancel order 1024", Intent.CANCEL_ORDER),
+        ("delete the Burgers heading", Intent.DELETE_HEADING),
+        ("remove the milkshake", Intent.DELETE_ITEM),
+    ],
+)
+def test_the_destructive_ones_are_understood(typed, intent):
+    """They are done, and they are marked: DESTRUCTIVE is what makes the
+    button red and the wording blunt."""
+    from app.services.assistant.language import DESTRUCTIVE
+
+    found = read(typed)
+    assert found is not None, typed
+    assert found.intent is intent
+    assert found.intent in DESTRUCTIVE
+    assert found.intent in WRITES
 
 
 def test_a_destructive_word_is_not_read_as_its_opposite():
@@ -195,16 +215,14 @@ def test_what_is_not_money_is_not_money():
         ("create a coupon SAVE10 for 10% off", "Coupons"),
         ("add a promotion", "Coupons"),
         ("refund order 1024", "Refunds"),
-        ("cancel order 1024", "Orders"),
-        ("delete the Burgers heading", "delete"),
-        ("remove Sam from the team", "delete"),
+        ("remove Sam from the team", "Staff"),
         ("invite a new staff member", "Staff"),
         ("turn on delivery", "Delivery"),
         ("set the tax rate to 9%", "Tax"),
         ("change our opening hours", "Opening hours"),
         ("upload a new logo", "Logo"),
         ("add a combo meal", "Combos"),
-        ("make everything free", "one at a time"),
+        ("make everything free", "one thing at a time"),
     ],
 )
 def test_a_request_we_do_not_serve_says_where_it_lives(typed, mentions):

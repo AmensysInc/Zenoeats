@@ -20,9 +20,15 @@ Running as the signed-in admin on their own staff session means the
 assistant can do exactly what that person could do by clicking, and there
 is no path here that is wider than the screens it replaces.
 
-WHAT IT WILL NOT DO AT ALL: refunds, cancellations, deletions, staff
-changes. Those mistakes cannot be taken back, and a sentence is a thinner
-interface than the screens that guard them.
+WHAT IT WILL NOT DO AT ALL: refunds, staff changes, and anything in bulk.
+Money going back to a customer stays on the order, where the amount is in
+front of whoever sends it; "delete everything" is refused before the
+sentence is even read.
+
+Cancellations and deletions it does do, and they are marked destructive the
+whole way through: the proposal says what will be lost -- the order total,
+the meals a dish is on, whether a heading is empty -- and the state is
+re-checked at the moment of doing it rather than only when it was proposed.
 """
 
 import logging
@@ -54,6 +60,10 @@ class AskOut(BaseModel):
     proposal: dict | None = None
     options: list[str] = []
     understood: bool = True
+    # Cannot be taken back. The screen makes the button red and the wording
+    # blunt; it is honesty about which kind of change this is, not a second
+    # gate -- the gate is that nothing happens without the button at all.
+    destructive: bool = False
 
 
 class DoIn(BaseModel):
@@ -89,7 +99,12 @@ def ask(
             text="I did not understand that.\n\n" + actions.HELP, understood=False
         )
     answer = actions.respond(db, restaurant, reading)
-    return AskOut(text=answer.text, proposal=answer.proposal, options=answer.options)
+    return AskOut(
+        text=answer.text,
+        proposal=answer.proposal,
+        options=answer.options,
+        destructive=answer.destructive,
+    )
 
 
 @router.post(

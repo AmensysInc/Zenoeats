@@ -34,6 +34,7 @@ type Turn = {
   mine: boolean;
   text: string;
   proposal?: Record<string, unknown> | null;
+  destructive?: boolean;
   /** Set once a proposal has been acted on, so the button goes away and the
    *  outcome reads as history rather than as something still pending. */
   settled?: string;
@@ -64,7 +65,12 @@ export function AssistantArea() {
     say({ mine: true, text });
     try {
       const reply: AssistantReply = await ask({ text }).unwrap();
-      say({ mine: false, text: reply.text, proposal: reply.proposal });
+      say({
+        mine: false,
+        text: reply.text,
+        proposal: reply.proposal,
+        destructive: reply.destructive,
+      });
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -131,14 +137,21 @@ export function AssistantArea() {
 
                 {turn.proposal && !turn.settled && (
                   <div className="mt-2 flex flex-wrap items-center gap-3">
+                    {/* Red and blunt for anything that cannot be taken
+                        back, so agreeing to a cancellation never looks
+                        like agreeing to a price change. */}
                     <button
                       type="button"
-                      className="btn-primary btn-compact"
+                      className={
+                        turn.destructive
+                          ? "btn-primary btn-compact !bg-danger"
+                          : "btn-primary btn-compact"
+                      }
                       disabled={busy}
                       onClick={() => agree(turn)}
                     >
                       {confirming.isLoading && <Spinner />}
-                      Yes, do it
+                      {turn.destructive ? "Yes, do it — it cannot be undone" : "Yes, do it"}
                     </button>
                     <button
                       type="button"
@@ -178,7 +191,8 @@ export function AssistantArea() {
         </form>
 
         <p className="mt-3 text-caption text-muted">
-          Refunds, cancellations and deleting things stay on their own screens.
+          Refunds and staff changes stay on their own screens, and nothing is
+          done in bulk.
         </p>
       </div>
     </section>

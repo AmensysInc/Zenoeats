@@ -226,3 +226,168 @@ def test_one_restaurant_cannot_see_another_s_menu(menu, admin_user, cleanup):
     )
     body = theirs.post(ASK, json={"text": "show me the menu"}).json()
     assert "Jr's French Fries" not in body["text"]
+
+
+# ------------------------------------------- things that cannot be undone -----
+#
+# Cancellations and deletions. Each is marked destructive the whole way
+# through, says what will be lost before the button, and re-checks the state
+# at the moment of doing it rather than only when it was proposed.
+
+
+def _order_on(restaurant_id, number=1024, status="AUTO_ACCEPTED", total=1850):
+    """One order to talk about, in a given state."""
+    from app.db.session import system_session, tenant_session
+
+    with system_session() as session:
+        user_id = session.execute(
+            text(
+                "INSERT INTO users (id, kind, email, is_platform_admin, is_active, "
+                "must_change_password, created_at, updated_at) VALUES "
+                "(gen_random_uuid(), 'GUEST', :e, false, true, false, now(), now()) "
+                "RETURNING id"
+            ),
+            {"e": f"guest-{number}-{restaurant_id}@t.invalid"},
+        ).scalar_one()
+    with tenant_session(restaurant_id) as session:
+        return session.execute(
+            text(
+                "INSERT INTO orders (id, restaurant_id, customer_user_id, order_number, "
+                "status, fulfillment_type, payment_method, currency, subtotal_minor, "
+                "tax_minor, total_minor, created_at, updated_at) VALUES "
+                "(gen_random_uuid(), :r, :u, :n, :s, 'PICKUP', 'CARD', 'USD', :t, 0, "
+                ":t, now(), now()) RETURNING id"
+            ),
+            {"r": restaurant_id, "u": user_id, "n": number, "s": status, "t": total},
+        ).scalar_one()
+
+
+def test_cancelling_names_the_order_back_before_doing_it(menu):
+    """A mistyped number is the obvious way to cancel somebody else's
+    dinner, so the proposal says which order and what it cost."""
+    _order_on(menu.id, number=1024, total=1850)
+    body = menu.owner.post(ASK, json={"text": "cancel order 1024"}).json()
+
+    assert body["destructive"] is True
+    assert "#1024" in body["text"] and "USD 18.50" in body["text"]
+    assert "cannot be undone" in body["text"]
+    assert body["proposal"]["intent"] == "CANCEL_ORDER"
+
+
+def test_cancelling_performs_through_the_state_machine(menu):
+    from app.db.session import tenant_session
+
+    _order_on(menu.id, number=1025)
+    proposal = menu.owner.post(ASK, json={"text": "cancel order 1025"}).json()["proposal"]
+    done = menu.owner.post(DO, json={"proposal": proposal})
+    assert done.status_code == 200, done.text
+
+    with tenant_session(menu.id) as session:
+        assert session.execute(
+            text("SELECT status FROM orders WHERE order_number = 1025")
+        ).scalar_one() == "CANCELLED"
+
+
+def test_an_unpaid_order_is_refused_the_way_the_orders_screen_refuses_it(menu):
+    _order_on(menu.id, number=1026, status="PENDING_PAYMENT")
+    body = menu.owner.post(ASK, json={"text": "cancel order 1026"}).json()
+    assert body["proposal"] is None
+    assert "not been paid" in body["text"]
+
+
+def test_an_order_that_does_not_exist_is_not_invented(menu):
+    body = menu.owner.post(ASK, json={"text": "cancel order 9999"}).json()
+    assert body["proposal"] is None
+    assert "no order #9999" in body["text"].lower()
+
+
+def test_an_order_cancelled_in_between_is_refused_at_the_button(menu):
+    """State is re-checked when it happens, not only when it was proposed."""
+    from app.db.session import tenant_session
+
+    _order_on(menu.id, number=1027)
+    proposal = menu.owner.post(ASK, json={"text": "cancel order 1027"}).json()["proposal"]
+    with tenant_session(menu.id) as session:
+        session.execute(
+            text("UPDATE orders SET status = 'CANCELLED' WHERE order_number = 1027")
+        )
+
+    refused = menu.owner.post(DO, json={"proposal": proposal})
+    assert refused.status_code == 422
+    assert "already cancelled" in refused.json()["detail"]["message"].lower()
+
+
+def test_deleting_a_dish_says_what_goes_with_it(menu):
+    body = menu.owner.post(ASK, json={"text": "delete the cheeseburger"}).json()
+    assert body["destructive"] is True
+    assert "Jr's Cheeseburger" in body["text"]
+    assert "cannot be undone" in body["text"]
+
+    menu.owner.post(DO, json={"proposal": body["proposal"]})
+    from app.db.session import tenant_session
+
+    with tenant_session(menu.id) as session:
+        # Soft, so orders that included it still read correctly.
+        assert session.execute(
+            text("SELECT deleted_at IS NOT NULL FROM menu_items WHERE name = :n"),
+            {"n": "Jr's Cheeseburger"},
+        ).scalar_one() is True
+
+
+def test_a_heading_with_dishes_under_it_is_refused(menu):
+    """The same answer the Menu screen gives, and the same reason: deleting
+    it would take real dishes with it or orphan them."""
+    body = menu.owner.post(ASK, json={"text": "delete the Burgers heading"}).json()
+    assert body["proposal"] is None
+    assert "still has 2 dishes" in body["text"]
+
+
+def test_an_empty_heading_can_go(menu):
+    import uuid as _uuid
+
+    from app.db.session import tenant_session
+
+    # Unique per run: item type names are unique per restaurant, and a
+    # rerun that collided would look like a feature failure.
+    empty = f"Sides{_uuid.uuid4().hex[:6]}"
+
+    with tenant_session(menu.id) as session:
+        session.execute(
+            text(
+                "INSERT INTO item_types (id, restaurant_id, name, sort_order, "
+                "created_at, updated_at) VALUES (gen_random_uuid(), :r, :n, "
+                "9, now(), now())"
+            ),
+            {"r": menu.id, "n": empty},
+        )
+    body = menu.owner.post(ASK, json={"text": f"delete the {empty} heading"}).json()
+    assert body["destructive"] is True
+    assert body["proposal"]["intent"] == "DELETE_HEADING"
+
+    menu.owner.post(DO, json={"proposal": body["proposal"]})
+    with tenant_session(menu.id) as session:
+        assert session.execute(
+            text("SELECT deleted_at IS NOT NULL FROM item_types WHERE name = :n"),
+            {"n": empty},
+        ).scalar_one() is True
+
+
+@pytest.mark.parametrize(
+    "typed",
+    ["delete everything", "delete all the items", "cancel all orders", "make everything free"],
+)
+def test_nothing_happens_in_bulk(menu, typed):
+    """Refused before the sentence is read at all: narrowing "delete
+    everything" down to whichever single row matched would be worse than
+    refusing."""
+    body = menu.owner.post(ASK, json={"text": typed}).json()
+    assert body["proposal"] is None
+    assert "one thing at a time" in body["text"]
+
+
+def test_a_refund_is_still_not_something_it_does(menu):
+    """Money going back to a customer stays on the order, where the amount
+    is in front of whoever sends it."""
+    body = menu.owner.post(ASK, json={"text": "refund order 1024"}).json()
+    assert body["proposal"] is None
+    assert "refunds are on the order" in body["text"].lower()

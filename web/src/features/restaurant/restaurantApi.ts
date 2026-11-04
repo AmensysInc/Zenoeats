@@ -515,6 +515,8 @@ export type AssistantReply = {
   proposal: Record<string, unknown> | null;
   options: string[];
   understood: boolean;
+  /** Cannot be taken back: the panel makes the button red and says so. */
+  destructive: boolean;
 };
 
 export const restaurantApi = api.injectEndpoints({

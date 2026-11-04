@@ -51,17 +51,11 @@ from enum import Enum
 OUT_OF_SCOPE: list[tuple[str, str]] = [
     (r"\b(coupon|promo(?:tion)?|discount\s+code|voucher)\b",
      "Coupons are on the Coupons section of Settings."),
-    (r"\b(staff|team\s+member|employee|colleague|rota)\b",
+    (r"\b(staff|team|employee|colleague|rota|manager|cook)\b",
      "Staff are on the Staff screen."),
     (r"\b(refund|charge\s*back)\b",
      "Refunds are on the order itself, on the Orders screen. "
      "They cannot be undone, so they stay there."),
-    (r"\bcancel\b.*\border\b|\border\b.*\bcancel\b",
-     "Cancelling an order is on the Orders screen. It cannot be undone, "
-     "so it stays there."),
-    (r"\b(delete|remove|get\s+rid\s+of)\b",
-     "I do not delete anything. That is on the screen the thing lives on, "
-     "where it can be checked first."),
     (r"\bcombo\b|\bmeal\s+deal\b",
      "Combos are on the Menu screen -- they have slots and choices that do "
      "not fit in a sentence."),
@@ -71,10 +65,28 @@ OUT_OF_SCOPE: list[tuple[str, str]] = [
     (r"\b(opening\s+hours|hours|open(?:ing)?\s+times)\b",
      "Opening hours are on the Storefront screen."),
     (r"\b(logo|banner|brand)\b", "Branding is on the Logo & name section of Settings."),
-    (r"\border\b", "Orders are on the Orders screen, where you can see the whole one."),
+    (r"\b(mark|set|move)\b.*\b(ready|preparing|delivered|picked\s+up|complete)\b",
+     "Moving an order along is on the Orders screen, where you can see the "
+     "whole one."),
+    (r"\bassign\b.*\bdriver\b|\bdriver\b.*\bassign\b",
+     "Drivers are on the Deliveries screen."),
+    (r"\b(delete|remove|get\s+rid\s+of)\b.*\b(everything|all|whole\s+menu)\b",
+     "I will not delete things in bulk. Name one and I will show you what "
+     "goes with it."),
     (r"\bfree\b.*\beveryth|\beveryth.*\bfree\b",
      "I will not change everything at once. Price dishes one at a time."),
 ]
+
+
+# Refused before anything else looks at the sentence. "delete everything"
+# would otherwise be read as deleting a dish called "everything" -- which
+# fails safe, because no such dish exists, but failing safe by accident is
+# not the same as refusing on purpose.
+BULK = re.compile(
+    r"\b(everything|all\s+(?:the\s+)?(?:items|dishes|orders|menu)"
+    r"|(?:whole|entire)\s+menu|every\s+(?:item|dish|order))\b",
+    re.I,
+)
 
 
 class Intent(str, Enum):
@@ -94,13 +106,29 @@ class Intent(str, Enum):
     SHOW_ORDERS = "SHOW_ORDERS"
     SHOW_COUPONS = "SHOW_COUPONS"
     HELP = "HELP"
+
+    # Destructive, and treated differently the whole way through: the
+    # proposal says what will be lost, the button is red, and none of them
+    # happen without a person pressing it.
+    CANCEL_ORDER = "CANCEL_ORDER"
+    DELETE_ITEM = "DELETE_ITEM"
+    DELETE_HEADING = "DELETE_HEADING"
+
     # Understood, and not something this does. Carries the sentence to say.
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
 # Which intents change something. A read runs on the spot; a write is
 # described back and waits for a person to press the button.
-WRITES = {Intent.ADD_ITEM, Intent.SET_PRICE, Intent.SET_AVAILABLE, Intent.SET_UNAVAILABLE}
+WRITES = {
+    Intent.ADD_ITEM, Intent.SET_PRICE, Intent.SET_AVAILABLE, Intent.SET_UNAVAILABLE,
+    Intent.CANCEL_ORDER, Intent.DELETE_ITEM, Intent.DELETE_HEADING,
+}
+
+# The ones that cannot be taken back. Separated from the rest because they
+# are shown differently and because the list is worth being able to read:
+# anything added here needs a reason, and the reason is never "it was easy".
+DESTRUCTIVE = {Intent.CANCEL_ORDER, Intent.DELETE_ITEM, Intent.DELETE_HEADING}
 
 
 @dataclass
@@ -179,6 +207,31 @@ _WRITE_PATTERNS: list[tuple[Intent, re.Pattern]] = [
 
 ]
 
+# Precise enough to try before the out-of-scope list. Each names its object
+# exactly -- an order number, a heading, a dish -- so none of them can
+# swallow a sentence about something else, which is the risk that puts the
+# greedy add-a-dish pattern after that list instead of before it.
+#
+# They have to come first, or "cancel order 1024" is claimed by the rule
+# that points at the Orders screen and the one thing it asks for never
+# happens.
+_PRECISE_PATTERNS: list[tuple[Intent, re.Pattern]] = [
+    # "cancel order 1024" / "cancel #1024"
+    (Intent.CANCEL_ORDER, re.compile(
+        r"^cancel\s+(?:the\s+)?(?:order\s+)?#?(?P<order_number>\d+)\s*$", re.I)),
+
+    # "delete the Burgers heading" / "remove the Drinks category"
+    (Intent.DELETE_HEADING, re.compile(
+        r"^(?:delete|remove)\s+(?:the\s+)?(?P<name>.+?)\s+"
+        r"(?:heading|category|section|item\s+type)\s*$", re.I)),
+
+    # "delete the milkshake" / "remove Jr's Shake from the menu"
+    (Intent.DELETE_ITEM, re.compile(
+        r"^(?:delete|remove)\s+(?:the\s+)?(?P<name>.+?)"
+        r"(?:\s+from\s+(?:the\s+)?menu)?\s*$", re.I)),
+]
+
+
 # Tried before the out-of-scope list, because these are precise whole-
 # sentence matches and several of them mention a word that list also
 # watches for: "list coupons" is a question this answers, where "create a
@@ -201,6 +254,54 @@ _READ_PATTERNS: list[tuple[Intent, re.Pattern]] = [
 ]
 
 
+def _slots(intent: Intent, match: re.Match) -> Reading | None:
+    """The slots out of one match, for either write stage."""
+    groups = match.groupdict()
+    slots: dict = {}
+
+    name = (groups.get("name") or "").strip(" .!?")
+    if name:
+        # "to the menu" is where it goes, not what it is called.
+        name = re.sub(r"\s+to\s+(?:the\s+)?menu$", "", name, flags=re.I).strip()
+        slots["name"] = name
+    heading = (groups.get("heading") or "").strip(" .!?")
+    # "add a wrap to the menu" names no heading: "menu" is where every
+    # item goes, so reading it as one would file the wrap under a
+    # heading called Menu.
+    if heading and heading.lower() not in ("menu", "the menu"):
+        slots["heading"] = heading
+
+    if groups.get("order_number"):
+        slots["order_number"] = int(groups["order_number"])
+
+    amount = next(
+        (
+            value for key, value in groups.items()
+            if key not in ("name", "heading", "order_number") and value
+        ),
+        None,
+    )
+    # Positional money group, which has no name in these patterns.
+    if amount is None and match.lastindex:
+        for index in range(1, (match.lastindex or 0) + 1):
+            candidate = match.group(index)
+            if candidate and re.fullmatch(r"\d+(?:\.\d{1,2})?", candidate):
+                amount = candidate
+                break
+    if amount is not None:
+        minor = money_minor(amount)
+        if minor is not None:
+            slots["price_minor"] = minor
+
+    if intent is Intent.ADD_ITEM and "name" not in slots:
+        return None
+    if intent is Intent.CANCEL_ORDER and "order_number" not in slots:
+        return None
+    if intent in (Intent.SET_PRICE,) and "price_minor" not in slots:
+        return None
+    return Reading(intent=intent, slots=slots)
+
+
 def read(text: str) -> Reading | None:
     """What this sentence means, or None if we do not know.
 
@@ -212,7 +313,25 @@ def read(text: str) -> Reading | None:
     if not cleaned:
         return None
 
-    # THE ORDER OF THESE THREE IS THE WHOLE DESIGN.
+    # Bulk first, and on its own: nothing here operates on more than one
+    # thing, and a sentence asking it to is refused rather than narrowed
+    # down to whichever single row happens to match.
+    if BULK.search(cleaned):
+        return Reading(
+            intent=Intent.OUT_OF_SCOPE,
+            slots={
+                "says": "I only do one thing at a time. Name the single dish, "
+                        "heading or order and I will show you what happens to it."
+            },
+        )
+
+    # THE ORDER OF THESE FOUR IS THE WHOLE DESIGN.
+    #
+    # Reads, then topics we do not serve, then the precise writes, then the
+    # greedy ones. Each boundary is there because moving it breaks a real
+    # sentence: "list coupons" needs reads first; "remove Sam from the team"
+    # needs the staff topic ahead of delete-a-dish; "create a coupon" needs
+    # topics ahead of add-a-dish.
     #
     # Reads first: they are exact whole-sentence matches and cannot be
     # mistaken for anything, and several mention a word the out-of-scope
@@ -231,45 +350,21 @@ def read(text: str) -> Reading | None:
         if re.search(pattern, cleaned, re.I):
             return Reading(intent=Intent.OUT_OF_SCOPE, slots={"says": says})
 
+    # Then the precise writes: each names its object exactly, so none can
+    # swallow a sentence about something else.
+    for intent, pattern in _PRECISE_PATTERNS:
+        match = pattern.match(cleaned)
+        if match:
+            reading = _slots(intent, match)
+            if reading is not None:
+                return reading
+
     for intent, pattern in _WRITE_PATTERNS:
         match = pattern.match(cleaned)
         if not match:
             continue
-        groups = match.groupdict()
-        slots: dict = {}
-
-        name = (groups.get("name") or "").strip(" .!?")
-        if name:
-            # "to the menu" is where it goes, not what it is called.
-            name = re.sub(r"\s+to\s+(?:the\s+)?menu$", "", name, flags=re.I).strip()
-            slots["name"] = name
-        heading = (groups.get("heading") or "").strip(" .!?")
-        # "add a wrap to the menu" names no heading: "menu" is where every
-        # item goes, so reading it as one would file the wrap under a
-        # heading called Menu.
-        if heading and heading.lower() not in ("menu", "the menu"):
-            slots["heading"] = heading
-
-        amount = next(
-            (value for key, value in groups.items() if key not in ("name", "heading") and value),
-            None,
-        )
-        # Positional money group, which has no name in these patterns.
-        if amount is None and match.lastindex:
-            for index in range(1, (match.lastindex or 0) + 1):
-                candidate = match.group(index)
-                if candidate and re.fullmatch(r"\d+(?:\.\d{1,2})?", candidate):
-                    amount = candidate
-                    break
-        if amount is not None:
-            minor = money_minor(amount)
-            if minor is not None:
-                slots["price_minor"] = minor
-
-        if intent is Intent.ADD_ITEM and "name" not in slots:
-            continue
-        if intent in (Intent.SET_PRICE,) and "price_minor" not in slots:
-            continue
-        return Reading(intent=intent, slots=slots)
+        reading = _slots(intent, match)
+        if reading is not None:
+            return reading
 
     return None

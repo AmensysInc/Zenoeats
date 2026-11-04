@@ -33,8 +33,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Coupon, Item, ItemType, Order, OrderStatus, Restaurant
-from app.services.assistant.language import Intent, Reading, WRITES
+from app.models import (
+    ALLOWED_TRANSITIONS, Coupon, Item, ItemType, MealItem, Order, OrderStatus,
+    Restaurant,
+)
+from app.db.base import utcnow
+from app.services.assistant.language import DESTRUCTIVE, Intent, Reading, WRITES
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +58,10 @@ class Answer:
     proposal: dict | None = None
     # Candidates, when a name matched more than one dish.
     options: list[str] = field(default_factory=list)
+    # Cannot be taken back. The screen reads this to make the button red and
+    # the wording blunt; it is not a second gate, it is honesty about which
+    # kind of change the admin is about to agree to.
+    destructive: bool = False
 
 
 def _items(db: Session) -> list[Item]:
@@ -299,6 +307,120 @@ def _propose_availability(db: Session, slots: dict, available: bool) -> Answer:
     )
 
 
+def _propose_cancel(db: Session, restaurant: Restaurant, slots: dict) -> Answer:
+    """Cancelling one order, with what it was and who it was for.
+
+    The order is named back by its number and total rather than by the digits
+    that were typed, because a mistyped number is the obvious way to cancel
+    somebody else's dinner.
+    """
+    number = slots["order_number"]
+    order = db.execute(
+        select(Order).where(Order.order_number == number)
+    ).scalar_one_or_none()
+    if order is None:
+        return Answer(text=f"There is no order #{number} here.")
+
+    if order.status == OrderStatus.PENDING_PAYMENT.value:
+        return Answer(
+            text=f"Order #{number} has not been paid. It expires on its own if "
+                 "payment never arrives."
+        )
+    # Asked of the state machine rather than of a list kept here, so this
+    # stays true when the states change. Said before the button rather than
+    # as a 409 after it.
+    if OrderStatus.CANCELLED.value not in ALLOWED_TRANSITIONS.get(order.status, set()):
+        return Answer(
+            text=f"Order #{number} is {order.status.replace('_', ' ').lower()} "
+                 "and cannot be cancelled from there."
+        )
+
+    total = money(order.total_minor, restaurant.currency)
+    return Answer(
+        text=f"Cancel order #{number} ({total})? The customer is emailed, and this "
+             "cannot be undone. No refund is made here — that stays on the order.",
+        destructive=True,
+        proposal={
+            "intent": Intent.CANCEL_ORDER.value,
+            "order_id": str(order.id),
+            "order_number": number,
+        },
+    )
+
+
+def _propose_delete_item(db: Session, restaurant: Restaurant, slots: dict) -> Answer:
+    """Removing one dish, with what goes with it."""
+    item, options = find_item(db, slots["name"])
+    if item is None:
+        return _ask_which(slots["name"], options)
+
+    # What else points at it, so the admin agrees to the whole thing rather
+    # than to the part they were thinking about.
+    meals = db.execute(
+        select(func.count()).select_from(MealItem).where(MealItem.item_id == item.id)
+    ).scalar_one()
+    also = f" It is on {meals} meal{'s' if meals != 1 else ''}." if meals else ""
+    return Answer(
+        text=f'Delete "{item.name}" ({money(item.base_price_minor, restaurant.currency)}) '
+             f"from the menu?{also} This cannot be undone. Orders that already "
+             "included it still read correctly.",
+        destructive=True,
+        proposal={
+            "intent": Intent.DELETE_ITEM.value,
+            "item_id": str(item.id),
+            "item_name": item.name,
+        },
+    )
+
+
+def _propose_delete_heading(db: Session, slots: dict) -> Answer:
+    """Removing one heading -- refused, exactly as the Menu screen refuses
+    it, while anything is still filed under it."""
+    heading, options = find_heading(db, slots["name"])
+    if heading is None:
+        names = ", ".join(row.name for row in options) or "none"
+        return Answer(
+            text=f'I could not find a heading called "{slots["name"]}". '
+                 f"There is: {names}.",
+            options=[row.name for row in options],
+        )
+
+    under = db.execute(
+        select(func.count()).select_from(Item).where(
+            Item.item_type_id == heading.id, Item.deleted_at.is_(None)
+        )
+    ).scalar_one()
+    if under:
+        # The same answer the endpoint gives, and the same reason: deleting
+        # it would take real dishes with it or orphan them.
+        return Answer(
+            text=f"{heading.name} still has {under} "
+                 f"{'dish' if under == 1 else 'dishes'} under it. Move or delete "
+                 "those first."
+        )
+
+    children = db.execute(
+        select(func.count()).select_from(ItemType).where(
+            ItemType.parent_id == heading.id, ItemType.deleted_at.is_(None)
+        )
+    ).scalar_one()
+    if children:
+        return Answer(
+            text=f"{heading.name} still has {children} sub-heading"
+                 f"{'s' if children != 1 else ''} under it. Remove those first."
+        )
+
+    return Answer(
+        text=f'Delete the empty heading "{heading.name}"? This cannot be undone.',
+        destructive=True,
+        proposal={
+            "intent": Intent.DELETE_HEADING.value,
+            "heading_id": str(heading.id),
+            "heading_name": heading.name,
+        },
+    )
+
+
 def _ask_which(name: str, options: list[Item]) -> Answer:
     """An unknown or ambiguous dish, as a question rather than a guess."""
     if not options:
@@ -337,8 +459,50 @@ def respond(db: Session, restaurant: Restaurant, reading: Reading) -> Answer:
         return _propose_price(db, restaurant, slots)
     if intent in (Intent.SET_AVAILABLE, Intent.SET_UNAVAILABLE):
         return _propose_availability(db, slots, intent is Intent.SET_AVAILABLE)
+    if intent is Intent.CANCEL_ORDER:
+        return _propose_cancel(db, restaurant, slots)
+    if intent is Intent.DELETE_ITEM:
+        return _propose_delete_item(db, restaurant, slots)
+    if intent is Intent.DELETE_HEADING:
+        return _propose_delete_heading(db, slots)
 
     return Answer(text="I did not understand that.")
+
+
+def _cancel(db: Session, restaurant: Restaurant, proposal: dict) -> str:
+    """Cancel one order, through the same state machine the Orders screen
+    uses.
+
+    transition() is what decides whether this order may go to CANCELLED at
+    all, so a state that changed between the proposal and the button is
+    refused here rather than forced. No refund: money going back to a
+    customer stays on the order, where the amount is in front of whoever
+    sends it.
+    """
+    from app.services.orders import transition
+
+    order = db.get(Order, UUID(proposal["order_id"]), with_for_update=True)
+    if order is None:
+        raise ValueError("That order is no longer here.")
+    if order.status == OrderStatus.CANCELLED.value:
+        raise ValueError(f"Order #{order.order_number} is already cancelled.")
+    if order.status == OrderStatus.PENDING_PAYMENT.value:
+        raise ValueError(f"Order #{order.order_number} has not been paid.")
+    # transition() would refuse this anyway; saying it here makes the
+    # message one an admin can read.
+    if OrderStatus.CANCELLED.value not in ALLOWED_TRANSITIONS.get(order.status, set()):
+        raise ValueError(
+            f"Order #{order.order_number} is "
+            f"{order.status.replace('_', ' ').lower()} and cannot be cancelled now."
+        )
+
+    transition(order, OrderStatus.CANCELLED.value, reason="CANCELLED_BY_RESTAURANT")
+    db.flush()
+    log.info("assistant cancelled order %s on restaurant %s", order.id, restaurant.id)
+    return (
+        f"Order #{order.order_number} is cancelled. No refund was made — "
+        "that is on the order itself."
+    )
 
 
 def perform(db: Session, restaurant: Restaurant, proposal: dict) -> str:
@@ -369,9 +533,43 @@ def perform(db: Session, restaurant: Restaurant, proposal: dict) -> str:
         log.info("assistant added item %s on restaurant %s", item.id, restaurant.id)
         return f'Added "{item.name}" to {heading.name}.'
 
+    if intent == Intent.CANCEL_ORDER.value:
+        return _cancel(db, restaurant, proposal)
+
+    if intent == Intent.DELETE_HEADING.value:
+        heading = db.get(ItemType, UUID(proposal["heading_id"]))
+        if heading is None or heading.deleted_at is not None:
+            raise ValueError("That heading is no longer there.")
+        # Re-checked at the moment of doing it, not only when it was
+        # proposed: a dish may have been filed under it in between, and the
+        # Menu screen would refuse for the same reason.
+        under = db.execute(
+            select(func.count()).select_from(Item).where(
+                Item.item_type_id == heading.id, Item.deleted_at.is_(None)
+            )
+        ).scalar_one()
+        if under:
+            raise ValueError(
+                f"{heading.name} has {under} dish{'es' if under != 1 else ''} "
+                "under it now. Nothing was deleted."
+            )
+        heading.deleted_at = utcnow()
+        db.flush()
+        log.info("assistant deleted heading %s on restaurant %s", heading.id, restaurant.id)
+        return f'Deleted the heading "{heading.name}".'
+
     item = db.get(Item, UUID(proposal["item_id"]))
     if item is None or item.deleted_at is not None:
         raise ValueError("That dish is no longer on the menu.")
+
+    if intent == Intent.DELETE_ITEM.value:
+        # Soft, like the Menu screen: orders that included it keep their own
+        # snapshot, so last month's receipt still reads correctly.
+        item.deleted_at = utcnow()
+        item.is_available = False
+        db.flush()
+        log.info("assistant deleted item %s on restaurant %s", item.id, restaurant.id)
+        return f'Deleted "{item.name}" from the menu.'
 
     if intent == Intent.SET_PRICE.value:
         item.base_price_minor = int(proposal["price_minor"])
