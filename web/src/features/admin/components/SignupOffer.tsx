@@ -9,7 +9,7 @@ import {
   type SignupOffer as Offer,
   type SignupOfferDraft,
 } from "@/features/admin/adminApi";
-import { cents, count } from "@/features/admin/offerFields";
+import { cents, centsOrZero, count } from "@/features/admin/offerFields";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -209,7 +209,7 @@ function OfferForm({
       code_prefix: prefix,
       description: description.trim() || null,
       percent_off_bps: hasPercent ? cents(percent) : null,
-      amount_off_minor: hasAmount ? cents(amount) : null,
+      amount_off_minor: hasAmount ? centsOrZero(amount) : null,
       max_discount_minor: hasPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
       valid_days: count(validDays),

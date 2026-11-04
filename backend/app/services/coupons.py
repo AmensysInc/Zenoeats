@@ -92,6 +92,15 @@ class AppliedCoupon:
     # None when they did not give it any.
     label: str | None
     discount_minor: int
+    # Whether the coupon is itself worth nothing, as opposed to being worth
+    # something that this cart leaves no room for.
+    #
+    # Pricing cannot tell those apart from the amount alone, and they want
+    # opposite answers: a flat zero the restaurant chose should be recorded
+    # on the order, and a real discount that the meal deals left nothing for
+    # should not -- recording it would say a promotion was given when the
+    # customer received nothing.
+    zero_rate: bool = False
 
 
 def normalise(code: str) -> str:
@@ -280,11 +289,15 @@ def apply(
         raise CouponRefused("That code doesn't apply to anything in your order.")
 
     discount = discount_for(coupon, basis)
-    if discount <= 0:
-        # The coupon is valid and worth nothing on this cart -- a flat amount
-        # against a cart that combos have already taken to zero. Saying
-        # "applied" and changing no number is the one answer that would look
-        # like a bug to the customer.
+    if discount <= 0 and coupon.discount_value > 0:
+        # Worth something, and worth nothing *here* -- a flat amount against
+        # a cart that combos have already taken to zero. Saying "applied" and
+        # changing no number is the one answer that would look like a bug.
+        #
+        # A coupon deliberately set to a flat zero is the other case and is
+        # let through: the restaurant meant it, the customer is told the code
+        # was accepted, and the total is correct at unchanged. Telling them
+        # their own restaurant's code is broken would be the wrong answer.
         raise CouponRefused("That code takes nothing off this order.")
 
     return AppliedCoupon(
@@ -292,6 +305,7 @@ def apply(
         code=coupon.code,
         label=coupon.description,
         discount_minor=discount,
+        zero_rate=coupon.discount_value == 0,
     )
 
 

@@ -11,10 +11,27 @@
  *
  *  Also does duty for a percentage, where the basis points happen to be the
  *  same conversion: 10 typed as a percent is 1000 bps, exactly as $10.00 is
- *  1000 cents. */
+ *  1000 cents.
+ *
+ *  Zero reads as null here, and that is right for the fields this serves:
+ *  a ceiling of nothing is no ceiling, a minimum of nothing is no minimum.
+ *  The flat discount itself is the one field where zero is a real answer,
+ *  and it uses centsOrZero below. */
 export function cents(typed: string): number | null {
   const value = Number(typed.trim());
   if (!typed.trim() || !Number.isFinite(value) || value <= 0) return null;
+  return Math.round(value * 100);
+}
+
+/** A typed amount as minor units, where zero is a value rather than an
+ *  absence. Only an empty field is null.
+ *
+ *  For the flat discount, which may be anything from nothing to more than
+ *  the order is worth -- the server caps it at what is being charged, so an
+ *  amount larger than the bill simply makes that order free. */
+export function centsOrZero(typed: string): number | null {
+  const value = Number(typed.trim());
+  if (!typed.trim() || !Number.isFinite(value) || value < 0) return null;
   return Math.round(value * 100);
 }
 

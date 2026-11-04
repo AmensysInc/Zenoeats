@@ -750,7 +750,10 @@ def test_a_coupon_cannot_discount_a_dish_that_is_already_free():
     parts = _meal_deal_parts()
     _burger, tea, _fries, _combo = parts
     huge = SimpleNamespace(
-        coupon_id=uuid.uuid4(), code="HALFOFF", label=None, discount_minor=100_000
+        coupon_id=uuid.uuid4(), code="HALFOFF", label=None, discount_minor=100_000,
+        # Worth something, so pricing drops it if the cart leaves no room --
+        # as opposed to a flat rate the restaurant deliberately set to zero.
+        zero_rate=False
     )
     cart = _reward_cart(parts, tea, coupon=huge)
     # Everything is discounted and nothing is charged, but never more than

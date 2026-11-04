@@ -10,7 +10,7 @@ import {
   type CouponScope,
   type MenuHeading,
 } from "@/features/admin/adminApi";
-import { cents, count } from "@/features/admin/offerFields";
+import { cents, centsOrZero, count } from "@/features/admin/offerFields";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -411,7 +411,7 @@ function CouponForm({
       // database and every other discount in the system use. Converted in
       // one place so the two readings cannot drift apart.
       percent_off_bps: hasPercent ? cents(percent) : null,
-      amount_off_minor: hasAmount ? cents(amount) : null,
+      amount_off_minor: hasAmount ? centsOrZero(amount) : null,
       // A ceiling means nothing on a flat amount, and the API refuses one.
       max_discount_minor: hasPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
@@ -511,7 +511,9 @@ function CouponForm({
           <span className="mt-1 block text-caption text-muted">
             {hasPercent
               ? "Clear the percentage to use a flat amount."
-              : "One of these two is required."}
+              : // What the two ends of the range actually do, because both
+                // are surprising until somebody says them out loud.
+                "One of these two is required. 0 takes nothing off; more than the order makes it free."}
           </span>
         </label>
 
