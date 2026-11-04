@@ -10,7 +10,7 @@ exact answers rather than "something sensible came back".
 
 import pytest
 
-from app.services.assistant.language import Intent, money_minor, read
+from app.services.assistant.language import WRITES, Intent, money_minor, read
 
 
 # ------------------------------------------------------------ adding a dish ---
@@ -131,21 +131,24 @@ def test_the_questions_are_recognised(typed, intent):
 
 
 @pytest.mark.parametrize(
-    "typed",
-    [
-        "",
-        "   ",
-        "burn the place down",
-        "refund everyone",
-        "why is the sky blue",
-        "delete the entire menu",
-    ],
+    "typed", ["", "   ", "burn the place down", "why is the sky blue", "feed the cat"]
 )
 def test_an_unknown_sentence_is_not_forced_into_an_intent(typed):
     """None is a real answer, and the caller says so plainly. Guessing at a
     sentence nobody wrote is how a price gets changed that nobody asked
     about."""
     assert read(typed) is None
+
+
+@pytest.mark.parametrize("typed", ["refund everyone", "delete the entire menu"])
+def test_a_destructive_sentence_is_recognised_but_never_performed(typed):
+    """Recognised so it can be answered usefully -- these used to return
+    None and read as "I did not understand", which told nobody where to go.
+    What matters is that the intent is not one of the writes."""
+    found = read(typed)
+    assert found is not None
+    assert found.intent is Intent.OUT_OF_SCOPE
+    assert found.intent not in WRITES
 
 
 def test_a_destructive_word_is_not_read_as_its_opposite():
@@ -176,3 +179,63 @@ def test_money_is_decimal_not_float():
 def test_what_is_not_money_is_not_money():
     assert money_minor("free") is None
     assert money_minor("-5") is None
+
+
+# ------------------------------------- understood, and not ours to do ---------
+#
+# Found by driving it: "create a coupon SAVE10 for 10% off" was being read as
+# adding a dish called "coupon SAVE10 for 10% off", because "create" opens
+# both sentences. A confident wrong answer, which is the one thing this is
+# supposed not to produce.
+
+
+@pytest.mark.parametrize(
+    "typed,mentions",
+    [
+        ("create a coupon SAVE10 for 10% off", "Coupons"),
+        ("add a promotion", "Coupons"),
+        ("refund order 1024", "Refunds"),
+        ("cancel order 1024", "Orders"),
+        ("delete the Burgers heading", "delete"),
+        ("remove Sam from the team", "delete"),
+        ("invite a new staff member", "Staff"),
+        ("turn on delivery", "Delivery"),
+        ("set the tax rate to 9%", "Tax"),
+        ("change our opening hours", "Opening hours"),
+        ("upload a new logo", "Logo"),
+        ("add a combo meal", "Combos"),
+        ("make everything free", "one at a time"),
+    ],
+)
+def test_a_request_we_do_not_serve_says_where_it_lives(typed, mentions):
+    """Better than "I did not understand", and much better than reading it
+    as something else."""
+    found = read(typed)
+    assert found is not None, typed
+    assert found.intent is Intent.OUT_OF_SCOPE, typed
+    assert mentions.lower() in found.slots["says"].lower()
+
+
+@pytest.mark.parametrize(
+    "typed,intent",
+    [
+        ("list coupons", Intent.SHOW_COUPONS),
+        ("show coupons", Intent.SHOW_COUPONS),
+        ("how many orders today", Intent.SHOW_ORDERS),
+        ("show orders", Intent.SHOW_ORDERS),
+    ],
+)
+def test_a_question_about_one_of_those_is_still_answered(typed, intent):
+    """The reads are tried before the out-of-scope list on purpose: "list
+    coupons" is a question this answers, where "create a coupon" is a job
+    for the Coupons screen. Before that ordering was explicit it worked only
+    because "coupons" is plural and the pattern said \\bcoupon\\b."""
+    found = read(typed)
+    assert found is not None, typed
+    assert found.intent is intent
+
+
+def test_adding_a_dish_still_works_despite_sharing_a_verb():
+    found = read("add a cheeseburger for 5.99")
+    assert found.intent is Intent.ADD_ITEM
+    assert found.slots["name"] == "cheeseburger"

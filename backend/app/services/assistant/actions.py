@@ -317,6 +317,10 @@ def respond(db: Session, restaurant: Restaurant, reading: Reading) -> Answer:
     """What to say back. Writes nothing; writes are perform()'s business."""
     intent, slots = reading.intent, reading.slots
 
+    if intent is Intent.OUT_OF_SCOPE:
+        # Understood, and deliberately not done here. Saying where it lives
+        # is the useful half of refusing.
+        return Answer(text=slots["says"])
     if intent is Intent.HELP:
         return Answer(text=HELP)
     if intent is Intent.SHOW_MENU:

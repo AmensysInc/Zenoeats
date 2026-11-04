@@ -40,6 +40,43 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 
 
+# Things somebody will reasonably ask for that this does not do. Recognised
+# on purpose: "I can't do that, it's on the Deliveries screen" is a far
+# better answer than "I did not understand", and it stops a sentence about
+# a coupon being swallowed by the add-a-dish pattern because it happens to
+# start with "create".
+#
+# The verbs that overlap with adding a dish -- add, create, make -- are
+# exactly why this is checked first.
+OUT_OF_SCOPE: list[tuple[str, str]] = [
+    (r"\b(coupon|promo(?:tion)?|discount\s+code|voucher)\b",
+     "Coupons are on the Coupons section of Settings."),
+    (r"\b(staff|team\s+member|employee|colleague|rota)\b",
+     "Staff are on the Staff screen."),
+    (r"\b(refund|charge\s*back)\b",
+     "Refunds are on the order itself, on the Orders screen. "
+     "They cannot be undone, so they stay there."),
+    (r"\bcancel\b.*\border\b|\border\b.*\bcancel\b",
+     "Cancelling an order is on the Orders screen. It cannot be undone, "
+     "so it stays there."),
+    (r"\b(delete|remove|get\s+rid\s+of)\b",
+     "I do not delete anything. That is on the screen the thing lives on, "
+     "where it can be checked first."),
+    (r"\bcombo\b|\bmeal\s+deal\b",
+     "Combos are on the Menu screen -- they have slots and choices that do "
+     "not fit in a sentence."),
+    (r"\b(tax|vat)\b", "Tax is on the Tax section of Settings."),
+    (r"\bdeliver(y|ies)\b|\bdelivery\s+radius\b",
+     "Delivery is on the Delivery section of Settings."),
+    (r"\b(opening\s+hours|hours|open(?:ing)?\s+times)\b",
+     "Opening hours are on the Storefront screen."),
+    (r"\b(logo|banner|brand)\b", "Branding is on the Logo & name section of Settings."),
+    (r"\border\b", "Orders are on the Orders screen, where you can see the whole one."),
+    (r"\bfree\b.*\beveryth|\beveryth.*\bfree\b",
+     "I will not change everything at once. Price dishes one at a time."),
+]
+
+
 class Intent(str, Enum):
     """Everything the assistant understands.
 
@@ -57,6 +94,8 @@ class Intent(str, Enum):
     SHOW_ORDERS = "SHOW_ORDERS"
     SHOW_COUPONS = "SHOW_COUPONS"
     HELP = "HELP"
+    # Understood, and not something this does. Carries the sentence to say.
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
 # Which intents change something. A read runs on the spot; a write is
@@ -99,7 +138,7 @@ def money_minor(typed: str) -> int | None:
 # specific ones come first. Written as whole-sentence matches rather than
 # keyword spotting: "delete the burger" must not be read as "add a burger"
 # because it happens to contain the word.
-_PATTERNS: list[tuple[Intent, re.Pattern]] = [
+_WRITE_PATTERNS: list[tuple[Intent, re.Pattern]] = [
     # "add a cheeseburger to burgers for 5.99" / "add cheeseburger 5.99"
     (Intent.ADD_ITEM, re.compile(
         r"^(?:add|create|put)\s+(?:a\s+|an\s+|the\s+)?(?P<name>.+?)"
@@ -138,9 +177,18 @@ _PATTERNS: list[tuple[Intent, re.Pattern]] = [
     (Intent.SET_AVAILABLE, re.compile(
         r"^(?P<name>.+?)\s+(?:is|are)\s+back(?:\s+in\s+stock)?\s*$", re.I)),
 
-    # reads
+]
+
+# Tried before the out-of-scope list, because these are precise whole-
+# sentence matches and several of them mention a word that list also
+# watches for: "list coupons" is a question this answers, where "create a
+# coupon" is a job for the Coupons screen.
+_READ_PATTERNS: list[tuple[Intent, re.Pattern]] = [
+    # Anchored at both ends. Without the $ this swallowed "sold out of
+    # fries" -- a statement about one dish -- as the question "what is sold
+    # out", because the reads are tried first.
     (Intent.SHOW_UNAVAILABLE, re.compile(
-        r"^(?:what(?:'s| is)\s+)?(?:out\s+of\s+stock|unavailable|sold\s+out)"
+        r"^(?:what(?:'s| is)\s+)?(?:out\s+of\s+stock|unavailable|sold\s+out)\s*\??$"
         r"|^check\s+(?:the\s+)?(?:stock|inventory)\s*$", re.I)),
     (Intent.SHOW_MENU, re.compile(
         r"^(?:show|list|what(?:'s| is) on)\s+(?:me\s+)?(?:the\s+)?menu\s*$", re.I)),
@@ -164,7 +212,26 @@ def read(text: str) -> Reading | None:
     if not cleaned:
         return None
 
-    for intent, pattern in _PATTERNS:
+    # THE ORDER OF THESE THREE IS THE WHOLE DESIGN.
+    #
+    # Reads first: they are exact whole-sentence matches and cannot be
+    # mistaken for anything, and several mention a word the out-of-scope
+    # list watches for -- "list coupons" is a question this answers.
+    #
+    # Out-of-scope second: "create a coupon" and "add a cheeseburger" open
+    # the same way, so the topic has to be ruled out before the add-a-dish
+    # pattern swallows the sentence and asks what a coupon should cost.
+    #
+    # Writes last, and only for a sentence that is about the menu.
+    for intent, pattern in _READ_PATTERNS:
+        if pattern.match(cleaned):
+            return Reading(intent=intent)
+
+    for pattern, says in OUT_OF_SCOPE:
+        if re.search(pattern, cleaned, re.I):
+            return Reading(intent=Intent.OUT_OF_SCOPE, slots={"says": says})
+
+    for intent, pattern in _WRITE_PATTERNS:
         match = pattern.match(cleaned)
         if not match:
             continue
