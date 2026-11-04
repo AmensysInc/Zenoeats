@@ -327,8 +327,14 @@ def price_cart(
                 code=coupon.code,
                 label=coupon.label,
                 discount_minor=coupon_discount,
+                zero_rate=coupon.zero_rate,
             )
-            if coupon is not None and coupon_discount > 0
+            # A coupon the restaurant deliberately set to zero is recorded,
+            # because it was meant to apply and wants counting. One worth
+            # something that this cart left no room for is not: saying a
+            # promotion was given when the customer received nothing would
+            # overstate what the promotion cost.
+            if coupon is not None and (coupon_discount > 0 or coupon.zero_rate)
             else None
         ),
     )

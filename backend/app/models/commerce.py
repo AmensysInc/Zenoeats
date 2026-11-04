@@ -299,10 +299,16 @@ class Coupon(Base, TimestampMixin):
         CheckConstraint(
             "discount_kind IN ('PERCENT', 'AMOUNT')", name="ck_coupon_discount_kind"
         ),
-        # NONE is a valid DiscountKind for a combo and meaningless here: a
-        # coupon that takes nothing off is not a coupon, it is a code that
-        # tells the customer their total is unchanged.
-        CheckConstraint("discount_value > 0", name="ck_coupon_discount_positive"),
+        # A flat amount may be zero -- a code set up before its value is
+        # decided, or one that exists to be counted rather than to discount.
+        # A percentage may not: nothing is expressible as 0% that is not
+        # better said as a flat zero, so that row is a form bug rather than
+        # a decision.
+        CheckConstraint(
+            "(discount_kind = 'AMOUNT' AND discount_value >= 0)"
+            " OR (discount_kind = 'PERCENT' AND discount_value > 0)",
+            name="ck_coupon_discount_positive",
+        ),
         CheckConstraint(
             "discount_kind <> 'PERCENT' OR discount_value <= 10000",
             name="ck_coupon_percent_within_range",
@@ -424,7 +430,11 @@ class CouponGroup(Base, TimestampMixin):
         CheckConstraint(
             "discount_kind IN ('PERCENT', 'AMOUNT')", name="ck_coupon_group_kind"
         ),
-        CheckConstraint("discount_value > 0", name="ck_coupon_group_positive"),
+        CheckConstraint(
+            "(discount_kind = 'AMOUNT' AND discount_value >= 0)"
+            " OR (discount_kind = 'PERCENT' AND discount_value > 0)",
+            name="ck_coupon_group_positive",
+        ),
         CheckConstraint(
             "discount_kind <> 'PERCENT' OR discount_value <= 10000",
             name="ck_coupon_group_percent_range",
