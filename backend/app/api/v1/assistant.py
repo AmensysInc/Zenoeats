@@ -32,25 +32,71 @@ re-checked at the moment of doing it rather than only when it was proposed.
 """
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import StaffDb, current_restaurant_staff
+from app.api.deps import (
+    StaffDb, TenantDb, current_restaurant, current_restaurant_staff,
+    optional_current_user, require_platform_admin,
+)
 from app.api.v1.restaurant import MANAGE
-from app.core import errors
-from app.core.ratelimit import per_staff_user
-from app.models import Restaurant, RestaurantUser
+from app.core import errors, ratelimit
+from app.core.ratelimit import per_ip, per_staff_user
+from app.db.session import system_session
+from app.models import Restaurant, RestaurantUser, User
 from app.services import restaurant_profile
-from app.services.assistant import actions, language
+from app.services.assistant import (
+    actions, agent, customer_tools, language, platform_tools, provider, restaurant_tools,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/restaurant/assistant", tags=["assistant"])
+# The same assistant for the platform admin and for customers. Read-only on
+# both: neither has a tool that writes anything.
+platform_router = APIRouter(prefix="/admin/assistant", tags=["assistant"])
+customer_router = APIRouter(prefix="/assistant", tags=["assistant"])
+
+# A public box on every storefront is a bill anyone can run up. Per address
+# above, and per restaurant per day here, so one busy -- or hostile -- day
+# stops at a number somebody chose.
+CUSTOMER_DAILY_CAP = 1500
+
+
+class HistoryTurn(BaseModel):
+    """An earlier line of the conversation, as the browser kept it. Only
+    ever sent back to the model as plain text in one of these two roles."""
+
+    role: Literal["user", "assistant"]
+    text: str = Field(max_length=4000)
 
 
 class AskIn(BaseModel):
     text: str = Field(min_length=1, max_length=400)
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=20)
+
+
+class ChatIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=20)
+
+
+class ChatOut(BaseModel):
+    text: str
+
+
+class StatusOut(BaseModel):
+    enabled: bool
+
+
+def _unavailable(exc: provider.AssistantUnavailable) -> errors.ApiError:
+    return errors.ApiError(503, "ASSISTANT_UNAVAILABLE", str(exc))
+
+
+def _history(body: AskIn | ChatIn) -> list[dict]:
+    return [turn.model_dump() for turn in body.history]
 
 
 class AskOut(BaseModel):
@@ -90,8 +136,29 @@ def ask(
     db: Session = StaffDb,
     membership: RestaurantUser = Depends(MANAGE),
 ):
-    """Read a sentence. Answers a question, or describes a change."""
+    """Read a sentence. Answers a question, or describes a change.
+
+    The rules first: they are free, instant and cannot invent a price. A
+    sentence they do not recognise goes to the model when one is configured,
+    with tools that are the same intents -- so whatever it decides still
+    arrives as a proposal behind the same Yes button.
+    """
     reading = language.read(body.text)
+    if reading is None and provider.configured():
+        try:
+            said = agent.run(
+                system=restaurant_tools.system_prompt(restaurant),
+                history=_history(body),
+                text=body.text,
+                tools=restaurant_tools.TOOLS,
+                call=lambda name, args: restaurant_tools.call(db, restaurant, name, args),
+            )
+        except provider.AssistantUnavailable as exc:
+            raise _unavailable(exc) from None
+        return AskOut(
+            text=said.text, proposal=said.proposal,
+            options=said.options, destructive=said.destructive,
+        )
     if reading is None:
         # Said plainly, with what it does understand. A guess here is how a
         # price gets changed that nobody asked about.
@@ -143,3 +210,77 @@ def do(
     db.flush()
     log.info("assistant action on restaurant %s", restaurant.id)
     return DoOut(text=said)
+
+
+# ------------------------------------------------------------ platform admin
+
+
+@platform_router.get("/status", response_model=StatusOut)
+def platform_status(admin: User = Depends(require_platform_admin)):
+    """Whether to show the chat at all. It needs a model; there are no rules
+    on this side to fall back on."""
+    return StatusOut(enabled=provider.configured())
+
+
+@platform_router.post(
+    "/chat",
+    response_model=ChatOut,
+    dependencies=[Depends(per_ip("admin_assistant", limit=60, window_seconds=300))],
+)
+def platform_chat(body: ChatIn, admin: User = Depends(require_platform_admin)):
+    """Questions about every restaurant at once. Reads only."""
+    if not provider.configured():
+        raise _unavailable(provider.AssistantUnavailable("The assistant is not switched on."))
+    used: list[str] = []
+    with system_session() as session:
+        def call(name: str, args: dict):
+            used.append(name)
+            return platform_tools.call(session, name, args)
+
+        try:
+            said = agent.run(
+                system=platform_tools.system_prompt(), history=_history(body),
+                text=body.text, tools=platform_tools.TOOLS, call=call,
+            )
+        except provider.AssistantUnavailable as exc:
+            raise _unavailable(exc) from None
+        # Which reads it made, as the admin screens record theirs. Not what
+        # was asked: that is the admin's own words, and not ours to keep.
+        from app.api.v1.admin import _audit
+        _audit(session, admin, "SUPER_ADMIN_ASSISTANT", {"tools": used})
+    return ChatOut(text=said.text)
+
+
+# ----------------------------------------------------------------- customers
+
+
+@customer_router.get("/status", response_model=StatusOut)
+def customer_status(restaurant: Restaurant = Depends(current_restaurant)):
+    return StatusOut(enabled=provider.configured())
+
+
+@customer_router.post(
+    "/chat",
+    response_model=ChatOut,
+    dependencies=[Depends(per_ip("customer_assistant", limit=20, window_seconds=300))],
+)
+def customer_chat(
+    body: ChatIn,
+    restaurant: Restaurant = Depends(current_restaurant),
+    user: User | None = Depends(optional_current_user),
+    db: Session = TenantDb,
+):
+    """The storefront's helper. Answers from the public menu and the
+    customer's own orders; changes nothing."""
+    if not provider.configured():
+        raise _unavailable(provider.AssistantUnavailable("The assistant is not switched on."))
+    ratelimit.consume(f"customer_assistant:restaurant:{restaurant.id}", CUSTOMER_DAILY_CAP, 86_400)
+    try:
+        said = agent.run(
+            system=customer_tools.system_prompt(restaurant), history=_history(body),
+            text=body.text, tools=customer_tools.TOOLS,
+            call=lambda name, args: customer_tools.call(db, restaurant, user, name, args),
+        )
+    except provider.AssistantUnavailable as exc:
+        raise _unavailable(exc) from None
+    return ChatOut(text=said.text)

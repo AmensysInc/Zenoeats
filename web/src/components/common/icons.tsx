@@ -38,6 +38,8 @@ const PATHS = {
   signout: "M9 3H3v18h6m6-14 5 5-5 5m5-5H8",
   // A capsule on a stand: a microphone, for speaking to the assistant.
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3",
+  // A speech bubble with a tail: the assistant's button.
+  chat: "M4 5h16v11H9l-5 4V5Zm4 5h.01M12 10h.01M16 10h.01",
   stock: "m3 7 9-4 9 4-9 4-9-4Zm0 0v10l9 4 9-4V7M12 11v10",
   store: "M3 9h18L19 3H5L3 9Zm1 0v12h16V9M9 21v-8h6v8",
   // A luggage-style tag with its hole: a coupon, in one stroke.

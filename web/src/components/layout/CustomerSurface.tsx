@@ -6,6 +6,7 @@ import { rememberBrand, rememberRestaurantName } from "@/utils/restaurantName";
 import { useReferralCode } from "@/features/storefront/useReferralCode";
 import { Outlet } from "react-router-dom";
 import { PageColumnProvider } from "@/components/layout/pageColumn";
+import { CustomerAssistant } from "@/features/assistant/Assistants";
 
 /**
  * The customer surface: cream page and forest primary (globals.css).
@@ -56,6 +57,9 @@ export function CustomerSurface({ children }: { children?: ReactNode }) {
           nested under it as usual. */}
       {children ?? <Outlet />}
       <CustomerFooter />
+      {/* Only on a restaurant's own storefront: the platform root has no
+          portal, and so no restaurant to answer for. */}
+      {data && <CustomerAssistant restaurantName={data.name} />}
     </PageColumnProvider>
   );
 }

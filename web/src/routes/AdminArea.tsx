@@ -5,6 +5,7 @@ import { AdminOrdersPage } from "@/pages/admin/AdminOrdersPage";
 import { AdminCouponsPage } from "@/pages/admin/AdminCouponsPage";
 import { AdminPromotionsPage } from "@/pages/admin/AdminPromotionsPage";
 import { NotFound } from "@/routes/NotFound";
+import { AdminAssistant } from "@/features/assistant/Assistants";
 
 /**
  * The platform portal, and everything only it needs. Loaded on demand, for
@@ -17,6 +18,9 @@ import { NotFound } from "@/routes/NotFound";
  */
 export default function AdminArea() {
   return (
+    <>
+    {/* Outside the routes, so the conversation carries on from page to page. */}
+    <AdminAssistant />
     <Routes>
       <Route index element={<RequireAdmin><AdminRestaurantsPage /></RequireAdmin>} />
       <Route
@@ -33,5 +37,6 @@ export default function AdminArea() {
       />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   );
 }

@@ -40,6 +40,11 @@ api_router.include_router(restaurant.router, dependencies=[Depends(require_same_
 api_router.include_router(
     assistant.router, dependencies=[Depends(require_same_origin)]
 )
+# The same assistant on the storefront. It reads the customer's own session
+# cookie for "my orders", so it is pinned to its origin like the pages above.
+api_router.include_router(
+    assistant.customer_router, dependencies=[Depends(require_same_origin)]
+)
 # The restaurant's own promotions. Same cookie session and same origin pin as
 # the rest of the manage portal; the platform keeps its own coupon screens.
 api_router.include_router(
@@ -47,6 +52,11 @@ api_router.include_router(
 )
 api_router.include_router(
     admin.router, dependencies=[Depends(require_admin_host), Depends(require_same_origin)]
+)
+# And for the platform admin, on the admin host only, like the rest of /admin.
+api_router.include_router(
+    assistant.platform_router,
+    dependencies=[Depends(require_admin_host), Depends(require_same_origin)],
 )
 # Coupons are the platform's to create, not a tenant's, so this is the admin
 # router by every measure except which file it lives in -- same prefix, same
