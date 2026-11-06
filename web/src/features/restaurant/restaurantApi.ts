@@ -510,6 +510,9 @@ export type RestaurantReport = {
  *  person to agree. It is handed straight back to /do unchanged -- it
  *  carries resolved ids rather than the words that were typed, so what is
  *  confirmed is what is done. */
+/** An earlier line of a conversation, sent back so the model has context. */
+export type ChatTurn = { role: "user" | "assistant"; text: string };
+
 export type AssistantReply = {
   text: string;
   proposal: Record<string, unknown> | null;
@@ -523,7 +526,7 @@ export const restaurantApi = api.injectEndpoints({
   endpoints: (build) => ({
     /** Ask the assistant. Never writes: a change comes back as a proposal
      *  and waits for the button. */
-    assistantAsk: build.mutation<AssistantReply, { text: string }>({
+    assistantAsk: build.mutation<AssistantReply, { text: string; history?: ChatTurn[] }>({
       query: (body) => ({
         url: "/restaurant/assistant/ask",
         method: "POST",

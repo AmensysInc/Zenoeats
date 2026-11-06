@@ -112,11 +112,9 @@ On the platform portal, under **Promotions** for a restaurant.
 
 ## The assistant
 
-> In [PR #39](https://github.com/AmensysInc/Zenoeats/pull/39) and **not merged
-> yet**, so it is not on `main` and not on any deployed site. Everything below
-> describes what that PR adds.
-
-**Settings → Assistant.** Type or speak what you want:
+**The chat button in the bottom-right corner** of every page of the portal,
+for owners and managers. The conversation follows you from page to page.
+Type or speak what you want:
 
 ```
 we're out of fries
@@ -146,6 +144,20 @@ to a price change.
 where the amount is in front of whoever sends it), change staff, move an order
 along, or do anything in bulk. `"delete everything"` is refused before the
 sentence is read.
+
+With `OPENAI_API_KEY` set, it also understands things said in your own words
+("fries should be three and a quarter now"). The model can only choose among
+the actions above, so its answer arrives as the same proposal and the same
+button.
+
+**The same chat elsewhere**, both read-only and both shown only when
+`OPENAI_API_KEY` is set:
+
+- **ZenoEats admin** — questions about every restaurant: which are live, sales
+  over a period, recent orders at one of them, Stripe status.
+- **The storefront** — customers ask about the menu, prices, opening times,
+  pickup and delivery, and their own orders. It cannot order, pay, refund or
+  hand out discounts, and it sends allergy questions to the restaurant.
 
 Anything it does not do says where that thing actually lives, rather than
 "I didn't understand".

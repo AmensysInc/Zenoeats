@@ -54,7 +54,7 @@ no room for should be refused, because "applied" with no number moving looks
 like a bug. Pricing cannot tell them apart from the amount alone, so the
 applied coupon carries which it is.
 
-## The assistant: deliberately not a model  *(PR #39)*
+## The assistant: rules first, a model only behind them  *(PR #39)*
 
 It reads sentences with patterns on our own server. That is a decision, not a
 shortcut:
@@ -69,11 +69,30 @@ shortcut:
   nothing else.
 - **It costs nothing and needs no key**, and it can be tested without a network.
 
-What it gives up is unusual phrasing, and it gives it up out loud.
-`services/assistant/provider.py` is the seam where a model can take those cases
-once there is a key; it speaks the OpenAI chat-completions format, which Groq,
+What it gives up is unusual phrasing. With `OPENAI_API_KEY` set, a sentence
+the rules do not recognise goes to a model (`services/assistant/agent.py`),
+whose tools are the same intents (`restaurant_tools.py`): the model picks one
+and fills its slots, and `actions.respond()` resolves names and builds the
+proposal exactly as for a typed command. So the model can misread, but it
+cannot write — whatever it decides is a proposal behind the same button.
+`provider.py` speaks the OpenAI chat-completions format, which Groq,
 OpenRouter, a local Ollama and Anthropic's compatibility endpoint all serve, so
 which model is a setting rather than a rewrite.
+
+**The same loop serves two read-only chats**, each with its own tools and
+shown only when a key is set:
+
+- `/admin/assistant/chat` (`platform_tools.py`) — restaurants, sales, recent
+  orders and Stripe status, through the system session; admin host only;
+  each call writes which tools it used to `platform_audit_logs`.
+- `/assistant/chat` (`customer_tools.py`) — the public menu, the restaurant's
+  details, and the caller's own orders (never the pickup PIN). Limited per
+  address and to `CUSTOMER_DAILY_CAP` calls per restaurant per day, because a
+  public box is a bill anyone can run up.
+
+In all three the browser keeps the conversation and sends the last few lines
+back; only the `user` and `assistant` roles are accepted, so history cannot
+carry a system message. Tool rounds stop at `ASSISTANT_MAX_STEPS`.
 
 **Four stages, and the order is the design**: bulk requests refused → questions
 → topics we do not serve → changes. Each boundary is there because moving it
@@ -98,15 +117,10 @@ refused, and whether it may be cancelled at all is asked of
 | `0055` | Coupon groups — numbered codes |
 | `0056` | The sign-on offer and phone verification |
 | `0057` | Social sign-in without Clerk |
-
-Every one applies and reverses; CI checks reversibility.
-
-**Not merged yet**, so not on `main` and not deployed:
-
-| | |
-|---|---|
 | `0058` | A flat rate may be zero — [PR #38](https://github.com/AmensysInc/Zenoeats/pull/38) |
-| *(none)* | The assistant — [PR #39](https://github.com/AmensysInc/Zenoeats/pull/39), no migration |
+
+Every one applies and reverses; CI checks reversibility. The assistant
+([PR #39](https://github.com/AmensysInc/Zenoeats/pull/39)) needed no migration.
 
 ## What is not configured on this deployment
 
@@ -116,4 +130,4 @@ Each of these is a setting, and each says so rather than failing quietly:
 |---|---|---|
 | **SMS** | The sign-on coupon cannot be claimed | `SMS_PROVIDER`, `SMS_FROM_NUMBER`, plus A2P 10DLC for US numbers |
 | **Geocoding** | Delivery cannot be switched on — a restaurant cannot be placed on the map | `GEOCODING_PROVIDER=nominatim` + `NOMINATIM_CONTACT` (free), or `GOOGLE_MAPS_API_KEY` |
-| **Assistant model** | Unusual phrasing is not understood (everything else works) | `OPENAI_API_KEY` |
+| **Assistant model** | Unusual phrasing is not understood on the dashboard, and the admin and storefront chats are hidden | `OPENAI_API_KEY` |

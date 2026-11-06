@@ -9,6 +9,7 @@ import { ReportsPage } from "@/pages/manage/ReportsPage";
 import { ManageStorefrontPage } from "@/pages/manage/ManageStorefrontPage";
 import { SettingsPage } from "@/pages/manage/SettingsPage";
 import { NotFound } from "@/routes/NotFound";
+import { ManageAssistant } from "@/features/assistant/Assistants";
 import {
   ADMIN_ROLES,
   DELIVERY_ROLES,
@@ -37,6 +38,9 @@ import {
  */
 export default function ManageArea() {
   return (
+    <>
+    {/* Outside the routes, so the conversation carries on from page to page. */}
+    <ManageAssistant />
     <Routes>
       <Route
         index
@@ -72,5 +76,6 @@ export default function ManageArea() {
       />
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </>
   );
 }
