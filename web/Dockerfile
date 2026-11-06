@@ -3,7 +3,7 @@
 # for an attacker to reach.
 
 # Base images pinned by digest; see backend/Dockerfile.
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 WORKDIR /app
 
 # Dependencies first, so a source-only change reuses this layer.
