@@ -11,6 +11,8 @@ import {
   type MenuHeading,
 } from "@/features/admin/adminApi";
 import { cents, centsOrZero, count } from "@/features/admin/offerFields";
+import { DiscountField } from "@/features/admin/components/DiscountField";
+import type { DiscountKind } from "@/types";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -367,14 +369,14 @@ function CouponForm({
 
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
-  // Two fields rather than a kind and a value. An operator thinks in one or
-  // the other, and asking which they mean before letting them type it is a
-  // question about our data model.
+  // A switch and one box. Two boxes side by side, fill in one, read to the
+  // restaurants as two discounts at once; a switch says plainly that it is
+  // one or the other. Dollars first: "$2 off" is what most of them run.
   //
   // Strings, not numbers: an empty number input is the difference between
   // "not set" and zero, and a number state cannot hold that difference.
-  const [percent, setPercent] = useState("");
-  const [amount, setAmount] = useState("");
+  const [kind, setKind] = useState<DiscountKind>("AMOUNT");
+  const [value, setValue] = useState("");
   const [ceiling, setCeiling] = useState("");
   const [minimum, setMinimum] = useState("");
   const [total, setTotal] = useState("");
@@ -383,24 +385,21 @@ function CouponForm({
   // Which headings it applies to. Empty is the common case: the whole cart.
   const [appliesTo, setAppliesTo] = useState<string[]>([]);
 
-  const hasPercent = percent.trim() !== "";
-  const hasAmount = amount.trim() !== "";
+  const isPercent = kind === "PERCENT";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
-    // The same two rules the API enforces, said here so the answer arrives
-    // before the round trip. The API is still the one that decides.
-    if (!hasPercent && !hasAmount) {
-      setError("Fill in either a percentage off or an amount off.");
+    // Said here so the answer arrives before the round trip. The API is
+    // still the one that decides.
+    const worth = isPercent ? cents(value) : centsOrZero(value);
+    if (worth === null) {
+      setError(isPercent ? "Enter the percentage off, like 10." : "Enter the amount off, like 2.");
       return;
     }
-    if (hasPercent && hasAmount) {
-      setError(
-        "Fill in a percentage off or an amount off, not both. " +
-          "For a percentage with a limit, set the ceiling instead.",
-      );
+    if (isPercent && worth > 10_000) {
+      setError("A percentage off can be at most 100.");
       return;
     }
 
@@ -410,10 +409,10 @@ function CouponForm({
       // Percent as basis points, an amount as minor units -- the units the
       // database and every other discount in the system use. Converted in
       // one place so the two readings cannot drift apart.
-      percent_off_bps: hasPercent ? cents(percent) : null,
-      amount_off_minor: hasAmount ? centsOrZero(amount) : null,
+      percent_off_bps: isPercent ? worth : null,
+      amount_off_minor: isPercent ? null : worth,
       // A ceiling means nothing on a flat amount, and the API refuses one.
-      max_discount_minor: hasPercent ? cents(ceiling) : null,
+      max_discount_minor: isPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
       applies_to: appliesTo,
       max_redemptions: count(total),
@@ -472,57 +471,21 @@ function CouponForm({
           </span>
         </label>
 
-        {/* Two fields, fill in one. Both are offered because an operator
-            arrives thinking "10% off" or "$5 off" and should not have to
-            answer a question about our data model first. Each dims while the
-            other holds something, so the rule is visible before the save
-            rather than explained by a refusal afterwards. */}
-        <label className="block">
-          <span className="label">Percentage off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasAmount ? "opacity-50" : ""}`}
-              value={percent}
-              onChange={(e) => setPercent(e.target.value)}
-              inputMode="decimal"
-              placeholder="10"
-              aria-label="Percent off"
-            />
-            <span className="self-center text-[15px] text-muted">%</span>
-          </div>
-          <span className="mt-1 block text-caption text-muted">
-            {hasAmount ? "Clear the amount to use a percentage." : "Or fill in an amount below."}
-          </span>
-        </label>
-
-        <label className="block">
-          <span className="label">Amount off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasPercent ? "opacity-50" : ""}`}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder="5.00"
-              aria-label={`Amount off in ${currency}`}
-            />
-            <span className="self-center text-[15px] text-muted">{currency}</span>
-          </div>
-          <span className="mt-1 block text-caption text-muted">
-            {hasPercent
-              ? "Clear the percentage to use a flat amount."
-              : // What the two ends of the range actually do, because both
-                // are surprising until somebody says them out loud.
-                "One of these two is required. 0 takes nothing off; more than the order makes it free."}
-          </span>
-        </label>
+        <DiscountField
+          className="sm:col-span-2"
+          kind={kind}
+          onKindChange={setKind}
+          value={value}
+          onValueChange={setValue}
+          currency={currency}
+        />
 
         {/* What it comes off. Empty is the common case and the default: a
             launch offer is meant to be spent on anything. Naming headings
             makes it "20% off burgers", and only those lines are discounted. */}
         {headings.length > 0 && (
           <label className="block sm:col-span-2">
-            <span className="label">Applies to</span>
+            <span className="label">Which items</span>
             <div className="mt-[7px] flex flex-wrap gap-2">
               {headings.map((heading) => {
                 const on = appliesTo.includes(heading.id);
@@ -549,30 +512,32 @@ function CouponForm({
             </div>
             <span className="mt-1 block text-caption text-muted">
               {appliesTo.length === 0
-                ? "Nothing chosen: the code comes off the whole order."
-                : "Only lines under these headings are discounted."}
+                ? "Tap the menu categories it works on. Nothing chosen: it comes off the whole order."
+                : "Only items in these categories are discounted."}
             </span>
           </label>
         )}
 
-        {!hasAmount && (
+        {/* Only a percentage can grow with the order, so only a percentage
+            needs a cap. A dollar amount is its own cap. */}
+        {isPercent && (
           <label className="block">
-            <span className="label">Never more than</span>
+            <span className="label">Maximum discount (optional)</span>
             <input
               className="field tnum mt-[7px]"
               value={ceiling}
               onChange={(e) => setCeiling(e.target.value)}
               inputMode="decimal"
-              placeholder="No ceiling"
+              placeholder="No maximum"
             />
             <span className="mt-1 block text-caption text-muted">
-              A percentage with no ceiling is a different offer on a large order.
+              In {currency}. For example 20% off, but never more than 10.
             </span>
           </label>
         )}
 
         <label className="block">
-          <span className="label">Minimum order</span>
+          <span className="label">Minimum order total (optional)</span>
           <input
             className="field tnum mt-[7px]"
             value={minimum}
@@ -580,10 +545,13 @@ function CouponForm({
             inputMode="decimal"
             placeholder="No minimum"
           />
+          <span className="mt-1 block text-caption text-muted">
+            In {currency}. The code only works on an order at least this big.
+          </span>
         </label>
 
         <label className="block">
-          <span className="label">Total uses</span>
+          <span className="label">How many times in total (optional)</span>
           <input
             className="field tnum mt-[7px]"
             value={total}
@@ -594,7 +562,7 @@ function CouponForm({
         </label>
 
         <label className="block">
-          <span className="label">Uses per customer</span>
+          <span className="label">How many times per customer (optional)</span>
           <input
             className="field tnum mt-[7px]"
             value={perCustomer}
@@ -605,7 +573,7 @@ function CouponForm({
         </label>
 
         <label className="block">
-          <span className="label">Ends</span>
+          <span className="label">End date (optional)</span>
           <input
             className="field mt-[7px]"
             type="datetime-local"

@@ -10,6 +10,8 @@ import {
   type SignupOfferDraft,
 } from "@/features/admin/adminApi";
 import { cents, centsOrZero, count } from "@/features/admin/offerFields";
+import { DiscountField } from "@/features/admin/components/DiscountField";
+import type { DiscountKind } from "@/types";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -168,12 +170,9 @@ function OfferForm({
 
   const [prefix, setPrefix] = useState(offer?.code_prefix ?? "WELCOME");
   const [description, setDescription] = useState(offer?.description ?? "");
-  const [percent, setPercent] = useState(
-    offer?.discount_kind === "PERCENT" ? String(offer.discount_value / 100) : "",
-  );
-  const [amount, setAmount] = useState(
-    offer?.discount_kind === "AMOUNT" ? String(offer.discount_value / 100) : "",
-  );
+  // One switch and one box: see DiscountField.
+  const [kind, setKind] = useState<DiscountKind>(offer?.discount_kind ?? "AMOUNT");
+  const [value, setValue] = useState(offer ? String(offer.discount_value / 100) : "");
   const [ceiling, setCeiling] = useState(
     offer?.max_discount_minor ? String(offer.max_discount_minor / 100) : "",
   );
@@ -187,30 +186,27 @@ function OfferForm({
     offer?.applies_to.map((heading) => heading.id) ?? [],
   );
 
-  const hasPercent = percent.trim() !== "";
-  const hasAmount = amount.trim() !== "";
+  const isPercent = kind === "PERCENT";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
-    if (!hasPercent && !hasAmount) {
-      setError("Fill in either a percentage off or an amount off.");
+    const worth = isPercent ? cents(value) : centsOrZero(value);
+    if (worth === null) {
+      setError(isPercent ? "Enter the percentage off, like 10." : "Enter the amount off, like 2.");
       return;
     }
-    if (hasPercent && hasAmount) {
-      setError(
-        "Fill in a percentage off or an amount off, not both. " +
-          "For a percentage with a limit, set the ceiling instead.",
-      );
+    if (isPercent && worth > 10_000) {
+      setError("A percentage off can be at most 100.");
       return;
     }
 
     const draft: SignupOfferDraft = {
       code_prefix: prefix,
       description: description.trim() || null,
-      percent_off_bps: hasPercent ? cents(percent) : null,
-      amount_off_minor: hasAmount ? centsOrZero(amount) : null,
-      max_discount_minor: hasPercent ? cents(ceiling) : null,
+      percent_off_bps: isPercent ? worth : null,
+      amount_off_minor: isPercent ? null : worth,
+      max_discount_minor: isPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
       valid_days: count(validDays),
       applies_to: appliesTo,
@@ -278,39 +274,18 @@ function OfferForm({
           </span>
         </label>
 
-        <label className="block">
-          <span className="label">Percentage off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasAmount ? "opacity-50" : ""}`}
-              value={percent}
-              onChange={(e) => setPercent(e.target.value)}
-              inputMode="decimal"
-              placeholder="15"
-              aria-label="Percent off"
-            />
-            <span className="self-center text-[15px] text-muted">%</span>
-          </div>
-        </label>
+        <DiscountField
+          className="sm:col-span-2"
+          kind={kind}
+          onKindChange={setKind}
+          value={value}
+          onValueChange={setValue}
+          currency={currency}
+        />
 
-        <label className="block">
-          <span className="label">Amount off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasPercent ? "opacity-50" : ""}`}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder="5.00"
-              aria-label={`Amount off in ${currency}`}
-            />
-            <span className="self-center text-[15px] text-muted">{currency}</span>
-          </div>
-        </label>
-
-        {hasPercent && (
+        {isPercent && (
           <label className="block">
-            <span className="label">Most it can take off</span>
+            <span className="label">Maximum discount (optional)</span>
             <div className="mt-[7px] flex gap-2">
               <input
                 className="field tnum"
@@ -326,7 +301,7 @@ function OfferForm({
         )}
 
         <label className="block">
-          <span className="label">Minimum spend</span>
+          <span className="label">Minimum order total (optional)</span>
           <div className="mt-[7px] flex gap-2">
             <input
               className="field tnum"
@@ -334,7 +309,7 @@ function OfferForm({
               onChange={(e) => setMinimum(e.target.value)}
               inputMode="decimal"
               placeholder="Optional"
-              aria-label={`Minimum spend in ${currency}`}
+              aria-label={`Minimum order total in ${currency}`}
             />
             <span className="self-center text-[15px] text-muted">{currency}</span>
           </div>
@@ -342,7 +317,7 @@ function OfferForm({
 
         {headings.length > 0 && (
           <label className="block sm:col-span-2">
-            <span className="label">Applies to</span>
+            <span className="label">Which items</span>
             <div className="mt-[7px] flex flex-wrap gap-2">
               {headings.map((heading) => {
                 const on = appliesTo.includes(heading.id);
@@ -369,8 +344,8 @@ function OfferForm({
             </div>
             <span className="mt-1 block text-caption text-muted">
               {appliesTo.length === 0
-                ? "Nothing chosen: it comes off the whole order."
-                : "Only lines under these headings are discounted."}
+                ? "Tap the menu categories it works on. Nothing chosen: it comes off the whole order."
+                : "Only items in these categories are discounted."}
             </span>
           </label>
         )}
