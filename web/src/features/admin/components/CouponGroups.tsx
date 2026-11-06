@@ -12,6 +12,8 @@ import {
   type MenuHeading,
 } from "@/features/admin/adminApi";
 import { cents, centsOrZero, count } from "@/features/admin/offerFields";
+import { DiscountField } from "@/features/admin/components/DiscountField";
+import type { DiscountKind } from "@/types";
 import { errorMessage } from "@/services/apiClient";
 import { money } from "@/utils/format";
 
@@ -281,16 +283,16 @@ function GroupForm({
   const [prefix, setPrefix] = useState("");
   const [uses, setUses] = useState("");
   const [description, setDescription] = useState("");
-  const [percent, setPercent] = useState("");
-  const [amount, setAmount] = useState("");
+  // One switch and one box: see DiscountField.
+  const [kind, setKind] = useState<DiscountKind>("AMOUNT");
+  const [value, setValue] = useState("");
   const [ceiling, setCeiling] = useState("");
   const [minimum, setMinimum] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [appliesTo, setAppliesTo] = useState<string[]>([]);
 
-  const hasPercent = percent.trim() !== "";
-  const hasAmount = amount.trim() !== "";
+  const isPercent = kind === "PERCENT";
   const howMany = count(uses);
   const clean = prefix.replace(/\s+/g, "").toUpperCase();
 
@@ -298,15 +300,13 @@ function GroupForm({
     event.preventDefault();
     setError(null);
 
-    if (!hasPercent && !hasAmount) {
-      setError("Fill in either a percentage off or an amount off.");
+    const worth = isPercent ? cents(value) : centsOrZero(value);
+    if (worth === null) {
+      setError(isPercent ? "Enter the percentage off, like 10." : "Enter the amount off, like 2.");
       return;
     }
-    if (hasPercent && hasAmount) {
-      setError(
-        "Fill in a percentage off or an amount off, not both. " +
-          "For a percentage with a limit, set the ceiling instead.",
-      );
+    if (isPercent && worth > 10_000) {
+      setError("A percentage off can be at most 100.");
       return;
     }
     if (!howMany) {
@@ -318,9 +318,9 @@ function GroupForm({
       code_prefix: clean,
       uses: howMany,
       description: description.trim() || null,
-      percent_off_bps: hasPercent ? cents(percent) : null,
-      amount_off_minor: hasAmount ? centsOrZero(amount) : null,
-      max_discount_minor: hasPercent ? cents(ceiling) : null,
+      percent_off_bps: isPercent ? worth : null,
+      amount_off_minor: isPercent ? null : worth,
+      max_discount_minor: isPercent ? cents(ceiling) : null,
       min_subtotal_minor: cents(minimum) ?? 0,
       applies_to: appliesTo,
       starts_at: startsAt ? new Date(startsAt).toISOString() : null,
@@ -394,45 +394,18 @@ function GroupForm({
           </span>
         </label>
 
-        <label className="block">
-          <span className="label">Percentage off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasAmount ? "opacity-50" : ""}`}
-              value={percent}
-              onChange={(e) => setPercent(e.target.value)}
-              inputMode="decimal"
-              placeholder="10"
-              aria-label="Percent off"
-            />
-            <span className="self-center text-[15px] text-muted">%</span>
-          </div>
-          <span className="mt-1 block text-caption text-muted">
-            {hasAmount ? "Clear the amount to use a percentage." : "Or fill in an amount."}
-          </span>
-        </label>
+        <DiscountField
+          className="sm:col-span-2"
+          kind={kind}
+          onKindChange={setKind}
+          value={value}
+          onValueChange={setValue}
+          currency={currency}
+        />
 
-        <label className="block">
-          <span className="label">Amount off</span>
-          <div className="mt-[7px] flex gap-2">
-            <input
-              className={`field tnum ${hasPercent ? "opacity-50" : ""}`}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder="5.00"
-              aria-label={`Amount off in ${currency}`}
-            />
-            <span className="self-center text-[15px] text-muted">{currency}</span>
-          </div>
-          <span className="mt-1 block text-caption text-muted">
-            {hasPercent ? "Clear the percentage to use a flat amount." : "One of these two."}
-          </span>
-        </label>
-
-        {hasPercent && (
+        {isPercent && (
           <label className="block">
-            <span className="label">Most it can take off</span>
+            <span className="label">Maximum discount (optional)</span>
             <div className="mt-[7px] flex gap-2">
               <input
                 className="field tnum"
@@ -445,13 +418,13 @@ function GroupForm({
               <span className="self-center text-[15px] text-muted">{currency}</span>
             </div>
             <span className="mt-1 block text-caption text-muted">
-              20% off is a different offer on a $10 order and a $400 one.
+              For example 20% off, but never more than 10.
             </span>
           </label>
         )}
 
         <label className="block">
-          <span className="label">Minimum spend</span>
+          <span className="label">Minimum order total (optional)</span>
           <div className="mt-[7px] flex gap-2">
             <input
               className="field tnum"
@@ -459,7 +432,7 @@ function GroupForm({
               onChange={(e) => setMinimum(e.target.value)}
               inputMode="decimal"
               placeholder="Optional"
-              aria-label={`Minimum spend in ${currency}`}
+              aria-label={`Minimum order total in ${currency}`}
             />
             <span className="self-center text-[15px] text-muted">{currency}</span>
           </div>
@@ -493,7 +466,7 @@ function GroupForm({
 
         {headings.length > 0 && (
           <label className="block sm:col-span-2">
-            <span className="label">Applies to</span>
+            <span className="label">Which items</span>
             <div className="mt-[7px] flex flex-wrap gap-2">
               {headings.map((heading) => {
                 const on = appliesTo.includes(heading.id);
@@ -520,8 +493,8 @@ function GroupForm({
             </div>
             <span className="mt-1 block text-caption text-muted">
               {appliesTo.length === 0
-                ? "Nothing chosen: the codes come off the whole order."
-                : "Only lines under these headings are discounted."}
+                ? "Tap the menu categories they work on. Nothing chosen: they come off the whole order."
+                : "Only items in these categories are discounted."}
             </span>
           </label>
         )}

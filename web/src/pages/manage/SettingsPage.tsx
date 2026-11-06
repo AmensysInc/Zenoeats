@@ -139,6 +139,16 @@ export function SettingsPage() {
             <a
               key={id}
               href={`#${id}`}
+              // Scrolled here rather than left to the browser. A bare #hash
+              // link is a navigation to the router, and its scroll
+              // restoration put the page back where it was -- so the first
+              // click did nothing and only the second one stuck.
+              onClick={(event) => {
+                const target = document.getElementById(id);
+                if (!target) return;
+                event.preventDefault();
+                target.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
               className="flex items-center rounded-chip p-3 text-[13px] transition-colors duration-color hover:bg-brickSoft"
             >
               {label}
