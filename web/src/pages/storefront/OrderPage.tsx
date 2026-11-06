@@ -104,9 +104,13 @@ export function OrderPage() {
   // the query's options depend on its output.
   const [pollMs, setPollMs] = useState(2_000);
 
+  // Asked again the moment the page is looked at again, not at the next poll.
+  // A phone that locks, or a tab left behind for the kitchen's, holds its
+  // timers back; the customer came back to "Being made" while the food sat on
+  // the counter waiting for them.
   const { data: order, error } = useOrderQuery(
     { orderId, token },
-    { skip: !orderId, pollingInterval: pollMs },
+    { skip: !orderId, pollingInterval: pollMs, refetchOnFocus: true, refetchOnReconnect: true },
   );
   // For the map key. Public and already cached from the menu in most visits.
   const portal = usePortalQuery();
