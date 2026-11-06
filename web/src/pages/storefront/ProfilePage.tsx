@@ -334,8 +334,15 @@ function DetailsTab({ session, slug }: { session: CustomerSession; slug: string 
 // ------------------------------------------------------------------ orders
 
 function OrdersTab() {
-  // Fresh on every visit: the order someone just paid for should be here.
-  const first = useCustomerOrdersQuery(undefined, { refetchOnMountOrArgChange: true });
+  // Fresh on every visit: the order someone just paid for should be here. And
+  // kept fresh while one is still with the kitchen, or its pill said "Being
+  // made" until the page was reloaded.
+  const [pollMs, setPollMs] = useState(0);
+  const first = useCustomerOrdersQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+    pollingInterval: pollMs,
+  });
   const [loadMore, more] = useLazyCustomerOrdersQuery();
   // Later pages, appended below the first. Reset whenever the first page is
   // fetched again, so a refetch never leaves a stale tail beneath it.
@@ -346,6 +353,8 @@ function OrdersTab() {
   useEffect(() => {
     setOlder([]);
     setCursor(firstData?.next_before ?? null);
+    // Only the first page: an order still in progress is a recent one.
+    setPollMs(firstData?.orders.some((o) => IN_PROGRESS.includes(o.status)) ? 15_000 : 0);
   }, [firstData]);
 
   if (first.error) return <ErrorNote message={errorMessage(first.error)} />;
